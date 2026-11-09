@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // `server-only` throws outside a Server Component graph; Vitest is not one.
@@ -12,8 +13,10 @@ vi.mock("@/lib/youtube/client", async (importOriginal) => {
 });
 
 // The failure state is a client component that offers `router.refresh()`.
+const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ refresh, push: vi.fn() }),
 }));
 
 import { SearchResults } from "@/app/search/search-results";
@@ -57,6 +60,7 @@ async function renderResults(params: SearchParams) {
 
 beforeEach(() => {
   searchVideosMock.mockReset();
+  refresh.mockReset();
   // Any attempt to reach the network is a test bug, not a fallback.
   vi.spyOn(globalThis, "fetch").mockImplementation(() =>
     Promise.reject(new Error("Network access is not allowed in this test.")),
@@ -83,6 +87,21 @@ describe("SearchResults", () => {
     );
     // The query is trimmed once, before it reaches the client.
     expect(searchVideosMock).toHaveBeenCalledWith({ query: "rick astley", pageToken: null });
+  });
+
+  it("presents the results as one labelled section with a list of cards", async () => {
+    searchVideosMock.mockResolvedValue(page());
+
+    await renderResults({ q: "rick" });
+
+    const section = screen.getByRole("region", { name: "Search results" });
+    const list = within(section).getByRole("list");
+
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    // One tab stop per card: the grid link, and nothing else in discovery.
+    expect(within(list).getAllByRole("link")).toHaveLength(2);
+    expect(within(list).queryAllByRole("button")).toHaveLength(0);
+    expect(section).toHaveTextContent("Results for “rick”");
   });
 
   it("shows an empty state when the search returns nothing", async () => {
@@ -151,6 +170,39 @@ describe("SearchResults", () => {
     expect(screen.getByText("Search failed")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(/quota/i);
     expect(screen.getByRole("alert")).not.toHaveTextContent(/googleapis|SECRET/);
+  });
+
+  it("maps an unreachable upstream to connection copy", async () => {
+    searchVideosMock.mockRejectedValue(new YouTubeApiError("network", "fetch failed"));
+
+    await renderResults({ q: "rick" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not reach YouTube. Check your connection and try again.",
+    );
+  });
+
+  it("never renders an unexpected error's message", async () => {
+    searchVideosMock.mockRejectedValue(
+      new Error("TypeError at https://internal.example/?key=SECRET"),
+    );
+
+    await renderResults({ q: "rick" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Something went wrong while searching. Please try again.",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/internal\.example|SECRET|TypeError/);
+  });
+
+  it("retries the failed search by refreshing the route", async () => {
+    searchVideosMock.mockRejectedValue(new YouTubeApiError("timeout", "timed out"));
+    const user = userEvent.setup();
+
+    await renderResults({ q: "rick" });
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a malformed page token without calling YouTube", async () => {

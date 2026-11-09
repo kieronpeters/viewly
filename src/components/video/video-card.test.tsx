@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 const { toggleFavouriteMock, toggleWatchLaterMock } = vi.hoisted(() => ({
@@ -221,5 +222,43 @@ describe("VideoCard", () => {
     expect(within(panel).getByRole("button", { name: "Road trip" })).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "Lofi beats" })).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "New playlist" })).toBeInTheDocument();
+  });
+
+  it("reaches the link and every control in DOM order from the keyboard", async () => {
+    const user = userEvent.setup();
+    render(
+      <VideoCard
+        video={VIDEO_FIXTURE}
+        isFavourite
+        isWatchLater
+        showPlaylistPicker
+        playlists={PLAYLISTS}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
+
+    await user.tab();
+    expect(link).toHaveFocus();
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Remove from favourites" })).toHaveFocus();
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Remove from Watch Later" })).toHaveFocus();
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Add to playlist" })).toHaveFocus();
+  });
+
+  it("does not add the save controls to a discovery card's tab stops", async () => {
+    const user = userEvent.setup();
+    render(<VideoCard video={VIDEO_FIXTURE} />);
+
+    await user.tab();
+    expect(screen.getByRole("link", { name: /Never Gonna Give You Up/ })).toHaveFocus();
+
+    await user.tab();
+    expect(document.body).toHaveFocus();
   });
 });

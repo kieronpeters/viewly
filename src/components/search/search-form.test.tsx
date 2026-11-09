@@ -66,6 +66,64 @@ describe("SearchForm", () => {
     expect(input).toHaveFocus();
   });
 
+  it("blocks an empty submit from the button and keeps focus in the field", async () => {
+    const user = userEvent.setup();
+    render(<SearchForm />);
+    const input = getSearchbox();
+
+    await user.click(screen.getByRole("button", { name: /search/i }));
+
+    expect(push).not.toHaveBeenCalled();
+    expect(input).toHaveFocus();
+  });
+
+  it("searches for the edited prefill instead of the original query", async () => {
+    const user = userEvent.setup();
+    render(<SearchForm initialQuery="cats" />);
+    const input = getSearchbox();
+
+    await user.clear(input);
+    await user.type(input, "dogs{Enter}");
+
+    expect(parseHref(push.mock.calls[0]?.[0] as string).searchParams.get("q")).toBe("dogs");
+  });
+
+  it("caps the query at the length the server accepts", async () => {
+    const user = userEvent.setup();
+    render(<SearchForm />);
+
+    await user.type(getSearchbox(), "a".repeat(105));
+
+    expect(getSearchbox()).toHaveValue("a".repeat(100));
+  });
+
+  it("can be operated from the keyboard alone", async () => {
+    const user = userEvent.setup();
+    render(<SearchForm />);
+
+    await user.tab();
+    expect(getSearchbox()).toHaveFocus();
+
+    await user.keyboard("cats");
+    await user.tab();
+    const button = screen.getByRole("button", { name: /search/i });
+    expect(button).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+
+    expect(parseHref(push.mock.calls[0]?.[0] as string).searchParams.get("q")).toBe("cats");
+  });
+
+  it("keeps a plain GET form so search works before hydration", () => {
+    render(<SearchForm />);
+
+    const form = screen.getByRole("search", { name: "Search videos" });
+
+    expect(form).toHaveAttribute("action", "/search");
+    expect(form).toHaveAttribute("method", "get");
+    expect(getSearchbox()).toHaveAttribute("name", "q");
+  });
+
   it("encodes characters that are unsafe in a query string", async () => {
     const user = userEvent.setup();
     render(<SearchForm />);

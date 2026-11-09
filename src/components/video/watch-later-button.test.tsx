@@ -157,4 +157,82 @@ describe("WatchLaterButton", () => {
     expect(button).toHaveClass("min-h-11", "min-w-11");
     expect(button).toHaveClass("focus-visible:ring-2");
   });
+
+  it("toggles with Enter when reached by keyboard", async () => {
+    toggleWatchLaterMock.mockResolvedValue({ inWatchLater: true });
+
+    const user = userEvent.setup();
+    render(<WatchLaterButton video={SNAPSHOT} initialInWatchLater={false} />);
+
+    await user.tab();
+    const button = screen.getByRole("button", { name: "Add to Watch Later" });
+    expect(button).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(toggleWatchLaterMock).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("toggles with Space when reached by keyboard", async () => {
+    toggleWatchLaterMock.mockResolvedValue({ inWatchLater: false });
+
+    const user = userEvent.setup();
+    render(<WatchLaterButton video={SNAPSHOT} initialInWatchLater />);
+
+    await user.tab();
+    const button = screen.getByRole("button", { name: "Remove from Watch Later" });
+    expect(button).toHaveFocus();
+
+    await user.keyboard(" ");
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(toggleWatchLaterMock).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("ignores a second press while the first is still pending", async () => {
+    const gate = deferred<{ inWatchLater: boolean }>();
+    toggleWatchLaterMock.mockReturnValue(gate.promise);
+
+    const user = userEvent.setup();
+    render(<WatchLaterButton video={SNAPSHOT} initialInWatchLater={false} />);
+
+    const button = screen.getByRole("button", { name: "Add to Watch Later" });
+    await user.click(button);
+
+    expect(button).toBeDisabled();
+    await user.click(button);
+    await user.keyboard("{Enter}");
+
+    expect(toggleWatchLaterMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      gate.resolve({ inWatchLater: true });
+      await gate.promise;
+    });
+
+    await waitFor(() => expect(button).toBeEnabled());
+  });
+
+  it("clears the inline error when a later attempt succeeds", async () => {
+    toggleWatchLaterMock
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ inWatchLater: true });
+
+    const user = userEvent.setup();
+    render(<WatchLaterButton video={SNAPSHOT} initialInWatchLater={false} />);
+
+    const button = screen.getByRole("button", { name: "Add to Watch Later" });
+
+    await user.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not update Watch Later");
+
+    await user.click(button);
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(toggleWatchLaterMock).toHaveBeenCalledTimes(2);
+  });
 });

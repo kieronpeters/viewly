@@ -201,4 +201,103 @@ describe("PlaylistPicker", () => {
     expect(screen.getByText("No playlists yet.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New playlist" })).toBeInTheDocument();
   });
+
+  it("opens from the keyboard and closes again with Escape", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.tab();
+    const trigger = screen.getByRole("button", { name: "Add to playlist" });
+    expect(trigger).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Road trip" })).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes when the trigger is pressed a second time", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    const trigger = screen.getByRole("button", { name: "Add to playlist" });
+    await user.click(trigger);
+    await user.click(trigger);
+
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+  });
+
+  it("closes when the user clicks outside the control", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    expect(screen.getByRole("group", { name: "Add to playlist" })).toBeInTheDocument();
+
+    await user.click(document.body);
+
+    expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+  });
+
+  it("closes the create form with Escape from the name field", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "New playlist" }));
+
+    const nameField = screen.getByLabelText("New playlist name");
+    await user.type(nameField, "Chill");
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to playlist" })).toHaveFocus();
+    expect(createPlaylistMock).not.toHaveBeenCalled();
+  });
+
+  it("returns to the list when the create form is cancelled", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "New playlist" }));
+    await user.type(screen.getByLabelText("New playlist name"), "Chill");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByLabelText("New playlist name")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Road trip" })).toBeInTheDocument();
+    expect(createPlaylistMock).not.toHaveBeenCalled();
+    expect(addToPlaylistMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed create and keeps the form open for a retry", async () => {
+    const user = userEvent.setup();
+
+    createPlaylistMock.mockRejectedValue(new Error("database unavailable"));
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "New playlist" }));
+    await user.type(screen.getByLabelText("New playlist name"), "Chill");
+    await user.click(screen.getByRole("button", { name: "Create and add" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not create the playlist. Please try again.",
+    );
+    expect(screen.getByLabelText("New playlist name")).toBeInTheDocument();
+    expect(addToPlaylistMock).not.toHaveBeenCalled();
+  });
 });

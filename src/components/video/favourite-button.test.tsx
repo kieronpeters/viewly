@@ -157,4 +157,82 @@ describe("FavouriteButton", () => {
     expect(button).toHaveClass("min-h-11", "min-w-11");
     expect(button).toHaveClass("focus-visible:ring-2");
   });
+
+  it("toggles with Enter when reached by keyboard", async () => {
+    toggleFavouriteMock.mockResolvedValue({ favourited: true });
+
+    const user = userEvent.setup();
+    render(<FavouriteButton video={SNAPSHOT} initialFavourite={false} />);
+
+    await user.tab();
+    const button = screen.getByRole("button", { name: "Add to favourites" });
+    expect(button).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(toggleFavouriteMock).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("toggles with Space when reached by keyboard", async () => {
+    toggleFavouriteMock.mockResolvedValue({ favourited: false });
+
+    const user = userEvent.setup();
+    render(<FavouriteButton video={SNAPSHOT} initialFavourite />);
+
+    await user.tab();
+    const button = screen.getByRole("button", { name: "Remove from favourites" });
+    expect(button).toHaveFocus();
+
+    await user.keyboard(" ");
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(toggleFavouriteMock).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("ignores a second press while the first is still pending", async () => {
+    const gate = deferred<{ favourited: boolean }>();
+    toggleFavouriteMock.mockReturnValue(gate.promise);
+
+    const user = userEvent.setup();
+    render(<FavouriteButton video={SNAPSHOT} initialFavourite={false} />);
+
+    const button = screen.getByRole("button", { name: "Add to favourites" });
+    await user.click(button);
+
+    expect(button).toBeDisabled();
+    await user.click(button);
+    await user.keyboard("{Enter}");
+
+    expect(toggleFavouriteMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      gate.resolve({ favourited: true });
+      await gate.promise;
+    });
+
+    await waitFor(() => expect(button).toBeEnabled());
+  });
+
+  it("clears the inline error when a later attempt succeeds", async () => {
+    toggleFavouriteMock
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ favourited: true });
+
+    const user = userEvent.setup();
+    render(<FavouriteButton video={SNAPSHOT} initialFavourite={false} />);
+
+    const button = screen.getByRole("button", { name: "Add to favourites" });
+
+    await user.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not update favourites");
+
+    await user.click(button);
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(toggleFavouriteMock).toHaveBeenCalledTimes(2);
+  });
 });
