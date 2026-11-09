@@ -45,8 +45,32 @@ describe("PlaylistPicker", () => {
     const trigger = screen.getByRole("button", { name: "Add to playlist" });
 
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(trigger).toHaveAttribute("aria-controls");
+    // The panel is not rendered, so there is no element for aria-controls to
+    // reference; a dangling id would be an invalid relationship.
+    expect(trigger).not.toHaveAttribute("aria-controls");
     expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+  });
+
+  it("points aria-controls at the panel only while it exists", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    const trigger = screen.getByRole("button", { name: "Add to playlist" });
+
+    await user.click(trigger);
+
+    const panel = screen.getByRole("group", { name: "Add to playlist" });
+    const controls = trigger.getAttribute("aria-controls");
+
+    expect(controls).toBeTruthy();
+    expect(panel).toHaveAttribute("id", controls as string);
+    // The reference resolves to a real element in the document.
+    expect(document.getElementById(controls as string)).toBe(panel);
+
+    await user.keyboard("{Escape}");
+
+    expect(trigger).not.toHaveAttribute("aria-controls");
   });
 
   it("opens inline, lists every playlist and focuses the first action", async () => {
@@ -146,9 +170,17 @@ describe("PlaylistPicker", () => {
 
     await user.click(screen.getByRole("button", { name: "Add to playlist" }));
     await user.click(screen.getByRole("button", { name: "New playlist" }));
+
+    const field = screen.getByLabelText("New playlist name");
+
     await user.click(screen.getByRole("button", { name: "Create and add" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a playlist name.");
+    const alert = await screen.findByRole("alert");
+
+    expect(alert).toHaveTextContent("Enter a playlist name.");
+    // The field is marked invalid and the alert is its description.
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field).toHaveAttribute("aria-describedby", alert.id);
     expect(createPlaylistMock).not.toHaveBeenCalled();
     expect(addToPlaylistMock).not.toHaveBeenCalled();
   });

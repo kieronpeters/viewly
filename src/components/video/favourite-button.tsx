@@ -73,7 +73,10 @@ export function FavouriteButton({ video, initialFavourite, className }: Favourit
           "inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-border bg-background/90 text-muted-foreground shadow-sm backdrop-blur transition-colors outline-none",
           "hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:opacity-60",
-          favourited && "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15",
+          // Saved state: an opaque canvas fill keeps the violet icon readable
+          // over any thumbnail. A translucent `bg-primary/10` let the image
+          // through and measured as low as 1.7:1 on a mid-tone thumbnail.
+          favourited && "border-primary/40 bg-background text-primary hover:bg-surface",
         )}
       >
         <Heart

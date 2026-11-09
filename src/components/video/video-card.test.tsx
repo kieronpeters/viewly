@@ -144,20 +144,41 @@ describe("VideoCard", () => {
     );
   });
 
-  it("renders the thumbnail with the title as its alt text", () => {
-    render(<VideoCard video={VIDEO_FIXTURE} />);
+  it("keeps the decorative thumbnail out of the link's accessible name", () => {
+    const { container } = render(<VideoCard video={VIDEO_FIXTURE} />);
 
-    const image = screen.getByRole("img", { name: VIDEO_FIXTURE.title });
+    const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
+    const image = container.querySelector("img");
 
-    expect(image).toHaveAttribute("alt", VIDEO_FIXTURE.title);
+    // The title is already the adjacent `<h3>` inside the same link. A
+    // non-empty `alt` would repeat it, so the image is decorative and is not
+    // exposed as an `img` at all.
+    expect(image).not.toBeNull();
+    expect(image).toHaveAttribute("alt", "");
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(within(link).queryByRole("img")).not.toBeInTheDocument();
+    // The link is named by the title once, not by the whole text block.
+    expect(link).toHaveAccessibleName(VIDEO_FIXTURE.title);
+    // The channel, views and duration stay part of the link's text content.
+    expect(within(link).getByText(VIDEO_FIXTURE.channelTitle)).toBeInTheDocument();
+    expect(within(link).getByText("1.5M views")).toBeInTheDocument();
+    expect(within(link).getByText("3:33")).toBeInTheDocument();
     // jsdom cannot decode the optimizer URL, so only the encoded source is asserted.
-    expect(image.getAttribute("src")).toContain(encodeURIComponent(VIDEO_FIXTURE.thumbnailUrl));
+    expect(image?.getAttribute("src")).toContain(encodeURIComponent(VIDEO_FIXTURE.thumbnailUrl));
     // Lock the responsive contract: a sized `fill` image inside a fixed 16:9 box.
     expect(image).toHaveAttribute(
       "sizes",
       "(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw",
     );
-    expect(image.parentElement).toHaveClass("relative", "aspect-video");
+    expect(image?.parentElement).toHaveClass("relative", "aspect-video");
+  });
+
+  it("names the video with a level-three heading under the row heading", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} />);
+
+    expect(
+      screen.getByRole("heading", { level: 3, name: VIDEO_FIXTURE.title }),
+    ).toBeInTheDocument();
   });
 
   it("omits the duration badge when the duration is null", () => {

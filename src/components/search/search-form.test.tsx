@@ -77,6 +77,28 @@ describe("SearchForm", () => {
     expect(input).toHaveFocus();
   });
 
+  it("announces why an empty submit does nothing", async () => {
+    const user = userEvent.setup();
+    render(<SearchForm />);
+    const input = getSearchbox();
+
+    await user.click(screen.getByRole("button", { name: /search/i }));
+
+    const alert = await screen.findByRole("alert");
+
+    expect(alert).toHaveTextContent("Enter a search term to search.");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", alert.id);
+    expect(push).not.toHaveBeenCalled();
+    expect(input).toHaveFocus();
+
+    // Editing the query clears the error state again.
+    await user.type(input, "cats");
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-invalid");
+  });
+
   it("searches for the edited prefill instead of the original query", async () => {
     const user = userEvent.setup();
     render(<SearchForm initialQuery="cats" />);

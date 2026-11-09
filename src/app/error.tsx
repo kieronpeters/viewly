@@ -59,7 +59,7 @@ export default function ErrorBoundary({ error, reset, retry }: ErrorBoundaryProp
         <h1 id="error-heading" className="mt-2 text-2xl font-semibold tracking-tight">
           Something went wrong
         </h1>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        <p className="mt-3 text-sm leading-6 text-muted-foreground" role="alert">
           We hit an unexpected error while loading this page. Trying again often fixes it. If it
           keeps happening, go back home and start over.
         </p>

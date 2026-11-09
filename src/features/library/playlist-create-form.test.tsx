@@ -44,6 +44,22 @@ describe("PlaylistCreateForm", () => {
     expect(createPlaylistMock).not.toHaveBeenCalled();
   });
 
+  it("marks the field invalid and links the error when the name is empty", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistCreateForm />);
+
+    const input = screen.getByLabelText("Playlist name");
+
+    await user.click(screen.getByRole("button", { name: "Create playlist" }));
+
+    const alert = await screen.findByRole("alert");
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", alert.id);
+    expect(createPlaylistMock).not.toHaveBeenCalled();
+  });
+
   it("keeps the typed name and reports a failed create", async () => {
     const user = userEvent.setup();
 

@@ -28,6 +28,7 @@ export function PlaylistRenameForm({ playlistId, name }: PlaylistManageProps) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const inputId = useId();
+  const errorId = useId();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -70,6 +71,8 @@ export function PlaylistRenameForm({ playlistId, name }: PlaylistManageProps) {
           maxLength={MAX_PLAYLIST_NAME_LENGTH}
           autoComplete="off"
           disabled={isPending}
+          invalid={error !== null}
+          aria-describedby={error === null ? undefined : errorId}
           onChange={(event) => setValue(event.target.value)}
           className="min-h-11 sm:max-w-xs"
         />
@@ -84,7 +87,7 @@ export function PlaylistRenameForm({ playlistId, name }: PlaylistManageProps) {
         </p>
       )}
       {error === null ? null : (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
@@ -149,7 +152,7 @@ export function PlaylistDeleteButton({ playlistId, name }: PlaylistManageProps) 
     <div
       role="group"
       aria-label="Confirm delete playlist"
-      className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+      className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 p-3"
     >
       <p className="text-sm break-words text-foreground">
         Delete “{name}”? This also removes every video from the playlist.

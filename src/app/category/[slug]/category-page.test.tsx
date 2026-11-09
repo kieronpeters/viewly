@@ -87,6 +87,22 @@ describe("CategoryPageContent", () => {
     expect(getCategoryVideosMock).toHaveBeenCalledWith("technology", { pageToken: null });
   });
 
+  it("keeps heading order at h1 → h2 → h3 above the card titles", async () => {
+    await renderCategory();
+
+    expect(screen.getAllByRole("heading").map((heading) => heading.tagName)).toEqual([
+      "H1",
+      "H2",
+      "H3",
+      "H3",
+    ]);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Videos in Technology" }),
+    ).toBeInTheDocument();
+    // The grid is named by the hidden h2 rather than a separate aria-label.
+    expect(screen.getByRole("list", { name: "Videos in Technology" })).toBeInTheDocument();
+  });
+
   it("calls notFound for an unknown slug without fetching videos", async () => {
     getCategoryBySlugMock.mockReturnValue(null);
 

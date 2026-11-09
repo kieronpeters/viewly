@@ -119,49 +119,59 @@ export function PlaylistDetailView({ playlist, rows }: PlaylistDetailViewProps) 
           }
         />
       ) : (
-        <ol
-          role="list"
-          aria-label={`Videos in ${playlist.name}`}
-          className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-        >
-          {rows.map(({ videoId, video }) => (
-            <li
-              key={videoId}
-              className={cn(
-                "min-w-0",
-                video === null && "sm:col-span-2 lg:col-span-3 xl:col-span-4",
-              )}
-            >
-              {video === null ? (
-                <div
-                  data-slot="playlist-unavailable"
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4"
-                >
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <p className="text-sm font-medium text-foreground">Unavailable video</p>
-                    <p className="text-xs break-all text-muted-foreground">
-                      Video id: <span className="font-mono">{videoId}</span>
-                    </p>
+        <>
+          {/*
+            Card titles are `<h3>`, so this visually hidden `<h2>` keeps the
+            heading order at h1 → h2 → h3 and names the ordered list for
+            assistive technology.
+          */}
+          <h2 id="playlist-videos-heading" className="sr-only">
+            Videos in {playlist.name}
+          </h2>
+          <ol
+            role="list"
+            aria-labelledby="playlist-videos-heading"
+            className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          >
+            {rows.map(({ videoId, video }) => (
+              <li
+                key={videoId}
+                className={cn(
+                  "min-w-0",
+                  video === null && "sm:col-span-2 lg:col-span-3 xl:col-span-4",
+                )}
+              >
+                {video === null ? (
+                  <div
+                    data-slot="playlist-unavailable"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4"
+                  >
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <p className="text-sm font-medium text-foreground">Unavailable video</p>
+                      <p className="text-xs break-all text-muted-foreground">
+                        Video id: <span className="font-mono">{videoId}</span>
+                      </p>
+                    </div>
+                    <PlaylistItemRemove
+                      playlistId={playlist.id}
+                      videoId={videoId}
+                      label={`unavailable video ${videoId}`}
+                    />
                   </div>
-                  <PlaylistItemRemove
-                    playlistId={playlist.id}
-                    videoId={videoId}
-                    label={`unavailable video ${videoId}`}
-                  />
-                </div>
-              ) : (
-                <div className="flex h-full flex-col gap-2">
-                  <VideoCard video={video} className="h-full" />
-                  <PlaylistItemRemove
-                    playlistId={playlist.id}
-                    videoId={videoId}
-                    label={video.title}
-                  />
-                </div>
-              )}
-            </li>
-          ))}
-        </ol>
+                ) : (
+                  <div className="flex h-full flex-col gap-2">
+                    <VideoCard video={video} className="h-full" />
+                    <PlaylistItemRemove
+                      playlistId={playlist.id}
+                      videoId={videoId}
+                      label={video.title}
+                    />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ol>
+        </>
       )}
     </article>
   );

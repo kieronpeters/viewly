@@ -26,7 +26,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
         "placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground",
         "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50",
         "disabled:cursor-not-allowed disabled:opacity-50",
-        "aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20",
+        // Invalid state is carried by the red border and the linked error
+        // message. A red `ring-*` here would compete with the focus ring and
+        // win in the cascade, leaving focus indicated at only ~1.5:1.
+        "aria-invalid:border-destructive",
         className,
       )}
       {...props}

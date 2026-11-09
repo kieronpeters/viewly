@@ -66,6 +66,11 @@ export interface VideoCardProps {
  * stable whether one or more controls are rendered. The buttons sit in a flex
  * row with a gap, and each control's inline error stacks underneath its own
  * button.
+ *
+ * The thumbnail is decorative: the adjacent `<h3>` already names the video and
+ * both sit inside the same link, so an `alt` equal to the title would repeat
+ * the link's name twice. `alt=""` keeps the image out of the accessibility tree
+ * while the visible duration badge stays part of the link text.
  */
 export function VideoCard({
   video,
@@ -82,14 +87,21 @@ export function VideoCard({
 
   return (
     <div data-slot="video-card" className={cn("relative min-w-0", className)}>
+      {/*
+        The link contains the thumbnail, duration, title, channel and view
+        count, so its computed name would start with the duration badge. Name
+        the destination explicitly; the visible text stays readable in browse
+        mode and the label still contains the visible title (Label in Name).
+      */}
       <Link
         href={`/watch/${video.id}`}
+        aria-label={video.title}
         className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl bg-card text-card-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <div className="relative aspect-video w-full overflow-hidden bg-muted">
           <Image
             src={video.thumbnailUrl}
-            alt={video.title}
+            alt=""
             fill
             sizes={THUMBNAIL_SIZES}
             className="object-cover"

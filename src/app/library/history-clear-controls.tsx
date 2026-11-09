@@ -72,7 +72,7 @@ export function HistoryClearEntryButton({ videoId, title }: HistoryClearEntryBut
     <div
       role="group"
       aria-label="Confirm remove from history"
-      className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+      className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 p-3"
     >
       <p className="text-sm break-words text-foreground">
         Remove “{title}” from your watch history?
@@ -164,7 +164,7 @@ export function HistoryClearAllButton({ count }: HistoryClearAllButtonProps) {
     <div
       role="group"
       aria-label="Confirm clear watch history"
-      className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+      className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 p-3"
     >
       <p className="text-sm text-foreground">
         Clear all {count} watched {count === 1 ? "video" : "videos"}? This cannot be undone.

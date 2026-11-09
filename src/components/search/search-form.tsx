@@ -31,18 +31,23 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
   const router = useRouter();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [query, setQuery] = React.useState(initialQuery);
+  const [error, setError] = React.useState<string | null>(null);
   const [isPending, startTransition] = React.useTransition();
+  const errorId = React.useId();
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmed = query.trim();
     if (trimmed === "") {
-      // Nothing to search for: keep focus in the field instead of navigating.
+      // Nothing to search for: announce why and keep focus in the field instead
+      // of navigating, so the silent no-op is not mistaken for a broken form.
+      setError("Enter a search term to search.");
       inputRef.current?.focus();
       return;
     }
 
+    setError(null);
     const href = buildSearchHref(trimmed);
     startTransition(() => router.push(href));
   }
@@ -66,11 +71,18 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
           name="q"
           type="search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            if (error !== null) {
+              setError(null);
+            }
+          }}
           placeholder="Search videos"
           autoComplete="off"
           maxLength={MAX_SEARCH_QUERY_LENGTH}
           enterKeyHint="search"
+          aria-invalid={error === null ? undefined : true}
+          aria-describedby={error === null ? undefined : errorId}
           className="h-11 min-w-0 flex-1 text-base"
         />
         <Button type="submit" size="lg" disabled={isPending} className="h-11 shrink-0 px-4">
@@ -78,6 +90,12 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
           <span>Search</span>
         </Button>
       </div>
+
+      {error === null ? null : (
+        <p id={errorId} role="alert" className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </form>
   );
 }

@@ -106,6 +106,21 @@ describe("PlaylistPageContent", () => {
     expect(getVideosMock).toHaveBeenCalledWith(PLAYLIST.videoIds);
   });
 
+  it("keeps heading order at h1 → h2 → h3 above the playlist videos", async () => {
+    render(await PlaylistPageContent({ params: paramsFor(PLAYLIST.id) }));
+
+    expect(screen.getAllByRole("heading").map((heading) => heading.tagName)).toEqual([
+      "H1",
+      "H2",
+      "H3",
+      "H3",
+    ]);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Videos in Road trip" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Videos in Road trip" })).toBeInTheDocument();
+  });
+
   it("renders an unavailable row with the stored id when metadata is missing", async () => {
     render(await PlaylistPageContent({ params: paramsFor(PLAYLIST.id) }));
 

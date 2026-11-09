@@ -25,13 +25,16 @@ const dot: Record<ToastVariant, string> = {
  * not include a provider, portal, queue or auto-dismiss timer, and it stays in
  * the flow where the caller renders it. Wire those up in the feature that owns
  * the notification.
+ *
+ * Errors are assertive (`role="alert"`) because they interrupt; every other
+ * variant is a polite `role="status"`.
  */
 export function Toast({ message, variant = "info", className }: ToastProps) {
   return (
     <div
       data-slot="toast"
       data-variant={variant}
-      role="status"
+      role={variant === "error" ? "alert" : "status"}
       className={cn(
         "flex items-start gap-2 rounded-lg border px-3 py-2 text-sm text-foreground",
         surface[variant],

@@ -75,8 +75,18 @@ export async function CategoryPageContent({ params, searchParams }: CategoryPage
     <section aria-labelledby="category-heading" className="flex flex-col gap-4">
       <CategoryHeading name={category.name} />
 
+      {/*
+        Card titles are `<h3>`. This visually hidden `<h2>` keeps the page's
+        heading order at h1 → h2 → h3 instead of jumping straight to h3, and it
+        also names the grid for assistive technology.
+      */}
+      <h2 id="category-videos-heading" className="sr-only">
+        Videos in {category.name}
+      </h2>
+
       <ul
         role="list"
+        aria-labelledby="category-videos-heading"
         className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
       >
         {page.items.map((video) => (

@@ -25,6 +25,7 @@ export function PlaylistCreateForm() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const inputId = useId();
+  const errorId = useId();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -65,6 +66,8 @@ export function PlaylistCreateForm() {
           maxLength={MAX_PLAYLIST_NAME_LENGTH}
           autoComplete="off"
           disabled={isPending}
+          invalid={error !== null}
+          aria-describedby={error === null ? undefined : errorId}
           onChange={(event) => setName(event.target.value)}
           className="min-h-11 sm:max-w-xs"
         />
@@ -79,7 +82,7 @@ export function PlaylistCreateForm() {
         </p>
       )}
       {error === null ? null : (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
