@@ -22,15 +22,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
+/*
+ * These resets belong in `@layer base`. Written unlayered they would beat every
+ * Tailwind utility in `@layer utilities` (unlayered CSS wins over layered CSS),
+ * which silently removed every `p-*`, `m-*` and `gap-*` value in the app — the
+ * 390px home page rendered flush against both edges as a result.
+ */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
 @theme inline {

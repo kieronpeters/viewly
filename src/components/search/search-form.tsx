@@ -56,7 +56,7 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
       onSubmit={handleSubmit}
       className={className}
     >
-      <div className="flex w-full items-center gap-2">
+      <div className="flex w-full min-w-0 items-center gap-2">
         <label htmlFor={INPUT_ID} className="sr-only">
           Search videos
         </label>
@@ -71,7 +71,7 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
           autoComplete="off"
           maxLength={MAX_SEARCH_QUERY_LENGTH}
           enterKeyHint="search"
-          className="h-11 text-base"
+          className="h-11 min-w-0 flex-1 text-base"
         />
         <Button type="submit" size="lg" disabled={isPending} className="h-11 shrink-0 px-4">
           <Search aria-hidden="true" />

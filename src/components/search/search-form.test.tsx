@@ -114,6 +114,22 @@ describe("SearchForm", () => {
     expect(parseHref(push.mock.calls[0]?.[0] as string).searchParams.get("q")).toBe("cats");
   });
 
+  it("keeps the field shrinkable so the row fits a 390px column", () => {
+    // The submit button is fixed width (`shrink-0`), so the field must be the
+    // part that gives: `min-w-0` removes the input's intrinsic minimum and
+    // `flex-1` makes it take exactly the remaining space. jsdom has no layout,
+    // so this guards the classes the CSS relies on rather than a pixel width.
+    render(<SearchForm />);
+
+    const input = getSearchbox();
+    const row = input.closest("div");
+    const button = screen.getByRole("button", { name: /search/i });
+
+    expect(row).toHaveClass("flex", "w-full", "min-w-0");
+    expect(input).toHaveClass("min-w-0", "flex-1");
+    expect(button).toHaveClass("shrink-0");
+  });
+
   it("keeps a plain GET form so search works before hydration", () => {
     render(<SearchForm />);
 
