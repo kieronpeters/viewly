@@ -571,3 +571,543 @@ describe("caching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+/** 11-character ids, so batching tests can generate as many as they need. */
+function makeVideoId(index: number): string {
+  return `vid${String(index).padStart(8, "0")}`;
+}
+
+/**
+ * Runs a call that is expected to retry once, on fake timers so the 200 ms
+ * backoff costs no wall-clock time. The outcome (value or error) is replayed to
+ * the caller.
+ */
+async function withRetryClock<T>(run: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers();
+  const settled = run().then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+
+  // Let the first attempt settle, then fire the single retry timer.
+  await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(200);
+
+  const outcome = await settled;
+
+  if (!outcome.ok) {
+    throw outcome.error;
+  }
+
+  return outcome.value;
+}
+
+describe("request construction", () => {
+  it("sends exactly the search parameters, omitting an absent page token", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(searchPayload([])));
+
+    await searchVideos({ query: "  spaced   query  " });
+
+    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
+      part: "snippet",
+      type: "video",
+      q: "spaced   query",
+      maxResults: "25",
+      key: FAKE_KEY,
+    });
+  });
+
+  it("round-trips a query with special characters and includes the page token", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(searchPayload([])));
+
+    await searchVideos({ query: "rock & roll = 100%", maxResults: 7, pageToken: "CAoQAA" });
+
+    const url = requestUrl();
+    expect(url.searchParams.get("q")).toBe("rock & roll = 100%");
+    expect(url.searchParams.get("maxResults")).toBe("7");
+    expect(url.searchParams.get("pageToken")).toBe("CAoQAA");
+  });
+
+  it("sends exactly the video detail parameters", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    await getVideo(VIDEO_ID);
+
+    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
+      part: "snippet,contentDetails,statistics",
+      id: VIDEO_ID,
+      key: FAKE_KEY,
+    });
+  });
+
+  it("sends trending parameters with the default region", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    await getTrending();
+
+    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
+      part: "snippet,contentDetails,statistics",
+      chart: "mostPopular",
+      regionCode: "US",
+      maxResults: "25",
+      key: FAKE_KEY,
+    });
+  });
+
+  it("sends category parameters with the default region", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
+
+    await listVideoCategories();
+
+    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
+      part: "snippet",
+      regionCode: "US",
+      key: FAKE_KEY,
+    });
+  });
+
+  it("upper-cases a lower-case category region", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
+
+    await listVideoCategories("gb");
+
+    expect(requestUrl().searchParams.get("regionCode")).toBe("GB");
+  });
+
+  it("rejects invalid region codes before the network", async () => {
+    for (const regionCode of ["", "g", "gbr", "12", " gb", "ÜS"]) {
+      await expect(getTrending({ regionCode })).rejects.toBeInstanceOf(DomainValidationError);
+      await expect(listVideoCategories(regionCode)).rejects.toBeInstanceOf(DomainValidationError);
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("maxResults clamping", () => {
+  it("clamps to 1..50 and falls back to 25 for non-finite values", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    const cases: Array<[number | undefined, string]> = [
+      [undefined, "25"],
+      [1, "1"],
+      [50, "50"],
+      [51, "50"],
+      [500, "50"],
+      [0, "1"],
+      [-3, "1"],
+      [2.9, "2"],
+      [Number.NaN, "25"],
+      [Number.POSITIVE_INFINITY, "25"],
+    ];
+
+    for (const [index, [value, expected]] of cases.entries()) {
+      // Distinct queries keep the cache from hiding a second request.
+      await searchVideos({ query: `clamp ${index}`, maxResults: value });
+
+      expect(requestUrl(index).searchParams.get("maxResults")).toBe(expected);
+    }
+  });
+
+  it("applies the same clamp to trending", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    await getTrending({ maxResults: 0 });
+    await getTrending({ maxResults: 999 });
+
+    expect(requestUrl(0).searchParams.get("maxResults")).toBe("1");
+    expect(requestUrl(1).searchParams.get("maxResults")).toBe(String(MAX_RESULTS_LIMIT));
+  });
+});
+
+describe("getVideos batching boundaries", () => {
+  it("sends one request for exactly 50 ids", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      const ids = (url.searchParams.get("id") ?? "").split(",");
+      return jsonResponse(videoPayload(ids.map((id) => videoItem(id))));
+    });
+
+    const ids = Array.from({ length: 50 }, (_unused, index) => makeVideoId(index));
+    const videos = await getVideos(ids);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requestUrl(0).searchParams.get("id")?.split(",")).toHaveLength(50);
+    expect(videos).toHaveLength(50);
+  });
+
+  it("sends two requests for 100 ids without dropping any", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      const ids = (url.searchParams.get("id") ?? "").split(",");
+      return jsonResponse(videoPayload(ids.map((id) => videoItem(id))));
+    });
+
+    const ids = Array.from({ length: 100 }, (_unused, index) => makeVideoId(index));
+    const videos = await getVideos(ids);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestUrl(0).searchParams.get("id")?.split(",")).toHaveLength(50);
+    expect(requestUrl(1).searchParams.get("id")?.split(",")).toHaveLength(50);
+    expect(videos.map((video) => video.id)).toEqual(ids);
+  });
+
+  it("requests duplicate ids once and keeps first-seen order", async () => {
+    const first = makeVideoId(1);
+    const second = makeVideoId(2);
+    fetchMock.mockResolvedValue(
+      // The API is free to return items in any order.
+      jsonResponse(videoPayload([videoItem(second), videoItem(first)])),
+    );
+
+    const videos = await getVideos([first, second, first]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requestUrl().searchParams.get("id")).toBe(`${first},${second}`);
+    expect(videos.map((video) => video.id)).toEqual([first, second]);
+  });
+
+  it("omits ids the API does not return", async () => {
+    const returned = makeVideoId(1);
+    const missing = makeVideoId(2);
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(returned)])));
+
+    const videos = await getVideos([returned, missing]);
+
+    expect(videos.map((video) => video.id)).toEqual([returned]);
+  });
+});
+
+describe("retry policy", () => {
+  it("retries a 500 once and succeeds", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(apiErrorPayload(503, "backendError"), 503))
+      .mockResolvedValueOnce(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    const page = await withRetryClock(() => searchVideos({ query: "retry 500" }));
+
+    expect(page.items).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a 429 once and succeeds", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(apiErrorPayload(429, "rateLimitExceeded"), 429))
+      .mockResolvedValueOnce(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    const detail = await withRetryClock(() => getVideo(VIDEO_ID));
+
+    expect(detail?.id).toBe(VIDEO_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after one retry of a 429 and maps it to bad_request", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(apiErrorPayload(429, "rateLimitExceeded"), 429),
+    );
+
+    const error = expectApiError(
+      await withRetryClock(() => readThrown(() => searchVideos({ query: "retry twice 429" }))),
+      "bad_request",
+    );
+
+    expect(error.status).toBe(429);
+    expect(error.reason).toBe("rateLimitExceeded");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a 400", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(apiErrorPayload(400, "invalidParameter"), 400),
+    );
+
+    expectApiError(await readThrown(() => searchVideos({ query: "no retry 400" })), "bad_request");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a 404", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(apiErrorPayload(404, "videoNotFound"), 404),
+    );
+
+    expectApiError(await readThrown(() => getVideo(VIDEO_ID)), "not_found");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps 403 keyInvalid to auth and other 403 reasons to bad_request", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(apiErrorPayload(403, "keyInvalid"), 403));
+
+    const auth = expectApiError(
+      await readThrown(() => searchVideos({ query: "forbidden key" })),
+      "auth",
+    );
+    expect(auth.status).toBe(403);
+    expect(auth.reason).toBe("keyInvalid");
+
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(apiErrorPayload(403, "accessNotConfigured"), 403),
+    );
+
+    const badRequest = expectApiError(
+      await readThrown(() => searchVideos({ query: "forbidden config" })),
+      "bad_request",
+    );
+    expect(badRequest.reason).toBe("accessNotConfigured");
+  });
+
+  it("maps 401 to bad_request", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(apiErrorPayload(401, "unauthorized"), 401),
+    );
+
+    const error = expectApiError(await readThrown(() => getVideo(VIDEO_ID)), "bad_request");
+
+    expect(error.status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a malformed 200 body as upstream", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("not-json", { status: 200, headers: { "content-type": "application/json" } }),
+    );
+
+    const error = expectApiError(await readThrown(() => getVideo(VIDEO_ID)), "upstream");
+
+    expect(error.status).toBe(200);
+    expect(error.reason).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a reason that is not a safe enumerated identifier", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(
+        { error: { code: 503, errors: [{ reason: `legacy reason ${FAKE_KEY}` }] } },
+        503,
+      ),
+    );
+
+    const error = expectApiError(
+      await withRetryClock(() => readThrown(() => searchVideos({ query: "unsafe reason" }))),
+      "upstream",
+    );
+
+    expect(error.reason).toBeNull();
+    expect(error.message).not.toContain(FAKE_KEY);
+  });
+
+  it("picks the first safe reason from the error envelope", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: 403,
+            errors: [
+              { reason: "not a safe reason" },
+              { reason: "quotaExceeded" },
+              { reason: "anotherReason" },
+            ],
+          },
+        },
+        403,
+      ),
+    );
+
+    const error = expectApiError(
+      await readThrown(() => searchVideos({ query: "first safe reason" })),
+      "quota",
+    );
+
+    expect(error.reason).toBe("quotaExceeded");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("malformed upstream payloads", () => {
+  it("surfaces a malformed search payload as a DomainValidationError", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ nope: true }));
+
+    const error = await readThrown(() => searchVideos({ query: "malformed search" }));
+
+    expect(error).toBeInstanceOf(DomainValidationError);
+    if (error instanceof DomainValidationError) {
+      expect(error.code).toBe("malformed_payload");
+    }
+  });
+
+  it("surfaces a malformed video payload as a DomainValidationError", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ items: "not-an-array" }));
+
+    const error = await readThrown(() => getVideo(VIDEO_ID));
+
+    expect(error).toBeInstanceOf(DomainValidationError);
+    if (error instanceof DomainValidationError) {
+      expect(error.code).toBe("malformed_payload");
+    }
+  });
+
+  it("surfaces a malformed trending payload as a DomainValidationError", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ items: null }));
+
+    const error = await readThrown(() => getTrending());
+
+    expect(error).toBeInstanceOf(DomainValidationError);
+    if (error instanceof DomainValidationError) {
+      expect(error.code).toBe("malformed_payload");
+    }
+  });
+
+  it("surfaces a malformed category payload as a DomainValidationError", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ items: {} }));
+
+    const error = await readThrown(() => listVideoCategories("us"));
+
+    expect(error).toBeInstanceOf(DomainValidationError);
+    if (error instanceof DomainValidationError) {
+      expect(error.code).toBe("malformed_payload");
+    }
+  });
+
+  // REGRESSION (T38): guards the "errors are never cached" guarantee. A 200
+  // response whose body fails normalization must not be stored in the request
+  // cache, or the DomainValidationError would be replayed for the full TTL
+  // instead of being retried upstream. This test must fail if the cache ever
+  // stores an unnormalized payload again.
+  it("re-fetches after a payload that fails normalization instead of serving it from cache", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ nope: true }))
+      .mockResolvedValueOnce(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await expect(searchVideos({ query: "malformed then good" })).rejects.toBeInstanceOf(
+      DomainValidationError,
+    );
+
+    const page = await searchVideos({ query: "malformed then good" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(page.items).toHaveLength(1);
+  });
+});
+
+describe("key containment", () => {
+  it("never exposes the key in results from any endpoint", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+
+      if (url.pathname.endsWith("/search")) {
+        return jsonResponse(searchPayload([searchItem(VIDEO_ID)]));
+      }
+
+      if (url.pathname.endsWith("/videoCategories")) {
+        return jsonResponse({
+          items: [{ id: "10", snippet: { title: "Music", assignable: true } }],
+        });
+      }
+
+      return jsonResponse(videoPayload([videoItem(VIDEO_ID)]));
+    });
+
+    const results = [
+      await searchVideos({ query: "key containment" }),
+      await getVideo(VIDEO_ID),
+      await getVideos([VIDEO_ID]),
+      await getTrending(),
+      await listVideoCategories(),
+    ];
+    const serialized = JSON.stringify(results);
+
+    expect(serialized).not.toContain(FAKE_KEY);
+    expect(serialized).not.toContain("AIza");
+    expect(serialized).not.toContain("key=");
+  });
+
+  it("discards a transport error message that contains the request URL", async () => {
+    fetchMock.mockRejectedValue(
+      new TypeError(
+        `fetch failed for https://www.googleapis.com/youtube/v3/search?key=${FAKE_KEY}`,
+      ),
+    );
+
+    const error = expectApiError(await readThrown(() => getTrending()), "network");
+
+    expect(error.message).not.toContain(FAKE_KEY);
+    expect(String(error)).not.toContain(FAKE_KEY);
+    expect(error.stack ?? "").not.toContain(FAKE_KEY);
+    expect(error.cause).toBeUndefined();
+  });
+
+  it("does not forward an upstream body that echoes the key", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: 400,
+            message: `Bad request: https://www.googleapis.com/youtube/v3/search?key=${FAKE_KEY}`,
+            errors: [{ message: `key=${FAKE_KEY}`, reason: "invalidParameter" }],
+          },
+        },
+        400,
+      ),
+    );
+
+    const error = expectApiError(
+      await readThrown(() => searchVideos({ query: "echoing upstream" })),
+      "bad_request",
+    );
+
+    expect(error.reason).toBe("invalidParameter");
+    expect(error.message).not.toContain(FAKE_KEY);
+    expect(String(error)).not.toContain(FAKE_KEY);
+    expect(JSON.stringify(error)).not.toContain(FAKE_KEY);
+    expect(error.stack ?? "").not.toContain(FAKE_KEY);
+  });
+});
+
+describe("cache bypass variants", () => {
+  it("bypasses reads and writes for the value 'true'", async () => {
+    process.env.YOUTUBE_CACHE_DISABLED = "true";
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({ query: "bypass true" });
+    await searchVideos({ query: "bypass true" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("bypasses coalescing too, issuing one request per caller", async () => {
+    process.env.YOUTUBE_CACHE_DISABLED = "on";
+    const resolvers: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    const first = searchVideos({ query: "bypass coalescing" });
+    const second = searchVideos({ query: "bypass coalescing" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    for (const resolve of resolvers) {
+      resolve(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+    }
+
+    const [firstPage, secondPage] = await Promise.all([first, second]);
+    expect(firstPage).toEqual(secondPage);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves a cached video detail without reading the API key", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    const first = await getVideo(VIDEO_ID);
+    setKey(undefined);
+
+    const second = await getVideo(VIDEO_ID);
+
+    expect(second).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
