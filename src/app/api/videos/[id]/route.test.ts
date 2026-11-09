@@ -16,6 +16,7 @@ import { GET } from "@/app/api/videos/[id]/route";
 import { EnvConfigurationError } from "@/lib/env";
 import { YouTubeApiError, getVideo } from "@/lib/youtube/client";
 import type { VideoDetail } from "@/shared/types";
+import { DomainValidationError } from "@/shared/validation";
 
 const VIDEO_ID = "dQw4w9WgXcQ";
 
@@ -96,7 +97,7 @@ describe("GET /api/videos/[id]", () => {
     expect(body).not.toHaveProperty("error.field");
   });
 
-  it("returns 502 without leaking the upstream message, URL or key", async () => {
+  it("returns 429 RATE_LIMITED for an exhausted quota without leaking upstream detail", async () => {
     getVideoMock.mockRejectedValue(
       new YouTubeApiError(
         "quota",
@@ -106,10 +107,13 @@ describe("GET /api/videos/[id]", () => {
     );
 
     const response = await callRoute(VIDEO_ID);
-    const raw = JSON.stringify(await response.json());
+    const body = (await response.json()) as { error: { code: string; message: string } };
 
-    expect(response.status).toBe(502);
-    expect(raw).toContain("UPSTREAM_ERROR");
+    expect(response.status).toBe(429);
+    expect(body.error.code).toBe("RATE_LIMITED");
+    expect(body.error.message.length).toBeGreaterThan(0);
+
+    const raw = JSON.stringify(body);
     expect(raw).not.toContain("quotaExceeded");
     expect(raw).not.toContain("googleapis.com");
     expect(raw).not.toContain("key=");
@@ -117,6 +121,53 @@ describe("GET /api/videos/[id]", () => {
     expect(raw).not.toContain("HTTP 403");
     // The failure is still logged, redacted, on the server.
     expect(errorLog).toHaveBeenCalled();
+  });
+
+  it("returns 502 UPSTREAM_ERROR for a real upstream fault without leaking detail", async () => {
+    getVideoMock.mockRejectedValue(
+      new YouTubeApiError(
+        "upstream",
+        `YouTube returned an unexpected response for https://www.googleapis.com/youtube/v3/videos?key=${FAKE_KEY}`,
+        { status: 500, reason: "backendError" },
+      ),
+    );
+
+    const response = await callRoute(VIDEO_ID);
+    const raw = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(502);
+    expect(raw).toContain("UPSTREAM_ERROR");
+    expect(raw).not.toContain("RATE_LIMITED");
+    expect(raw).not.toContain("backendError");
+    expect(raw).not.toContain("googleapis.com");
+    expect(raw).not.toContain("key=");
+    expect(raw).not.toContain(FAKE_KEY);
+    expect(raw).not.toContain("unexpected response");
+    expect(errorLog).toHaveBeenCalled();
+  });
+
+  it("returns 502 UPSTREAM_ERROR when the upstream payload is malformed", async () => {
+    getVideoMock.mockRejectedValue(
+      new DomainValidationError(
+        "malformed_payload",
+        `Could not read item ${FAKE_KEY} from the upstream body.`,
+        { field: "videoId" },
+      ),
+    );
+
+    const response = await callRoute(VIDEO_ID);
+    const body = (await response.json()) as {
+      error: { code: string; message: string; field?: string };
+    };
+    const raw = JSON.stringify(body);
+
+    expect(response.status).toBe(502);
+    expect(body.error.code).toBe("UPSTREAM_ERROR");
+    expect(body.error.message.length).toBeGreaterThan(0);
+    expect(raw).not.toContain("upstream body");
+    expect(raw).not.toContain(FAKE_KEY);
+    // `malformed_payload` is not the caller's mistake, so it carries no field.
+    expect(body).not.toHaveProperty("error.field");
   });
 
   it("returns 500 CONFIGURATION_ERROR when YouTube rejects the credentials", async () => {
