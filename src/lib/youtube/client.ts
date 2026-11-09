@@ -12,6 +12,14 @@
  * Responses are normalized by `src/shared/youtube.ts` before leaving this module;
  * this client never returns raw API payloads.
  *
+ * ## List vs detail shape (T13)
+ *
+ * `videos.list` has a single normalizer, `normalizeVideoResponse`, which produces
+ * a `VideoDetail`. The list endpoints (`getVideos`, `getTrending`) reuse it and
+ * then project the result onto `VideoSummary` with `toVideoSummary`, so a list
+ * item never carries a `description` own property at runtime. Only `getVideo`
+ * returns `VideoDetail`, and it keeps the description.
+ *
  * ## Caching (T18)
  *
  * Each logical call is wrapped in the process-local cache in `./cache`: the
@@ -536,7 +544,9 @@ function createApiError(
  * Normalizes a `videos.list` payload into summaries.
  *
  * The committed normalizer returns a single video, so each item is normalized in
- * isolation and unusable items are dropped.
+ * isolation and unusable items are dropped. `toVideoSummary` then drops the
+ * detail-only `description`, so list endpoints return true `VideoSummary`
+ * objects rather than `VideoDetail` values narrowed by their declared type.
  */
 function normalizeVideoList(payload: unknown): VideoSummary[] {
   if (!isRecord(payload) || !Array.isArray(payload.items)) {
@@ -547,11 +557,28 @@ function normalizeVideoList(payload: unknown): VideoSummary[] {
   for (const item of payload.items) {
     const detail = normalizeVideoResponse({ items: [item] });
     if (detail !== null) {
-      summaries.push(detail);
+      summaries.push(toVideoSummary(detail));
     }
   }
 
   return summaries;
+}
+
+/**
+ * Projects a normalized `VideoDetail` onto the `VideoSummary` contract.
+ *
+ * This is the one place the detail-only field is removed: it keeps a single
+ * normalisation path (`normalizeVideoResponse`) instead of duplicating the
+ * summary rules here. The returned object has no `description` own property, so
+ * a serialized list never includes descriptions that the contract does not
+ * declare.
+ */
+function toVideoSummary(detail: VideoDetail): VideoSummary {
+  // Copy, then remove the detail-only field so no `description` own property
+  // survives. Deleting from the copy keeps the cached detail (if any) intact.
+  const summary: VideoSummary & { description?: string } = { ...detail };
+  delete summary.description;
+  return summary;
 }
 
 /**

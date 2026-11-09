@@ -18,12 +18,24 @@ import {
 import { YOUTUBE_CACHE_TTLS_MS } from "@/lib/youtube/cache";
 import { DomainValidationError } from "@/shared/validation";
 
+// The real trending route handler, used by the contract test at the end of this
+// file. `route.test.ts` mocks `getTrending`, so only this suite can prove what
+// the real client actually serialises.
+import { GET as getTrendingRoute } from "@/app/api/trending/route";
+
 /** Credential-shaped fake used only to prove the key stays in the request URL. */
 const FAKE_KEY = "AIzaSyFAKE-client-test-key-000000";
 const ORIGINAL_KEY = process.env.YOUTUBE_API_KEY;
 
 const VIDEO_ID = "dQw4w9WgXcQ";
 const SEARCH_QUERY = "never gonna give you up";
+
+/**
+ * Snippet description carried by every fake `videos.list` item. Real responses
+ * always include one, so list endpoints must prove they strip it while the
+ * detail endpoint keeps it.
+ */
+const DESCRIPTION_TEXT = "Official music video. Never gonna give you up.";
 
 const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 
@@ -45,6 +57,7 @@ function videoItem(id: string): Record<string, unknown> {
       channelId: "UCuAXFkgsw1L7xaCfnd5JJOw",
       channelTitle: "Rick Astley",
       publishedAt: "2009-10-25T06:57:33Z",
+      description: DESCRIPTION_TEXT,
       thumbnails: {
         high: {
           url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
@@ -256,6 +269,18 @@ describe("getVideo", () => {
 
     await expect(getVideo(VIDEO_ID)).resolves.toBeNull();
   });
+
+  // CONTRACT (T13): the detail endpoint is the only one that carries the
+  // description; list endpoints must not.
+  it("keeps description as an own property of the detail", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    const detail = await getVideo(VIDEO_ID);
+
+    expect(detail).not.toBeNull();
+    expect(Object.hasOwn(detail as object, "description")).toBe(true);
+    expect(detail?.description).toBe(DESCRIPTION_TEXT);
+  });
 });
 
 describe("getVideos", () => {
@@ -296,6 +321,23 @@ describe("getVideos", () => {
     await expect(getVideos([])).resolves.toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  // CONTRACT (T13): a summary has no `description` own property at runtime, even
+  // though the item is normalized through the detail normalizer.
+  it("returns summaries without a description own-property", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    const videos = await getVideos([VIDEO_ID]);
+
+    expect(videos).toHaveLength(1);
+    const [summary] = videos;
+    expect(summary).not.toBeUndefined();
+    expect(Object.hasOwn(summary as object, "description")).toBe(false);
+    expect(Object.keys(summary as object)).not.toContain("description");
+    expect(JSON.stringify(videos)).not.toContain(DESCRIPTION_TEXT);
+    // The summary fields themselves still arrive intact.
+    expect(summary).toMatchObject({ id: VIDEO_ID, durationSeconds: 213, viewCount: 1500000000 });
+  });
 });
 
 describe("getTrending and listVideoCategories", () => {
@@ -310,6 +352,20 @@ describe("getTrending and listVideoCategories", () => {
     expect(url.searchParams.get("regionCode")).toBe("GB");
     expect(url.searchParams.get("maxResults")).toBe("10");
     expect(videos).toHaveLength(1);
+  });
+
+  // CONTRACT (T13): trending is a list endpoint, so its items are summaries.
+  it("returns trending summaries without a description own-property", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    const videos = await getTrending();
+
+    expect(videos).toHaveLength(1);
+    const [summary] = videos;
+    expect(summary).not.toBeUndefined();
+    expect(Object.hasOwn(summary as object, "description")).toBe(false);
+    expect(JSON.stringify(videos)).not.toContain(DESCRIPTION_TEXT);
+    expect(summary).toMatchObject({ id: VIDEO_ID, durationSeconds: 213 });
   });
 
   it("maps categories and drops unusable entries", async () => {
@@ -1109,5 +1165,29 @@ describe("cache bypass variants", () => {
 
     expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("GET /api/trending serialised body", () => {
+  // CONTRACT (T13): `/api/trending` forwards `getTrending` items as-is, so the
+  // guarantee has to be proven through the real client. `route.test.ts` mocks
+  // `getTrending`, which is why this end-to-end assertion lives here.
+  it("contains no description field or description text", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    const response = await getTrendingRoute(new Request("http://localhost/api/trending"));
+    const raw = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(raw).not.toContain(DESCRIPTION_TEXT);
+    expect(raw).not.toContain("description");
+
+    const body = JSON.parse(raw) as {
+      items: Array<Record<string, unknown>>;
+      regionCode: string;
+    };
+    expect(body.items).toHaveLength(1);
+    expect(Object.hasOwn(body.items[0] ?? {}, "description")).toBe(false);
+    expect(body.regionCode).toMatch(/^[A-Z]{2}$/);
   });
 });
