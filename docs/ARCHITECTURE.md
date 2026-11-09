@@ -47,9 +47,9 @@ Browser
 
 Committed API handlers are thin and call the YouTube client directly. Feature-level use cases exist
 for categories (`src/features/search/categories.ts`) and the watch video (`src/features/video`), and
-both wrap the same client. Pages compose components and feature output; `/library` and
-`/watch/[videoId]` read favourites through `src/features/library`. Import rules are defined in
-[`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).
+both wrap the same client. Pages compose components and feature output; `/library` (all four tabs
+and playlist detail) and `/watch/[videoId]` (saved state) read through `src/features/library`.
+Import rules are defined in [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).
 
 Current flows:
 
@@ -63,10 +63,21 @@ Current flows:
   results component awaits `searchParams`, validates `q`/`pageToken` and calls `searchVideos`
   in-process; it deliberately does not fetch `/api/search`.
 - `GET /watch/[videoId]`: the page forwards `params` into `Suspense`; the route validates the id
-  and `getWatchVideo` calls `getVideo`. An invalid id or unknown video calls `notFound()`. The
-  result renders the official player and the metadata/description panel.
-- `GET /library`: resolves `?tab=` (favourites only today) and lists saved favourites from SQLite
-  inside `Suspense`.
+  and `readWatchVideo` calls `getWatchVideo`/`getVideo`. An invalid id or unknown video calls
+  `notFound()`. A missing `YOUTUBE_API_KEY` is returned as `configuration_error` and renders the
+  authored "YouTube is not configured" state (the tab title stays neutral); other failures still
+  reach the error boundary. The normal result renders the official player, metadata/description
+  panel and save controls.
+- `GET /library`: resolves `?tab=` to favourites (default), watch later, history or playlists;
+  unknown or stale values fall back to favourites. Tab counts come from `countLibraryEntries` and
+  only the active tab's list is read from SQLite inside `Suspense`. The playlists tab creates
+  playlists and links to their detail pages.
+- `GET /library/playlists/[playlistId]`: validates the id, reads the playlist and its ordered item
+  ids, then batches `getVideos` for the valid ids. Missing metadata renders an "Unavailable video"
+  row that can still be removed; the page also offers rename and delete controls.
+- History recording: the watch player calls the `recordView` Server Action on the first `PLAYING`
+  state. It upserts the `history` row, bumping `view_count` and `last_viewed_at`; a failed write is
+  swallowed so playback is unaffected.
 - `GET /category/[slug]`: resolves the public slug, fetches one page of videos with an optional
   `?pageToken=`, and paginates by link. Unknown slugs call `notFound()`; API failures render in-page.
 
@@ -91,8 +102,9 @@ per render.
 - The YouTube key is read from `process.env.YOUTUBE_API_KEY` on the server only, lazily per call.
   It is never prefixed `NEXT_PUBLIC_`, never returned, and only written into the outbound request
   URL. Error logging redacts key-shaped strings.
-- Client components are limited to presentation and interaction (`nav-links.tsx`, `error.tsx`,
-  shared UI primitives). They receive props, not database clients or API keys.
+- Client components are limited to presentation and interaction (nav links, the error boundary, the
+  player wrapper, save/playlist controls and shared UI primitives). They receive props, not database
+  clients or API keys.
 - Every API failure uses `{ "error": { "code", "message", "field"? } }` from `src/lib/errors.ts`:
 
 | Code                  | HTTP | Typical cause                                        |
@@ -108,8 +120,10 @@ per render.
 - `cacheComponents` is enabled. `better-sqlite3` is synchronous and is not cached by Next.js, so
   any request-time SQLite read during rendering must be wrapped in `connection()` from
   `next/server` or placed behind a `Suspense` boundary. API route handlers already run per request,
-  and `/search`, `/library` and `/watch/[videoId]` put request-time work behind `Suspense`.
-  `/library` (the favourites list) and `/watch/[videoId]` (saved state) perform SQLite reads there.
+  and `/search`, `/library`, `/library/playlists/[playlistId]` and `/watch/[videoId]` put
+  request-time work behind `Suspense`. `/library` (tab counts and the active list),
+  `/library/playlists/[playlistId]` (playlist and items) and `/watch/[videoId]` (saved state)
+  perform SQLite reads there.
 
 ## 4. Data model
 
@@ -144,18 +158,19 @@ Notes:
 Only committed routes are listed. `src/app/error.tsx` and `src/app/not-found.tsx` are global
 boundaries, not routes.
 
-| Route              | Method | Purpose                               | Statuses                                                                               |
-| ------------------ | ------ | ------------------------------------- | -------------------------------------------------------------------------------------- |
-| `/`                | GET    | Discovery: trending and category rows | 200                                                                                    |
-| `/search`          | GET    | Search form and streamed results      | 200; invalid input and API failures render in-page states, not error statuses          |
-| `/watch/[videoId]` | GET    | Player, metadata and description      | 200; 404 invalid id or unknown video; 500 via error boundary on unexpected failure     |
-| `/library`         | GET    | Favourites list from SQLite           | 200; an unknown `?tab=` falls back to favourites                                       |
-| `/category/[slug]` | GET    | Category results, link pagination     | 200; 404 unknown slug; API failures render in-page states                              |
-| `/api/search`      | GET    | One page of video search results      | 200; 400 bad `q`/`pageToken`; 429 quota; 500 config/internal; 502 upstream             |
-| `/api/trending`    | GET    | Most popular videos for a region      | 200; 400 bad `region`/`maxResults`; 429 quota; 500 config/internal; 502 upstream       |
-| `/api/videos/[id]` | GET    | One video's normalized details        | 200; 400 invalid id; 404 no usable video; 429 quota; 500 config/internal; 502 upstream |
+| Route                             | Method | Purpose                                                              | Statuses                                                                                                                |
+| --------------------------------- | ------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `/`                               | GET    | Discovery: trending and category rows                                | 200                                                                                                                     |
+| `/search`                         | GET    | Search form and streamed results                                     | 200; invalid input and API failures render in-page states, not error statuses                                           |
+| `/watch/[videoId]`                | GET    | Player, metadata, description and save controls; keyless setup state | 200, or 200 with the keyless setup state; 404 invalid id or unknown video; 500 via error boundary on unexpected failure |
+| `/library`                        | GET    | Library tabs: favourites, watch later, history and playlists         | 200; an unknown `?tab=` falls back to favourites                                                                        |
+| `/library/playlists/[playlistId]` | GET    | One playlist, its ordered items and manage controls                  | 200; 404 invalid or unknown playlist id                                                                                 |
+| `/category/[slug]`                | GET    | Category results, link pagination                                    | 200; 404 unknown slug; API failures render in-page states                                                               |
+| `/api/search`                     | GET    | One page of video search results                                     | 200; 400 bad `q`/`pageToken`; 429 quota; 500 config/internal; 502 upstream                                              |
+| `/api/trending`                   | GET    | Most popular videos for a region                                     | 200; 400 bad `region`/`maxResults`; 429 quota; 500 config/internal; 502 upstream                                        |
+| `/api/videos/[id]`                | GET    | One video's normalized details                                       | 200; 400 invalid id; 404 no usable video; 429 quota; 500 config/internal; 502 upstream                                  |
 
-The shell links to `/search` and `/library`; both are built.
+The shell links to `/search` and `/library`.
 
 ## 6. Testing and quality
 
@@ -179,8 +194,6 @@ Background: [`README.md`](../README.md) · [`PROJECT_STRUCTURE.md`](PROJECT_STRU
 
 ## 7. Known gaps
 
-- **Library UI and API.** `/library` lists favourites only; watch later, playlists and history are
-  still unbuilt, and there is no `/api/library` route.
 - **Playback compliance.** `/watch/[videoId]` renders the official YouTube embed
   (`youtube-nocookie.com`, `rel=0`, lazy loading, no autoplay) with an "Open on YouTube" fallback
   link, plus the metadata/description panel. The Made-for-Kids lookup, identifying the client to the
