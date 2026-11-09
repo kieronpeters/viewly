@@ -51,7 +51,7 @@ selection colours stay dark even when the OS is set to light.
 | `--accent`                     | `oklch(0.318 0.058 293)` | `#342C4D` | Hover and selected wash for rows, menu items, tabs           |
 | `--accent-foreground`          | `oklch(0.955 0.012 288)` | `#EFEFF8` | Text and icons on accent fills                               |
 | `--border`                     | `oklch(0.49 0.028 288)`  | `#5F5E70` | Dividers, card outlines, control boundaries                  |
-| `--input`                      | `oklch(0.5 0.03 289)`    | `#626174` | Input, select, and textarea boundaries                       |
+| `--input`                      | `oklch(0.52 0.03 289)`   | `#68667A` | Input, select, and textarea boundaries                       |
 | `--ring`                       | `oklch(0.675 0.14 295)`  | `#9E83E3` | Focus ring                                                   |
 | `--destructive`                | `oklch(0.64 0.19 22)`    | `#E94F55` | Destructive fill, and `text-destructive` for errors (5.28:1) |
 | `--destructive-foreground`     | `oklch(0.18 0.03 285)`   | `#10101E` | Ink on destructive fills (5.12:1), never white               |
@@ -101,7 +101,7 @@ standard relative-luminance formula. Every value below is measured from the toke
 | `primary` on `background`                 | 5.94 : 1  | 4.5:1 link text     | Pass   |
 | `primary` on `card`                       | 5.45 : 1  | 4.5:1 link text     | Pass   |
 | `destructive` on `background`             | 5.28 : 1  | 4.5:1 error text    | Pass   |
-| `input` on `background`                   | 3.22 : 1  | 3:1 UI boundary     | Pass   |
+| `input` on `background`                   | 3.51 : 1  | 3:1 UI boundary     | Pass   |
 | `ring` on `background`                    | 6.32 : 1  | 3:1 focus indicator | Pass   |
 | `sidebar-border` on `sidebar`             | 3.07 : 1  | 3:1 UI boundary     | Pass   |
 | `chart-1` on `background`                 | 7.47 : 1  | 4.5:1 data mark     | Pass   |
@@ -124,10 +124,10 @@ standard relative-luminance formula. Every value below is measured from the toke
   by borders and elevation, not by big brightness jumps, so surface edges must always be drawn with
   a `border`-coloured line (3.09 : 1 on the canvas).
 - `border` and `input` are opaque colours, not white-at-low-alpha. Against the canvas they measure
-  3.09 : 1 and 3.22 : 1. Because the surface lifts are shallow, the same line measures 2.68–3.03 : 1
-  on `surface`/`surface-elevated`. That is fine for dividers, which are decorative, but a control
-  that sits on an elevated panel must not rely on its outline alone: give it an `input` fill, a
-  label, or the 6.32 : 1 `ring` on focus.
+  3.09 : 1 and 3.51 : 1, and `input` measures 3.22 : 1 on `card`. Because the surface lifts are
+  shallow, the same line measures 2.68–3.29 : 1 on `surface`/`surface-elevated`. That is fine for
+  dividers, which are decorative, but a control that sits on an elevated panel must not rely on its
+  outline alone: give it an `input` fill, a label, or the 6.32 : 1 `ring` on focus.
 
 ## Using the palette
 
