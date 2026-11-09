@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { VideoCard } from "@/components/video/video-card";
-import { listFavouriteVideos } from "@/features/library";
+import { listFavouriteVideos, listWatchLaterVideos } from "@/features/library";
 
 /** The App Router's plain-object view of the URL query string. */
 export type LibrarySearchParams = Record<string, string | string[] | undefined>;
@@ -11,11 +11,11 @@ export type LibrarySearchParams = Record<string, string | string[] | undefined>;
 /**
  * Tabs the library knows about today.
  *
- * T37 adds history, watch later and playlists; this ticket ships favourites
- * only. Keeping the list typed means the resolver (and its tests) already has
- * the shape T37 extends.
+ * T37 adds history and playlists; T34 introduces watch later next to the
+ * favourites default. Keeping the list typed means the resolver (and its tests)
+ * already has the shape T37 extends.
  */
-const LIBRARY_TABS = ["favourites"] as const;
+const LIBRARY_TABS = ["favourites", "watch-later"] as const;
 
 export type LibraryTab = (typeof LIBRARY_TABS)[number];
 
@@ -50,8 +50,26 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
   const params = await searchParams;
   const tab = resolveLibraryTab(params.tab);
 
-  // Favourites is the only tab today; T37 switches on `tab` to pick the list.
-  const videos = tab === "favourites" ? listFavouriteVideos() : [];
+  return <LibraryList tab={tab} />;
+}
+
+interface LibraryListProps {
+  tab: LibraryTab;
+}
+
+/**
+ * The list for one resolved tab.
+ *
+ * T37 replaces this small switch with the full tabbed page; until then each tab
+ * reads its own repository list and renders the matching control on every card.
+ */
+function LibraryList({ tab }: LibraryListProps) {
+  const isWatchLater = tab === "watch-later";
+  const videos = isWatchLater ? listWatchLaterVideos() : listFavouriteVideos();
+  const heading = isWatchLater ? "Watch later" : "Favourites";
+  const description = isWatchLater
+    ? "Videos you queue appear here, newest first."
+    : "Videos you save appear here, newest first.";
 
   return (
     <section aria-labelledby="library-list-heading" className="flex flex-col gap-4">
@@ -60,19 +78,25 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
           id="library-list-heading"
           className="text-lg font-semibold tracking-tight text-foreground"
         >
-          Favourites
+          {heading}
         </h2>
         <p className="text-sm text-muted-foreground">
           {videos.length === 0
-            ? "Videos you save appear here, newest first."
-            : `${videos.length} saved ${videos.length === 1 ? "video" : "videos"}, newest first.`}
+            ? description
+            : `${videos.length} ${isWatchLater ? "queued" : "saved"} ${
+                videos.length === 1 ? "video" : "videos"
+              }, newest first.`}
         </p>
       </div>
 
       {videos.length === 0 ? (
         <EmptyState
-          title="No favourites yet"
-          message="Use the heart on any video to save it to your library."
+          title={isWatchLater ? "No videos in Watch Later yet" : "No favourites yet"}
+          message={
+            isWatchLater
+              ? "Use the clock on any video to queue it for later."
+              : "Use the heart on any video to save it to your library."
+          }
           action={
             <Button asChild variant="outline">
               <Link href="/">Browse videos</Link>
@@ -86,7 +110,11 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
         >
           {videos.map((video) => (
             <li key={video.id} className="min-w-0">
-              <VideoCard video={video} isFavourite className="h-full" />
+              {isWatchLater ? (
+                <VideoCard video={video} isWatchLater className="h-full" />
+              ) : (
+                <VideoCard video={video} isFavourite className="h-full" />
+              )}
             </li>
           ))}
         </ul>

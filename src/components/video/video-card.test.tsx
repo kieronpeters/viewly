@@ -1,11 +1,17 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-const { toggleFavouriteMock } = vi.hoisted(() => ({ toggleFavouriteMock: vi.fn() }));
+const { toggleFavouriteMock, toggleWatchLaterMock } = vi.hoisted(() => ({
+  toggleFavouriteMock: vi.fn(),
+  toggleWatchLaterMock: vi.fn(),
+}));
 
-// The favourite control imports the Server Action; the card test only needs it
-// to be inert. The action itself is covered in `features/library`.
-vi.mock("@/features/library/actions", () => ({ toggleFavourite: toggleFavouriteMock }));
+// The save controls import the Server Actions; the card test only needs them to
+// be inert. The actions themselves are covered in `features/library`.
+vi.mock("@/features/library/actions", () => ({
+  toggleFavourite: toggleFavouriteMock,
+  toggleWatchLater: toggleWatchLaterMock,
+}));
 
 import { VideoCard } from "@/components/video/video-card";
 import type { VideoSummary } from "@/shared/types";
@@ -80,6 +86,49 @@ describe("VideoCard", () => {
     render(<VideoCard video={VIDEO_FIXTURE} />);
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("renders both save controls as siblings of the card link in a stable order", () => {
+    const { container } = render(<VideoCard video={VIDEO_FIXTURE} isFavourite isWatchLater />);
+
+    const card = container.querySelector('[data-slot="video-card"]');
+    const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
+    const controls = container.querySelector<HTMLElement>('[data-slot="video-card-controls"]');
+    const buttons = screen.getAllByRole("button");
+
+    expect(card).not.toBeNull();
+    expect(controls).not.toBeNull();
+    expect(card).toContainElement(link);
+    expect(card).toContainElement(controls);
+    expect(link).not.toContainElement(controls);
+    // The wrapper owns the tab stops: link, favourite, watch later.
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Remove from favourites",
+      "Remove from Watch Later",
+    ]);
+    expect(within(link).queryAllByRole("button")).toHaveLength(0);
+    expect(link.querySelectorAll("a, button")).toHaveLength(0);
+    expect(buttons[0].parentElement?.parentElement).toBe(controls);
+    expect(buttons[1].parentElement?.parentElement).toBe(controls);
+  });
+
+  it("renders only the watch-later control when only its state is passed", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} isWatchLater={false} />);
+
+    expect(screen.getByRole("button", { name: "Add to Watch Later" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.queryByRole("button", { name: /favourites/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps the two controls visually separated", () => {
+    const { container } = render(<VideoCard video={VIDEO_FIXTURE} isFavourite isWatchLater />);
+
+    expect(container.querySelector('[data-slot="video-card-controls"]')).toHaveClass(
+      "flex",
+      "gap-1.5",
+    );
   });
 
   it("renders the thumbnail with the title as its alt text", () => {

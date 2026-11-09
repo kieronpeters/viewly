@@ -25,8 +25,9 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => dbHolder.db }));
 import { DomainValidationError } from "@/shared/validation";
 
 import { createTestLibraryDatabase, type TestLibraryDatabase } from "../../../tests/library-db";
-import { toggleFavourite } from "./actions";
+import { toggleFavourite, toggleWatchLater } from "./actions";
 import type { FavouriteSnapshot } from "./favourite-toggle";
+import type { WatchLaterSnapshot } from "./watch-later-toggle";
 
 /** A complete, valid snapshot shaped like a normalized `search.list` item. */
 const SNAPSHOT: FavouriteSnapshot = {
@@ -97,6 +98,69 @@ describe("toggleFavourite", () => {
     ).rejects.toBeInstanceOf(DomainValidationError);
 
     expect(library.repository.favourites.list()).toHaveLength(0);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("toggleWatchLater", () => {
+  const WATCH_LATER_SNAPSHOT: WatchLaterSnapshot = SNAPSHOT;
+
+  it("queues a video, returns only the stored state and revalidates both readers", async () => {
+    const result = await toggleWatchLater(WATCH_LATER_SNAPSHOT);
+
+    expect(result).toEqual({ inWatchLater: true });
+    expect(Object.keys(result)).toEqual(["inWatchLater"]);
+    expect(library.repository.watchLater.isInWatchLater(SNAPSHOT.videoId)).toBe(true);
+    expect(library.repository.watchLater.list()[0]).toMatchObject(WATCH_LATER_SNAPSHOT);
+
+    expect(revalidatePathMock.mock.calls).toEqual([["/library"], [`/watch/${SNAPSHOT.videoId}`]]);
+  });
+
+  it("removes a video that is already queued", async () => {
+    library.repository.watchLater.add({
+      ...WATCH_LATER_SNAPSHOT,
+      savedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+
+    await expect(toggleWatchLater(WATCH_LATER_SNAPSHOT)).resolves.toEqual({ inWatchLater: false });
+
+    expect(library.repository.watchLater.list()).toHaveLength(0);
+    expect(revalidatePathMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("toggles back on when the same video is queued again", async () => {
+    await toggleWatchLater(WATCH_LATER_SNAPSHOT);
+    await toggleWatchLater(WATCH_LATER_SNAPSHOT);
+    await expect(toggleWatchLater(WATCH_LATER_SNAPSHOT)).resolves.toEqual({ inWatchLater: true });
+
+    expect(library.repository.watchLater.list()).toHaveLength(1);
+  });
+
+  it("stores the validated snapshot rather than the raw input", async () => {
+    await toggleWatchLater({
+      ...WATCH_LATER_SNAPSHOT,
+      title: "  Never Gonna Give You Up  ",
+      durationSeconds: 212.8,
+    });
+
+    expect(library.repository.watchLater.list()[0]).toMatchObject({
+      title: "Never Gonna Give You Up",
+      durationSeconds: 212,
+    });
+  });
+
+  it("does not touch favourites", async () => {
+    await toggleWatchLater(WATCH_LATER_SNAPSHOT);
+
+    expect(library.repository.favourites.list()).toHaveLength(0);
+  });
+
+  it("rejects invalid input before writing or revalidating", async () => {
+    await expect(
+      toggleWatchLater({ ...WATCH_LATER_SNAPSHOT, videoId: "not-a-video-id" }),
+    ).rejects.toBeInstanceOf(DomainValidationError);
+
+    expect(library.repository.watchLater.list()).toHaveLength(0);
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });

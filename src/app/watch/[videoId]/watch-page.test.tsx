@@ -1,12 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getVideoMock, notFoundMock, isVideoFavouriteMock } = vi.hoisted(() => ({
+const { getVideoMock, notFoundMock, isVideoFavouriteMock, isInWatchLaterMock } = vi.hoisted(() => ({
   getVideoMock: vi.fn(),
   notFoundMock: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
   isVideoFavouriteMock: vi.fn(),
+  isInWatchLaterMock: vi.fn(),
 }));
 
 // `server-only` throws outside a Server Component graph; Vitest is not one.
@@ -14,9 +15,15 @@ vi.mock("server-only", () => ({}));
 // The page tests never hit the YouTube API; the client boundary is mocked.
 vi.mock("@/lib/youtube/client", () => ({ getVideo: getVideoMock }));
 // The saved state is a local database read; stub it so no file is opened.
-vi.mock("@/features/library", () => ({ isVideoFavourite: isVideoFavouriteMock }));
-// The header control imports the action; it stays inert in these tests.
-vi.mock("@/features/library/actions", () => ({ toggleFavourite: vi.fn() }));
+vi.mock("@/features/library", () => ({
+  isVideoFavourite: isVideoFavouriteMock,
+  isInWatchLater: isInWatchLaterMock,
+}));
+// The header controls import the actions; they stay inert in these tests.
+vi.mock("@/features/library/actions", () => ({
+  toggleFavourite: vi.fn(),
+  toggleWatchLater: vi.fn(),
+}));
 // Next's real notFound() throws a control-flow error Next catches; mirror it.
 vi.mock("next/navigation", () => ({ notFound: notFoundMock }));
 
@@ -50,6 +57,8 @@ describe("WatchPageContent", () => {
     getVideoMock.mockResolvedValue(null);
     isVideoFavouriteMock.mockReset();
     isVideoFavouriteMock.mockReturnValue(false);
+    isInWatchLaterMock.mockReset();
+    isInWatchLaterMock.mockReturnValue(false);
   });
 
   it("renders the title and channel for a valid video", async () => {
@@ -105,6 +114,42 @@ describe("WatchPageContent", () => {
     );
   });
 
+  it("hydrates the watch-later control from the stored state", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+    isInWatchLaterMock.mockReturnValue(true);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const button = screen.getByRole("button", { name: "Remove from Watch Later" });
+
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID);
+  });
+
+  it("shows both save controls for a video that is not saved", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(screen.getByRole("button", { name: "Add to favourites" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to Watch Later" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID);
+  });
+
+  it("reads both saved states only after the video resolves", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+    isVideoFavouriteMock.mockReturnValue(true);
+    isInWatchLaterMock.mockReturnValue(true);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(isVideoFavouriteMock).toHaveBeenCalledWith(VIDEO_ID);
+    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID);
+  });
+
   it("calls notFound when YouTube returns no video", async () => {
     getVideoMock.mockResolvedValue(null);
 
@@ -115,6 +160,7 @@ describe("WatchPageContent", () => {
     expect(getVideoMock).toHaveBeenCalledWith(VIDEO_ID);
     expect(notFoundMock).toHaveBeenCalledTimes(1);
     expect(isVideoFavouriteMock).not.toHaveBeenCalled();
+    expect(isInWatchLaterMock).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid id before calling the client", async () => {
@@ -125,6 +171,7 @@ describe("WatchPageContent", () => {
     expect(getVideoMock).not.toHaveBeenCalled();
     expect(notFoundMock).toHaveBeenCalledTimes(1);
     expect(isVideoFavouriteMock).not.toHaveBeenCalled();
+    expect(isInWatchLaterMock).not.toHaveBeenCalled();
   });
 
   it("rejects an empty id before calling the client", async () => {

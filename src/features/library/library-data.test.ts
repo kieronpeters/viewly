@@ -17,7 +17,14 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db/client", () => ({ getDb: () => dbHolder.db }));
 
 import { createTestLibraryDatabase, type TestLibraryDatabase } from "../../../tests/library-db";
-import { favouriteToVideoSummary, isVideoFavourite, listFavouriteVideos } from "./library-data";
+import {
+  favouriteToVideoSummary,
+  isInWatchLater,
+  isVideoFavourite,
+  listFavouriteVideos,
+  listWatchLaterVideos,
+  watchLaterToVideoSummary,
+} from "./library-data";
 
 let library: TestLibraryDatabase;
 
@@ -90,18 +97,104 @@ describe("favouriteToVideoSummary", () => {
   });
 });
 
+describe("listWatchLaterVideos", () => {
+  it("returns nothing for an empty queue", () => {
+    expect(listWatchLaterVideos()).toEqual([]);
+  });
+
+  it("maps queued rows and keeps the repository's newest-first order", () => {
+    saveWatchLater("video-oldest", 1_000);
+    saveWatchLater("video-middle", 2_000);
+    saveWatchLater("video-newest", 3_000);
+
+    expect(listWatchLaterVideos().map((video) => video.id)).toEqual([
+      "video-newest",
+      "video-middle",
+      "video-oldest",
+    ]);
+  });
+
+  it("maps a stored snapshot to the fields VideoCard renders", () => {
+    saveWatchLater("dQw4w9WgXcQ", 1_000, {
+      title: "Never Gonna Give You Up",
+      channelTitle: "Rick Astley",
+      thumbnailUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+      durationSeconds: 213,
+    });
+
+    expect(listWatchLaterVideos()).toEqual([
+      {
+        id: "dQw4w9WgXcQ",
+        title: "Never Gonna Give You Up",
+        channelId: "",
+        channelTitle: "Rick Astley",
+        thumbnailUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+        publishedAt: "",
+        durationSeconds: 213,
+        viewCount: null,
+      },
+    ]);
+  });
+
+  it("does not mix in favourites", () => {
+    saveFavourite("favourite-video", 1_000);
+    saveWatchLater("queued-video", 2_000);
+
+    expect(listWatchLaterVideos().map((video) => video.id)).toEqual(["queued-video"]);
+    expect(listFavouriteVideos().map((video) => video.id)).toEqual(["favourite-video"]);
+  });
+});
+
+describe("isInWatchLater", () => {
+  it("reflects the stored state", () => {
+    saveWatchLater("dQw4w9WgXcQ", 1_000);
+
+    expect(isInWatchLater("dQw4w9WgXcQ")).toBe(true);
+    expect(isInWatchLater("aaaaaaaaaaa")).toBe(false);
+  });
+
+  it("is independent of favourites", () => {
+    saveFavourite("dQw4w9WgXcQ", 1_000);
+
+    expect(isInWatchLater("dQw4w9WgXcQ")).toBe(false);
+  });
+});
+
+describe("watchLaterToVideoSummary", () => {
+  it("keeps a null duration from live or unavailable videos", () => {
+    saveWatchLater("dQw4w9WgXcQ", 1_000, { durationSeconds: null });
+
+    expect(watchLaterToVideoSummary(library.repository.watchLater.list()[0])).toMatchObject({
+      id: "dQw4w9WgXcQ",
+      durationSeconds: null,
+    });
+  });
+});
+
+/** Fields a seed helper may override on the default snapshot. */
+type SnapshotOverrides = {
+  title?: string;
+  channelTitle?: string;
+  thumbnailUrl?: string;
+  durationSeconds?: number | null;
+};
+
 /** Seeds one favourite at a fixed save time. */
-function saveFavourite(
-  videoId: string,
-  savedAt: number,
-  overrides: {
-    title?: string;
-    channelTitle?: string;
-    thumbnailUrl?: string;
-    durationSeconds?: number | null;
-  } = {},
-): void {
+function saveFavourite(videoId: string, savedAt: number, overrides: SnapshotOverrides = {}): void {
   library.repository.favourites.add({
+    videoId,
+    title: `Title ${videoId}`,
+    channelTitle: "Channel",
+    thumbnailUrl: "https://example.com/thumbnail.jpg",
+    durationSeconds: 42,
+    ...overrides,
+    savedAt: new Date(savedAt),
+  });
+}
+
+/** Seeds one watch-later entry at a fixed save time. */
+function saveWatchLater(videoId: string, savedAt: number, overrides: SnapshotOverrides = {}): void {
+  library.repository.watchLater.add({
     videoId,
     title: `Title ${videoId}`,
     channelTitle: "Channel",

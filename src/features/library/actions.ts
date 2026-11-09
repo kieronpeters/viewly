@@ -1,12 +1,12 @@
 "use server";
 
 /**
- * Server Actions for the personal library (T33).
+ * Server Actions for the personal library (T33/T34).
  *
- * `toggleFavourite` is the only mutation this ticket introduces. It receives the
- * display snapshot the caller just rendered, validates it, toggles the row with
- * the idempotent repository operations and revalidates the two routes that read
- * the saved state.
+ * `toggleFavourite` and `toggleWatchLater` are the mutations this feature
+ * exposes. Each receives the display snapshot the caller just rendered,
+ * validates it, toggles the row with the idempotent repository operations and
+ * revalidates the routes that read the saved state.
  *
  * ## Why the database modules are imported inside the action
  *
@@ -19,11 +19,12 @@
  *
  * ## Revalidation
  *
- * Both reads of the favourites state ship in this ticket: `/library` (the saved
- * list) and `/watch/[videoId]` (the control's initial state). `revalidatePath`
- * is called with the concrete paths after the write, so the action's own
- * response carries a fresh RSC payload for the current route. `/library` is a
- * literal path; the watch path is built from the id that was just validated.
+ * Both reads of a saved-video state ship in these tickets: `/library` (the
+ * saved lists) and `/watch/[videoId]` (the controls' initial state).
+ * `revalidatePath` is called with the concrete paths after the write, so the
+ * action's own response carries a fresh RSC payload for the current route.
+ * `/library` is a literal path; the watch path is built from the id that was
+ * just validated.
  */
 import { revalidatePath } from "next/cache";
 
@@ -33,6 +34,12 @@ import {
   type FavouriteSnapshot,
   type FavouriteToggleResult,
 } from "./favourite-toggle";
+import {
+  parseWatchLaterSnapshot,
+  toggleWatchLaterInRepository,
+  type WatchLaterSnapshot,
+  type WatchLaterToggleResult,
+} from "./watch-later-toggle";
 
 /** Route that lists saved videos; T37 extends it with the other tabs. */
 const LIBRARY_PATH = "/library";
@@ -59,6 +66,30 @@ export async function toggleFavourite(input: FavouriteSnapshot): Promise<Favouri
 
   const repository = createLibraryRepository(getDb());
   const result = toggleFavouriteInRepository(repository, snapshot, new Date());
+
+  revalidatePath(LIBRARY_PATH);
+  revalidatePath(`/watch/${snapshot.videoId}`);
+
+  return result;
+}
+
+/**
+ * Toggles a video in the local watch-later queue.
+ *
+ * The contract mirrors {@link toggleFavourite}: adding and removing are both
+ * idempotent, invalid input throws before any write, and the return value is the
+ * state that is now stored rather than the row that was written.
+ */
+export async function toggleWatchLater(input: WatchLaterSnapshot): Promise<WatchLaterToggleResult> {
+  const snapshot = parseWatchLaterSnapshot(input);
+
+  const [{ getDb }, { createLibraryRepository }] = await Promise.all([
+    import("@/lib/db/client"),
+    import("@/lib/db/repositories/library.repository"),
+  ]);
+
+  const repository = createLibraryRepository(getDb());
+  const result = toggleWatchLaterInRepository(repository, snapshot, new Date());
 
   revalidatePath(LIBRARY_PATH);
   revalidatePath(`/watch/${snapshot.videoId}`);

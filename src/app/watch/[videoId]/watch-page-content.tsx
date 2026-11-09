@@ -2,9 +2,11 @@ import { notFound } from "next/navigation";
 
 import { FavouriteButton } from "@/components/video/favourite-button";
 import { VideoMetadata } from "@/components/video/video-metadata";
+import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { YoutubePlayer } from "@/components/video/youtube-player";
-import { isVideoFavourite } from "@/features/library";
+import { isInWatchLater, isVideoFavourite } from "@/features/library";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
+import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
 import { getWatchVideo } from "@/features/video";
 import type { VideoDetail } from "@/shared/types";
 
@@ -40,8 +42,9 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
   // Read behind the page's `<Suspense>` boundary, next to `params`, so the
   // static shell can prerender while the saved state resolves per request.
   const isFavourite = isVideoFavourite(video.id);
+  const inWatchLater = isInWatchLater(video.id);
 
-  return <WatchVideoDetail video={video} isFavourite={isFavourite} />;
+  return <WatchVideoDetail video={video} isFavourite={isFavourite} inWatchLater={inWatchLater} />;
 }
 
 export interface WatchVideoDetailProps {
@@ -49,6 +52,8 @@ export interface WatchVideoDetailProps {
   video: VideoDetail;
   /** Server-read saved state for the video, so the control hydrates correctly. */
   isFavourite: boolean;
+  /** Server-read watch-later state for the video. */
+  inWatchLater: boolean;
 }
 
 /**
@@ -56,10 +61,10 @@ export interface WatchVideoDetailProps {
  *
  * The player (T30) and the metadata/description panel (T31) each live in their
  * own labelled landmark, so either one can change without disturbing the page
- * structure. The favourite control sits in the header, next to the title, and is
- * a sibling of the heading text rather than a wrapper around it.
+ * structure. The save controls sit in the header, next to the title, and are
+ * siblings of the heading text rather than wrappers around it.
  */
-export function WatchVideoDetail({ video, isFavourite }: WatchVideoDetailProps) {
+export function WatchVideoDetail({ video, isFavourite, inWatchLater }: WatchVideoDetailProps) {
   return (
     <article aria-labelledby="watch-title" className="flex min-w-0 flex-col gap-5">
       <header className="flex items-start justify-between gap-3">
@@ -78,11 +83,18 @@ export function WatchVideoDetail({ video, isFavourite }: WatchVideoDetailProps) 
           )}
         </div>
 
-        <FavouriteButton
-          video={favouriteSnapshotFromVideo(video)}
-          initialFavourite={isFavourite}
-          className="shrink-0"
-        />
+        <div className="flex shrink-0 items-start gap-2">
+          <FavouriteButton
+            video={favouriteSnapshotFromVideo(video)}
+            initialFavourite={isFavourite}
+            className="shrink-0"
+          />
+          <WatchLaterButton
+            video={watchLaterSnapshotFromVideo(video)}
+            initialInWatchLater={inWatchLater}
+            className="shrink-0"
+          />
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">

@@ -2,7 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { FavouriteButton } from "@/components/video/favourite-button";
+import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
+import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatViewCount } from "@/shared/format";
 import type { VideoSummary } from "@/shared/types";
@@ -28,22 +30,34 @@ export interface VideoCardProps {
    * the card itself never queries the database.
    */
   isFavourite?: boolean;
+  /**
+   * Opt-in watch-later control.
+   *
+   * Omitted independently of {@link isFavourite}, so a grid can show either
+   * control, both, or neither without changing the plain card.
+   */
+  isWatchLater?: boolean;
 }
 
 /**
  * A video in a list or grid.
  *
  * The card root is a positioning wrapper, not a link: the title/thumbnail
- * `<Link>` and the optional {@link FavouriteButton} are siblings. That keeps one
- * tab stop for "open the video" plus one for "save the video" without ever
- * nesting a button inside an anchor, which is invalid HTML and unreachable for
- * keyboard and screen-reader users. The duration badge and image stay decorative
- * text inside the link; the control is absolutely positioned over the thumbnail
- * corner when the caller opts in.
+ * `<Link>` and the optional controls are siblings. That keeps one tab stop for
+ * "open the video" plus one per control without ever nesting a button inside an
+ * anchor, which is invalid HTML and unreachable for keyboard and screen-reader
+ * users. The duration badge and image stay decorative text inside the link; the
+ * controls are absolutely positioned over the thumbnail corner when the caller
+ * opts in.
+ *
+ * DOM order is link, favourite, watch later, so the tab sequence is stable
+ * whether one or both controls are rendered. The two buttons sit in a flex row
+ * with a gap, and each control's inline error stacks underneath its own button.
  */
-export function VideoCard({ video, className, isFavourite }: VideoCardProps) {
+export function VideoCard({ video, className, isFavourite, isWatchLater }: VideoCardProps) {
   const duration = formatDuration(video.durationSeconds);
   const viewCount = formatViewCount(video.viewCount);
+  const hasControls = isFavourite !== undefined || isWatchLater !== undefined;
 
   return (
     <div data-slot="video-card" className={cn("relative min-w-0", className)}>
@@ -76,14 +90,25 @@ export function VideoCard({ video, className, isFavourite }: VideoCardProps) {
         </div>
       </Link>
 
-      {isFavourite === undefined ? null : (
-        <div className="absolute top-2 right-2">
-          <FavouriteButton
-            video={favouriteSnapshotFromVideo(video)}
-            initialFavourite={isFavourite}
-          />
+      {hasControls ? (
+        <div
+          data-slot="video-card-controls"
+          className="absolute top-2 right-2 flex items-start justify-end gap-1.5"
+        >
+          {isFavourite === undefined ? null : (
+            <FavouriteButton
+              video={favouriteSnapshotFromVideo(video)}
+              initialFavourite={isFavourite}
+            />
+          )}
+          {isWatchLater === undefined ? null : (
+            <WatchLaterButton
+              video={watchLaterSnapshotFromVideo(video)}
+              initialInWatchLater={isWatchLater}
+            />
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
