@@ -7,7 +7,7 @@
  * modified. The sandbox is removed in `afterEach`; the connection is closed
  * first because Windows refuses to delete files that are still open.
  */
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -94,16 +94,54 @@ describe("getDatabaseConnection", () => {
     expect(firstConnection.sqlite.open).toBe(true);
   });
 
-  it("resolves the default path under the project root when DATABASE_PATH is unset", async () => {
+  it("resolves the default path against the working directory when DATABASE_PATH is unset", async () => {
     delete process.env.DATABASE_PATH;
 
     const client = await loadClient();
-    const resolvedPath = client.resolveDatabasePath();
+    const originalDirectory = process.cwd();
+    // A throwaway working directory, so this test never depends on whether the
+    // developer's real `data/viewly.db` exists (`db:migrate` and `next dev`
+    // create it legitimately).
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "viewly-cwd-"));
 
-    expect(resolvedPath).toBe(resolve(process.cwd(), "data", "viewly.db"));
-    expect(resolvedPath.endsWith(`${sep}data${sep}viewly.db`)).toBe(true);
-    // Resolving must not create anything.
-    expect(existsSync(resolvedPath)).toBe(false);
+    try {
+      process.chdir(temporaryDirectory);
+
+      const resolvedPath = client.resolveDatabasePath();
+
+      expect(resolvedPath).toBe(resolve(temporaryDirectory, "data", "viewly.db"));
+      expect(resolvedPath.endsWith(`${sep}data${sep}viewly.db`)).toBe(true);
+      // Resolving must not create anything: neither the file nor its directory.
+      expect(existsSync(resolvedPath)).toBe(false);
+      expect(existsSync(dirname(resolvedPath))).toBe(false);
+    } finally {
+      process.chdir(originalDirectory);
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves the default path even when the database already exists", async () => {
+    delete process.env.DATABASE_PATH;
+
+    const client = await loadClient();
+    const originalDirectory = process.cwd();
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "viewly-cwd-"));
+
+    try {
+      process.chdir(temporaryDirectory);
+
+      const expectedPath = resolve(temporaryDirectory, "data", "viewly.db");
+
+      // Resolution must not depend on the file being absent: pre-create it, as
+      // an earlier `db:migrate` would have.
+      mkdirSync(dirname(expectedPath), { recursive: true });
+      writeFileSync(expectedPath, "");
+
+      expect(client.resolveDatabasePath()).toBe(expectedPath);
+    } finally {
+      process.chdir(originalDirectory);
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
   });
 
   it("resolves a relative DATABASE_PATH against the project root", async () => {

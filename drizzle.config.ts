@@ -25,9 +25,17 @@
  * read when the running Node.js version provides `process.loadEnvFile`
  * (Node.js >= 20.12); Drizzle Kit itself needs Node.js >= 22 for
  * `better-sqlite3` v13, so in practice it is always available.
+ *
+ * ## Directory creation
+ *
+ * Drizzle Kit opens the SQLite file itself and, unlike `src/lib/db/client.ts`,
+ * does not create missing directories. The parent directory of the resolved
+ * path is therefore created recursively before it is returned, so a fresh
+ * clone (no `data/` yet) can run `npm run db:migrate` straight away. This is a
+ * no-op when the directory already exists.
  */
-import { existsSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 import { defineConfig } from "drizzle-kit";
 
@@ -56,18 +64,29 @@ function loadEnvFileIfPresent(fileName: string): void {
   }
 }
 
-/** Resolves the absolute SQLite file path used by both Drizzle Kit and the app. */
+/**
+ * Resolves the absolute SQLite file path used by both Drizzle Kit and the app.
+ *
+ * The parent directory is created recursively so Drizzle Kit can open the file
+ * on a fresh checkout, matching the behaviour of `src/lib/db/client.ts`.
+ */
 function resolveDatabaseUrl(): string {
   // `.env.local` takes precedence over `.env`, which Drizzle Kit has already loaded.
   loadEnvFileIfPresent(".env.local");
 
   const configured = (process.env[DATABASE_PATH_ENV_VAR] ?? "").trim();
 
+  let databaseUrl: string;
+
   if (configured.length === 0) {
-    return resolve(process.cwd(), DEFAULT_DATABASE_PATH);
+    databaseUrl = resolve(process.cwd(), DEFAULT_DATABASE_PATH);
+  } else {
+    databaseUrl = isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
   }
 
-  return isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
+  mkdirSync(dirname(databaseUrl), { recursive: true });
+
+  return databaseUrl;
 }
 
 export default defineConfig({
