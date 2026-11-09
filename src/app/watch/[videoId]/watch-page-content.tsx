@@ -3,16 +3,17 @@ import { notFound } from "next/navigation";
 import { FavouriteButton } from "@/components/video/favourite-button";
 import { VideoMetadata } from "@/components/video/video-metadata";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
-import { YoutubePlayer } from "@/components/video/youtube-player";
 import { isInWatchLater, isVideoFavourite, listPlaylists } from "@/features/library";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
 import { PlaylistPicker } from "@/features/library/playlist-picker";
 import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
+import { videoSnapshotFromVideo } from "@/features/library/video-snapshot";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
 import { getWatchVideo } from "@/features/video";
 import type { VideoDetail } from "@/shared/types";
 
 import { parseWatchVideoId } from "./parse-watch-video-id";
+import { WatchPlayer } from "./watch-player";
 
 export interface WatchPageContentProps {
   /** Next 16 passes `params` as a promise; only this boundary awaits it. */
@@ -120,7 +121,8 @@ export function WatchVideoDetail({
       </header>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
-        {/* T30 slot: the official YouTube embed, with a fallback link. */}
+        {/* T30 slot: the official YouTube embed, with a fallback link. T35
+            wraps it in the client component that records the first playback. */}
         <section
           data-slot="watch-player-slot"
           aria-labelledby="watch-player-heading"
@@ -129,7 +131,7 @@ export function WatchVideoDetail({
           <h2 id="watch-player-heading" className="sr-only">
             Video player
           </h2>
-          <YoutubePlayer videoId={video.id} title={video.title} />
+          <WatchPlayer snapshot={videoSnapshotFromVideo(video)} />
         </section>
 
         {/* T31 slot: compact metadata and the expandable description. */}

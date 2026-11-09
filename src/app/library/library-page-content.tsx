@@ -4,8 +4,11 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { VideoCard } from "@/components/video/video-card";
 import { listFavouriteVideos, listPlaylists, listWatchLaterVideos } from "@/features/library";
+import { listHistoryEntries, type HistoryEntry } from "@/features/library/history-data";
 import { PlaylistCreateForm } from "@/features/library/playlist-create-form";
 import type { PlaylistSummary } from "@/shared/types";
+
+import { HistoryClearAllButton, HistoryClearEntryButton } from "./history-clear-controls";
 
 /** The App Router's plain-object view of the URL query string. */
 export type LibrarySearchParams = Record<string, string | string[] | undefined>;
@@ -13,11 +16,11 @@ export type LibrarySearchParams = Record<string, string | string[] | undefined>;
 /**
  * Tabs the library knows about today.
  *
- * T37 adds history and the full tabbed shell; T34 introduced watch later and
- * T36 adds the playlists tab with its create form. Keeping the list typed means
- * the resolver (and its tests) already has the shape T37 extends.
+ * T37 adds the full tabbed shell; T34 introduced watch later, T36 adds the
+ * playlists tab with its create form and T35 adds history. Keeping the list
+ * typed means the resolver (and its tests) already has the shape T37 extends.
  */
-const LIBRARY_TABS = ["favourites", "watch-later", "playlists"] as const;
+const LIBRARY_TABS = ["favourites", "watch-later", "playlists", "history"] as const;
 
 export type LibraryTab = (typeof LIBRARY_TABS)[number];
 
@@ -25,7 +28,7 @@ export type LibraryTab = (typeof LIBRARY_TABS)[number];
  * Resolves `?tab=` to a known tab.
  *
  * Favourites is the default, so an absent, unknown, stale or duplicated value
- * (`?tab=history`, `?tab=favourites&tab=music`) all land on the favourites
+ * (`?tab=music`, `?tab=favourites&tab=history`) all land on the favourites
  * list rather than an empty page. Repeated parameters use the first value, the
  * same rule `/category/[slug]` applies to `pageToken`.
  */
@@ -65,9 +68,14 @@ interface LibraryListProps {
  * T37 replaces this small switch with the full tabbed page; until then each tab
  * reads its own repository list and renders the matching control on every card.
  * The playlists read happens once per render: the video tabs use it for the
- * card picker, and the playlists tab renders it as the list itself.
+ * card picker, and the playlists tab renders it as the list itself. History
+ * returns before that read because its cards have no picker.
  */
 function LibraryList({ tab }: LibraryListProps) {
+  if (tab === "history") {
+    return <HistoryList entries={listHistoryEntries()} />;
+  }
+
   const playlists = listPlaylists();
 
   if (tab === "playlists") {
@@ -137,6 +145,74 @@ function LibraryList({ tab }: LibraryListProps) {
                   className="h-full"
                 />
               )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+interface HistoryListProps {
+  /** Newest viewed first, exactly as `listHistoryEntries` returns them. */
+  entries: readonly HistoryEntry[];
+}
+
+/**
+ * Minimal history tab (T35).
+ *
+ * One card per watched video in "most recently viewed first" order, with the
+ * local view count and a two-step remove control under each card, plus one
+ * two-step clear-all control for the whole list. Playback writes the rows; this
+ * tab only reads and clears them. T37 owns the consolidated tab chrome, so this
+ * stays a single section with no tab navigation of its own.
+ */
+function HistoryList({ entries }: HistoryListProps) {
+  return (
+    <section aria-labelledby="library-history-heading" className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2
+            id="library-history-heading"
+            className="text-lg font-semibold tracking-tight text-foreground"
+          >
+            History
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {entries.length === 0
+              ? "Videos you play are added here automatically, newest first."
+              : `${entries.length} watched ${entries.length === 1 ? "video" : "videos"}, newest first.`}
+          </p>
+        </div>
+
+        {entries.length === 0 ? null : <HistoryClearAllButton count={entries.length} />}
+      </div>
+
+      {entries.length === 0 ? (
+        <EmptyState
+          title="No watch history yet"
+          message="Start a video and it will appear here. History is kept on this device."
+          action={
+            <Button asChild variant="outline">
+              <Link href="/">Browse videos</Link>
+            </Button>
+          }
+        />
+      ) : (
+        <ul
+          role="list"
+          className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        >
+          {entries.map((entry) => (
+            <li key={entry.video.id} className="flex min-w-0 flex-col gap-2">
+              <VideoCard video={entry.video} />
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {entry.viewCount === 1 ? "Watched once" : `Watched ${entry.viewCount} times`}
+                </p>
+                <HistoryClearEntryButton videoId={entry.video.id} title={entry.video.title} />
+              </div>
             </li>
           ))}
         </ul>

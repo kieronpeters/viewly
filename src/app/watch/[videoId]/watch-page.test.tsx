@@ -27,6 +27,20 @@ vi.mock("@/features/library/actions", () => ({
   toggleFavourite: vi.fn(),
   toggleWatchLater: vi.fn(),
 }));
+// The player wrapper imports the history action; it never runs here.
+vi.mock("@/features/library/history-actions", () => ({
+  recordView: vi.fn(),
+  clearHistoryEntry: vi.fn(),
+  clearAllHistory: vi.fn(),
+}));
+// jsdom never executes the IFrame API, so the loader stays pending: the
+// player renders its reserved box and fallback link exactly as a blocked
+// third-party script would.
+vi.mock("@/components/video/youtube-iframe-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/video/youtube-iframe-api")>();
+
+  return { ...actual, loadYoutubeIframeApi: () => new Promise(() => {}) };
+});
 vi.mock("@/features/library/playlist-actions", () => ({
   createPlaylist: vi.fn(),
   renamePlaylist: vi.fn(),
@@ -97,7 +111,9 @@ describe("WatchPageContent", () => {
 
     expect(playerSlot).toHaveAttribute("data-slot", "watch-player-slot");
     expect(detailsSlot).toHaveAttribute("data-slot", "watch-details-slot");
-    expect(within(playerSlot).getByTitle(/YouTube video player/)).toBeInTheDocument();
+    // T35 moved the embed behind the IFrame API client component; the reserved
+    // box and the fallback link are the server-rendered, always-present parts.
+    expect(playerSlot.querySelector('[data-slot="youtube-player"]')).not.toBeNull();
     expect(within(playerSlot).getByRole("link", { name: /open on youtube/i })).toBeInTheDocument();
     // T31 replaced the placeholder: the slot now renders real metadata.
     expect(within(detailsSlot).getByText("1.5B")).toBeInTheDocument();
