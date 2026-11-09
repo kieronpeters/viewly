@@ -24,13 +24,13 @@ export interface LibraryPageProps {
 /**
  * `/library` route shell.
  *
- * The heading is part of the prerendered static shell. The `?tab=` read and the
- * synchronous SQLite query live in `<LibraryPageContent>`, inside `<Suspense>`,
- * which is the boundary Cache Components requires for request-time data.
+ * The heading is part of the prerendered static shell. The `?tab=` read, the
+ * tab counts and the active list's SQLite query live in `<LibraryPageContent>`,
+ * inside `<Suspense>`, which is the boundary Cache Components requires for
+ * request-time data.
  *
- * Today the page lists favourites, watch later, playlists or history depending
- * on `?tab=`. T37 extends the same shell with the full tabbed page; the resolver
- * in the content half already accepts `?tab=`.
+ * `?tab=` selects favourites (default), watch later, history or playlists; the
+ * tab bar in the content half marks the active one with `aria-current="page"`.
  */
 export default function LibraryPage({ searchParams }: LibraryPageProps) {
   return (
@@ -52,15 +52,20 @@ export default function LibraryPage({ searchParams }: LibraryPageProps) {
 }
 
 /**
- * Streams while the favourites list resolves. The skeleton mirrors the real
- * heading and card grid so nothing shifts when the content arrives. `Skeleton`
- * is decorative, so the grid is `aria-hidden` and one hidden status announces
- * the wait.
+ * Streams while the tab counts and the active list resolve. The skeleton
+ * mirrors the real tab bar and card grid so nothing shifts when the content
+ * arrives. `Skeleton` is decorative, so the shapes are `aria-hidden` and one
+ * hidden status announces the wait.
  */
 function LibraryPageSkeleton() {
   return (
-    <div role="status" className="flex flex-col gap-4">
+    <div role="status" className="flex flex-col gap-6">
       <span className="sr-only">Loading library…</span>
+      <div aria-hidden="true" className="flex flex-wrap gap-2">
+        {Array.from({ length: 4 }, (_, index) => (
+          <Skeleton key={index} className="h-11 w-28 rounded-full" />
+        ))}
+      </div>
       <div aria-hidden="true" className="flex flex-col gap-1.5">
         <Skeleton className="h-6 w-32" />
         <Skeleton className="h-4 w-48" />

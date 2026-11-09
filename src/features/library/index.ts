@@ -16,6 +16,8 @@ export {
   listWatchLaterVideos,
 } from "./library-data";
 export type { PlaylistPageData } from "./library-data";
+export { countLibraryEntries } from "./library-counts";
+export type { LibraryCounts } from "./library-counts";
 export {
   favouriteSnapshotFromVideo,
   parseFavouriteSnapshot,

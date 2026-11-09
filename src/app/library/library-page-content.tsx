@@ -3,40 +3,21 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { VideoCard } from "@/components/video/video-card";
-import { listFavouriteVideos, listPlaylists, listWatchLaterVideos } from "@/features/library";
+import {
+  countLibraryEntries,
+  listFavouriteVideos,
+  listPlaylists,
+  listWatchLaterVideos,
+} from "@/features/library";
 import { listHistoryEntries, type HistoryEntry } from "@/features/library/history-data";
 import { PlaylistCreateForm } from "@/features/library/playlist-create-form";
 import type { PlaylistSummary } from "@/shared/types";
 
 import { HistoryClearAllButton, HistoryClearEntryButton } from "./history-clear-controls";
+import { LibraryTabs, resolveLibraryTab, type LibraryTab } from "./library-tabs";
 
 /** The App Router's plain-object view of the URL query string. */
 export type LibrarySearchParams = Record<string, string | string[] | undefined>;
-
-/**
- * Tabs the library knows about today.
- *
- * T37 adds the full tabbed shell; T34 introduced watch later, T36 adds the
- * playlists tab with its create form and T35 adds history. Keeping the list
- * typed means the resolver (and its tests) already has the shape T37 extends.
- */
-const LIBRARY_TABS = ["favourites", "watch-later", "playlists", "history"] as const;
-
-export type LibraryTab = (typeof LIBRARY_TABS)[number];
-
-/**
- * Resolves `?tab=` to a known tab.
- *
- * Favourites is the default, so an absent, unknown, stale or duplicated value
- * (`?tab=music`, `?tab=favourites&tab=history`) all land on the favourites
- * list rather than an empty page. Repeated parameters use the first value, the
- * same rule `/category/[slug]` applies to `pageToken`.
- */
-export function resolveLibraryTab(value: string | string[] | undefined): LibraryTab {
-  const candidate = Array.isArray(value) ? value[0] : value;
-
-  return LIBRARY_TABS.find((tab) => tab === candidate) ?? "favourites";
-}
 
 export interface LibraryPageContentProps {
   /** Passed straight through from the page: only this component awaits it. */
@@ -47,15 +28,26 @@ export interface LibraryPageContentProps {
  * Dynamic half of `/library`.
  *
  * Awaiting `searchParams` marks this segment as request-time, so the
- * synchronous SQLite read below happens per request inside the page's
- * `<Suspense>` boundary instead of during prerendering. The heading and tab
- * shell stay static.
+ * synchronous SQLite reads below happen per request inside the page's
+ * `<Suspense>` boundary instead of during prerendering. The heading stays in
+ * the static shell; the tab bar and the active list render here because both
+ * depend on `?tab=`.
+ *
+ * Switching tabs is a navigation, so only the newly active tab's list is read.
+ * The four tab counts are separate `COUNT(*)` queries (`countLibraryEntries`),
+ * never list reads: a tab that is not open must not be loaded to size it.
  */
 export async function LibraryPageContent({ searchParams }: LibraryPageContentProps) {
   const params = await searchParams;
   const tab = resolveLibraryTab(params.tab);
+  const counts = countLibraryEntries();
 
-  return <LibraryList tab={tab} />;
+  return (
+    <div className="flex flex-col gap-6">
+      <LibraryTabs activeTab={tab} counts={counts} />
+      <LibraryList tab={tab} />
+    </div>
+  );
 }
 
 interface LibraryListProps {
@@ -65,11 +57,10 @@ interface LibraryListProps {
 /**
  * The list for one resolved tab.
  *
- * T37 replaces this small switch with the full tabbed page; until then each tab
- * reads its own repository list and renders the matching control on every card.
- * The playlists read happens once per render: the video tabs use it for the
- * card picker, and the playlists tab renders it as the list itself. History
- * returns before that read because its cards have no picker.
+ * Only the active tab's list is read, plus the playlist list when the cards
+ * need a picker (the video tabs and the playlists tab itself). History returns
+ * before that read because its cards have no picker. The tab bar's counts come
+ * from `countLibraryEntries`, not from these lists.
  */
 function LibraryList({ tab }: LibraryListProps) {
   if (tab === "history") {
@@ -164,8 +155,8 @@ interface HistoryListProps {
  * One card per watched video in "most recently viewed first" order, with the
  * local view count and a two-step remove control under each card, plus one
  * two-step clear-all control for the whole list. Playback writes the rows; this
- * tab only reads and clears them. T37 owns the consolidated tab chrome, so this
- * stays a single section with no tab navigation of its own.
+ * tab only reads and clears them. The tab navigation lives in `<LibraryTabs>`,
+ * above every tab's content.
  */
 function HistoryList({ entries }: HistoryListProps) {
   return (
@@ -226,11 +217,10 @@ interface PlaylistListProps {
 }
 
 /**
- * Minimal playlists tab: a create form and one row per playlist.
+ * Playlists tab: a create form and one row per playlist.
  *
- * T37 owns the real tab system and richer playlist cards. This list only has to
- * be usable today, so it links each name to its detail page and shows the item
- * count the repository already computes.
+ * T37 owns the tab chrome above it. This list links each name to its detail
+ * page and shows the item count the repository already computes.
  */
 function PlaylistList({ playlists }: PlaylistListProps) {
   return (

@@ -148,6 +148,8 @@ export interface LibraryRepository {
     remove(videoId: string): boolean;
     /** Every favourite, most recently saved first. */
     list(): FavouriteRow[];
+    /** Number of saved favourites, from a `COUNT(*)` that materialises no rows. */
+    count(): number;
     /** Whether the video is currently a favourite. */
     isFavourite(videoId: string): boolean;
   };
@@ -158,6 +160,8 @@ export interface LibraryRepository {
     remove(videoId: string): boolean;
     /** The whole queue, most recently added first. */
     list(): WatchLaterRow[];
+    /** Number of queued videos, from a `COUNT(*)` that materialises no rows. */
+    count(): number;
     /** Whether the video is currently in the watch-later queue. */
     isInWatchLater(videoId: string): boolean;
   };
@@ -169,6 +173,8 @@ export interface LibraryRepository {
     recordView(input: RecordViewInput): HistoryRow;
     /** Every watched video, most recently viewed first. */
     list(): HistoryRow[];
+    /** Number of watched videos, from a `COUNT(*)` that materialises no rows. */
+    count(): number;
     /** Removes one video's history entry. Returns `true` when a row was deleted. */
     clearOne(videoId: string): boolean;
     /** Empties the history table. Returns the number of deleted rows. */
@@ -189,6 +195,8 @@ export interface LibraryRepository {
     delete(id: string): boolean;
     /** Every playlist with its item count, most recently modified first. */
     list(): PlaylistWithItemCount[];
+    /** Number of playlists, from a `COUNT(*)` that materialises no rows. */
+    count(): number;
     /** One playlist with its items ordered by position, or `undefined`. */
     get(id: string): PlaylistWithItems | undefined;
   };
@@ -247,6 +255,9 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
       list() {
         return db.select().from(favourites).orderBy(desc(favourites.savedAt)).all();
       },
+      count() {
+        return db.select({ value: count() }).from(favourites).get()?.value ?? 0;
+      },
       isFavourite(videoId) {
         const row = db
           .select({ videoId: favourites.videoId })
@@ -291,6 +302,9 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
       },
       list() {
         return db.select().from(watchLater).orderBy(desc(watchLater.savedAt)).all();
+      },
+      count() {
+        return db.select({ value: count() }).from(watchLater).get()?.value ?? 0;
       },
       isInWatchLater(videoId) {
         const row = db
@@ -342,6 +356,9 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
       list() {
         return db.select().from(history).orderBy(desc(history.lastViewedAt)).all();
       },
+      count() {
+        return db.select({ value: count() }).from(history).get()?.value ?? 0;
+      },
       clearOne(videoId) {
         return db.delete(history).where(eq(history.videoId, videoId)).run().changes > 0;
       },
@@ -385,6 +402,9 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
           .groupBy(playlists.id)
           .orderBy(desc(playlists.updatedAt), asc(playlists.id))
           .all();
+      },
+      count() {
+        return db.select({ value: count() }).from(playlists).get()?.value ?? 0;
       },
       get(id) {
         const playlist = db.select().from(playlists).where(eq(playlists.id, id)).get();
