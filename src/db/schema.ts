@@ -153,6 +153,27 @@ export const playlists = sqliteTable("playlists", {
 });
 
 /**
+ * Small key/value store for application settings that are not library data.
+ *
+ * The first user is the metadata sweep's `last_sweep_at` marker (T46): the
+ * value is an ISO-8601 timestamp and the row records when it was written.
+ * Keeping it in SQLite rather than in memory means a restart does not trigger
+ * an unnecessary sweep, and keeping it out of the three library tables means
+ * their display snapshot contract is unchanged.
+ *
+ * `value` is text so a setting can hold a timestamp, a flag or a small JSON
+ * payload without a migration; each caller owns the interpretation of its key.
+ */
+export const settings = sqliteTable("settings", {
+  /** Stable setting name, for example `last_sweep_at`. */
+  key: text("key").primaryKey(),
+  /** Serialized setting value; never null, an empty string is a valid value. */
+  value: text("value").notNull(),
+  /** When the setting was last written, UTC milliseconds. */
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
  * Membership and ordering of videos inside a playlist.
  *
  * The composite primary key `(playlist_id, video_id)` makes "add to playlist"

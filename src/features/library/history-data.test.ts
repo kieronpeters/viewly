@@ -30,14 +30,21 @@ afterEach(() => {
   library.dispose();
 });
 
+/** Fields a seed helper may override on the default snapshot. */
+type SnapshotOverrides = {
+  title?: string;
+  thumbnailUrl?: string;
+};
+
 /** Seeds one view at a controlled time. */
-function view(videoId: string, viewedAt: number, title = `Title ${videoId}`) {
+function view(videoId: string, viewedAt: number, overrides: SnapshotOverrides = {}) {
   library.repository.history.recordView({
     videoId,
-    title,
+    title: `Title ${videoId}`,
     channelTitle: "Channel",
     thumbnailUrl: `https://example.com/${videoId}.jpg`,
     durationSeconds: 60,
+    ...overrides,
     viewedAt: new Date(viewedAt),
   });
 }
@@ -89,7 +96,7 @@ describe("listHistoryEntries", () => {
 
   it("keeps one entry per video and surfaces the local view count", () => {
     view("video-repeat", 1_000);
-    view("video-repeat", 5_000, "Updated title");
+    view("video-repeat", 5_000, { title: "Updated title" });
 
     const entries = listHistoryEntries();
 
@@ -113,5 +120,35 @@ describe("history row projections", () => {
     expect(historyRowToVideoSummary(row)).toEqual(historyRowToEntry(row).video);
     expect(historyRowToEntry(row).lastViewedAt).toEqual(row.lastViewedAt);
     expect(historyRowToEntry(row).viewCount).toBe(row.viewCount);
+  });
+});
+
+describe("thumbnail projection", () => {
+  const FALLBACK_THUMBNAIL = "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg";
+
+  it("renders a row on a host next/image rejects with the canonical still", () => {
+    view("dQw4w9WgXcQ", 1_000, { thumbnailUrl: "https://example.com/old.jpg" });
+
+    const [entry] = listHistoryEntries();
+
+    expect(entry?.video.thumbnailUrl).toBe(FALLBACK_THUMBNAIL);
+  });
+
+  it("leaves the stored row untouched, so the original URL is still there", () => {
+    view("dQw4w9WgXcQ", 1_000, { thumbnailUrl: "https://example.com/old.jpg" });
+
+    listHistoryEntries();
+
+    expect(library.repository.history.list()[0]?.thumbnailUrl).toBe("https://example.com/old.jpg");
+  });
+
+  it("keeps an allowed stored URL as-is", () => {
+    view("dQw4w9WgXcQ", 1_000, {
+      thumbnailUrl: "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+    });
+
+    expect(listHistoryEntries()[0]?.video.thumbnailUrl).toBe(
+      "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+    );
   });
 });

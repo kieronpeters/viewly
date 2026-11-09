@@ -51,7 +51,7 @@
 import "server-only";
 
 import { mkdirSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
@@ -100,10 +100,19 @@ export function resolveDatabasePath(): string {
   const configured = (process.env[DATABASE_PATH_ENV_VAR] ?? "").trim();
 
   if (configured.length === 0) {
-    return resolve(process.cwd(), DEFAULT_DATABASE_PATH);
+    // Literal segments keep this access statically scoped to `data/` for the
+    // build's file tracer; a dynamic default would pull the whole project into
+    // every server trace. This must stay `join(process.cwd(), "data", ...)`
+    // rather than a variable so Turbopack can follow it.
+    return join(process.cwd(), "data", "viewly.db");
   }
 
-  return isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
+  return isAbsolute(configured)
+    ? configured
+    : // An override can point anywhere, so the tracer cannot scope it. Opt out
+      // instead of letting it trace the entire project (the file is opened at
+      // runtime, never bundled).
+      resolve(/* turbopackIgnore: true */ process.cwd(), configured);
 }
 
 /** Opens the database file and applies the connection pragmas. */

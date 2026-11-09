@@ -8,10 +8,12 @@ import { EnvConfigurationError } from "@/lib/env";
 import {
   API_ERROR_STATUS,
   apiErrorResult,
+  isNextControlFlowError,
   jsonError,
   jsonErrorResult,
   logServerError,
   mapErrorToResponse,
+  rethrowNextControlFlow,
 } from "@/lib/errors";
 import { assertSearchQuery, assertVideoId, DomainValidationError } from "@/shared/validation";
 
@@ -35,6 +37,17 @@ function setKey(value: string | undefined): void {
   } else {
     process.env.YOUTUBE_API_KEY = value;
   }
+}
+
+/**
+ * Mimics the error Next throws when a route handler touches a Request-time API
+ * (`request.url`, a patched `fetch`, ...) while Next is trying to prerender it.
+ */
+function nextBailout(digest = "NEXT_PRERENDER_INTERRUPTED"): Error {
+  const error = new Error(
+    "Route /api/trending needs to bail out of prerendering at this point because it used request.url.",
+  );
+  return Object.assign(error, { digest });
 }
 
 beforeEach(() => {
@@ -182,6 +195,69 @@ describe("jsonError", () => {
         field: "videoId",
       },
     });
+  });
+
+  it("marks the failure uncacheable so it is never replayed", () => {
+    const response = jsonError(new Error("boom"));
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
+describe("jsonErrorResult", () => {
+  it("marks every envelope uncacheable", () => {
+    for (const code of Object.keys(API_ERROR_STATUS) as (keyof typeof API_ERROR_STATUS)[]) {
+      const response = jsonErrorResult(apiErrorResult(code, "Authored copy."));
+
+      expect(response.status).toBe(API_ERROR_STATUS[code]);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+  });
+
+  it("keeps the body and status it was given", async () => {
+    const response = jsonErrorResult(apiErrorResult("NOT_FOUND", "That video could not be found."));
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "NOT_FOUND", message: "That video could not be found." },
+    });
+  });
+});
+
+describe("isNextControlFlowError", () => {
+  it("recognises the bailouts Next throws to steer rendering", () => {
+    expect(isNextControlFlowError(nextBailout("NEXT_PRERENDER_INTERRUPTED"))).toBe(true);
+    expect(isNextControlFlowError(nextBailout("NEXT_REDIRECT"))).toBe(true);
+    expect(isNextControlFlowError(nextBailout("NEXT_HTTP_ERROR_FALLBACK;404"))).toBe(true);
+    // Legacy static-generation bailout: same meaning, older digest.
+    expect(isNextControlFlowError(nextBailout("DYNAMIC_SERVER_USAGE"))).toBe(true);
+  });
+
+  it("ignores application failures and values that only look like errors", () => {
+    expect(isNextControlFlowError(new Error("boom"))).toBe(false);
+    expect(isNextControlFlowError(nextBailout("SOME_APP_DIGEST"))).toBe(false);
+    expect(isNextControlFlowError("NEXT_PRERENDER_INTERRUPTED")).toBe(false);
+    expect(isNextControlFlowError(null)).toBe(false);
+    expect(isNextControlFlowError(undefined)).toBe(false);
+    expect(isNextControlFlowError({ digest: 42 })).toBe(false);
+    expect(isNextControlFlowError({ message: "no digest here" })).toBe(false);
+  });
+});
+
+describe("rethrowNextControlFlow", () => {
+  it("rethrows the same bailout instance so Next can finish prerendering", () => {
+    const bailout = nextBailout();
+
+    expect(catchThrown(() => rethrowNextControlFlow(bailout))).toBe(bailout);
+  });
+
+  it("lets ordinary failures fall through to the caller's handler", () => {
+    expect(() => rethrowNextControlFlow(new Error("boom"))).not.toThrow();
+    expect(() =>
+      rethrowNextControlFlow(new DomainValidationError("invalid_type", "Nope.")),
+    ).not.toThrow();
+    expect(() => rethrowNextControlFlow("thrown string")).not.toThrow();
   });
 });
 

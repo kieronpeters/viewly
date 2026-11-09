@@ -173,6 +173,44 @@ describe("watchLaterToVideoSummary", () => {
   });
 });
 
+describe("thumbnail projection", () => {
+  const FALLBACK_THUMBNAIL = "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg";
+
+  it("renders an existing row on a host next/image rejects with the canonical still", () => {
+    saveFavourite("dQw4w9WgXcQ", 1_000, { thumbnailUrl: "https://example.com/old.jpg" });
+
+    const [video] = listFavouriteVideos();
+
+    expect(video.thumbnailUrl).toBe(FALLBACK_THUMBNAIL);
+  });
+
+  it("leaves the stored row untouched, so the original URL is still there", () => {
+    saveFavourite("dQw4w9WgXcQ", 1_000, { thumbnailUrl: "https://example.com/old.jpg" });
+
+    listFavouriteVideos();
+
+    expect(library.repository.favourites.list()[0].thumbnailUrl).toBe(
+      "https://example.com/old.jpg",
+    );
+  });
+
+  it("applies the same fallback to watch later rows", () => {
+    saveWatchLater("dQw4w9WgXcQ", 1_000, { thumbnailUrl: "https://example.com/old.jpg" });
+
+    expect(listWatchLaterVideos()[0].thumbnailUrl).toBe(FALLBACK_THUMBNAIL);
+  });
+
+  it("keeps an allowed stored URL as-is", () => {
+    saveFavourite("dQw4w9WgXcQ", 1_000, {
+      thumbnailUrl: "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+    });
+
+    expect(listFavouriteVideos()[0].thumbnailUrl).toBe(
+      "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+    );
+  });
+});
+
 describe("listPlaylists", () => {
   it("returns nothing for an empty library", () => {
     expect(listPlaylists()).toEqual([]);
@@ -251,7 +289,7 @@ function saveFavourite(videoId: string, savedAt: number, overrides: SnapshotOver
     videoId,
     title: `Title ${videoId}`,
     channelTitle: "Channel",
-    thumbnailUrl: "https://example.com/thumbnail.jpg",
+    thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     durationSeconds: 42,
     ...overrides,
     savedAt: new Date(savedAt),
@@ -264,7 +302,7 @@ function saveWatchLater(videoId: string, savedAt: number, overrides: SnapshotOve
     videoId,
     title: `Title ${videoId}`,
     channelTitle: "Channel",
-    thumbnailUrl: "https://example.com/thumbnail.jpg",
+    thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     durationSeconds: 42,
     ...overrides,
     savedAt: new Date(savedAt),

@@ -191,7 +191,7 @@ describe("library schema migration", () => {
     insertFavourite("video-a");
 
     // The migrator records each migration in `__drizzle_migrations`; a second
-    // run must skip it rather than re-running the (non-idempotent) CREATEs.
+    // run must skip them rather than re-running the (non-idempotent) CREATEs.
     expect(() => migrate(drizzle(sqlite), { migrationsFolder: MIGRATIONS_FOLDER })).not.toThrow();
 
     expect(
@@ -200,7 +200,7 @@ describe("library schema migration", () => {
           count: number;
         }
       ).count,
-    ).toBe(1);
+    ).toBe(2);
 
     // Existing data survived, so the schema was not recreated.
     expect(

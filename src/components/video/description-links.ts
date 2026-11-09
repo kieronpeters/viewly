@@ -14,15 +14,63 @@ export type DescriptionSegment =
 /** A URL candidate: only the two schemes we are willing to link to. */
 const URL_CANDIDATE = /\bhttps?:\/\/[^\s<>"']+/gi;
 
+/** ASCII punctuation that commonly trails a URL in prose. */
+const ASCII_TRAILING_PUNCTUATION = [".", ",", ";", ":", "!", "?", "'", '"'];
+
+/**
+ * Full-width punctuation that ends a sentence in CJK prose. It is never part
+ * of a URL, and leaving it on the candidate lets `URL` fold it into the host
+ * through IDNA (`。` and `．` become `.`, `、` becomes `,`).
+ */
+const FULL_WIDTH_TRAILING_PUNCTUATION = ["、", "。", "，", "．", "！", "？", "：", "；"];
+
 /** Punctuation that commonly trails a URL in prose. */
-const TRAILING_PUNCTUATION = new Set([".", ",", ";", ":", "!", "?", "'", '"']);
+const TRAILING_PUNCTUATION = new Set([
+  ...ASCII_TRAILING_PUNCTUATION,
+  ...FULL_WIDTH_TRAILING_PUNCTUATION,
+]);
 
 /** Closing brackets are only stripped while they are unbalanced. */
-const BRACKET_PAIRS: Readonly<Record<string, string>> = {
+const ASCII_BRACKET_PAIRS: Readonly<Record<string, string>> = {
   ")": "(",
   "]": "[",
   "}": "{",
 };
+
+/** Full-width closing brackets, with the opening character they balance. */
+const FULL_WIDTH_BRACKET_PAIRS: Readonly<Record<string, string>> = {
+  "）": "（",
+  "」": "「",
+  "】": "【",
+  "》": "《",
+  "〉": "〈",
+  "〕": "〔",
+  "］": "［",
+  "｝": "｛",
+  "〗": "〖",
+};
+
+const BRACKET_PAIRS: Readonly<Record<string, string>> = {
+  ...ASCII_BRACKET_PAIRS,
+  ...FULL_WIDTH_BRACKET_PAIRS,
+};
+
+/**
+ * Full-width punctuation and brackets must never reach `URL` as part of the
+ * authority: IDNA silently rewrites them (`https://example.com、こちら` becomes
+ * the host `example.xn--com-6y3b0qwcun`). A candidate is cut at the first one
+ * found inside its authority, before parsing, so the host is never re-parsed
+ * with punctuation in it. Paths are left alone: a full-width bracket there is
+ * percent-encoded instead of truncating the link.
+ */
+const HOST_TERMINATOR = new RegExp(
+  `[${[
+    ...FULL_WIDTH_TRAILING_PUNCTUATION,
+    ...Object.keys(FULL_WIDTH_BRACKET_PAIRS),
+    ...Object.values(FULL_WIDTH_BRACKET_PAIRS),
+  ].join("")}]`,
+  "u",
+);
 
 /**
  * Splits `text` into plain-text and link segments, preserving every character
@@ -35,7 +83,7 @@ export function splitDescriptionLinks(text: string): DescriptionSegment[] {
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(text)) !== null) {
-    const linkText = trimTrailingPunctuation(match[0]);
+    const linkText = trimTrailingPunctuation(trimHostTerminator(match[0]));
     const href = toSafeHref(linkText);
 
     if (href === null) {
@@ -82,9 +130,40 @@ function toSafeHref(candidate: string): string | null {
 }
 
 /**
+ * Cuts a candidate at the first full-width punctuation character inside its
+ * authority, so the host is never re-parsed with punctuation folded into it.
+ * `"https://example.com、こちら"` becomes `"https://example.com"` and the rest
+ * is re-emitted as text; `"https://example.com/a（b）"` is untouched because the
+ * bracket sits in the path, not the authority.
+ */
+function trimHostTerminator(value: string): string {
+  const schemeEnd = value.indexOf("://");
+
+  if (schemeEnd === -1) {
+    return value;
+  }
+
+  const authorityStart = schemeEnd + 3;
+  let authorityEnd = value.length;
+
+  for (const delimiter of ["/", "?", "#"]) {
+    const index = value.indexOf(delimiter, authorityStart);
+    if (index !== -1 && index < authorityEnd) {
+      authorityEnd = index;
+    }
+  }
+
+  const authority = value.slice(authorityStart, authorityEnd);
+  const terminator = authority.search(HOST_TERMINATOR);
+
+  return terminator === -1 ? value : value.slice(0, authorityStart + terminator);
+}
+
+/**
  * Drops sentence punctuation and unbalanced closing brackets from the end of a
  * matched URL. `"https://example.com/a_(b)"` keeps its balanced `)`, while
- * `"(see https://example.com)"` loses the outer one.
+ * `"(see https://example.com)"` loses the outer one. Full-width equivalents
+ * (`（https://example.com）`, `https://example.com。`) behave the same way.
  */
 function trimTrailingPunctuation(value: string): string {
   let end = value.length;

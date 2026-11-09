@@ -30,6 +30,7 @@ import {
   jsonErrorResult,
   logServerError,
   mapErrorToResponse,
+  rethrowNextControlFlow,
 } from "@/lib/errors";
 import { isYouTubeApiError, searchVideos } from "@/lib/youtube/client";
 import type { YouTubeApiError } from "@/lib/youtube/client";
@@ -67,6 +68,9 @@ export async function GET(request: Request): Promise<NextResponse<SearchPage | A
       headers: { "Cache-Control": CACHE_CONTROL },
     });
   } catch (error) {
+    // A Next prerender bailout is control flow, not an API failure: let it
+    // propagate instead of logging it and answering with an envelope.
+    rethrowNextControlFlow(error);
     return errorResponse(error);
   }
 }
@@ -86,16 +90,16 @@ function errorResponse(error: unknown): NextResponse<ApiErrorBody> {
       },
     });
 
-    return errorJson(mapYouTubeError(error));
+    return jsonErrorResult(mapYouTubeError(error));
   }
 
   if (isDomainValidationError(error)) {
     // Client mistake, fully explained by the envelope: no server log noise.
-    return errorJson(mapErrorToResponse(error));
+    return jsonErrorResult(mapErrorToResponse(error));
   }
 
   logServerError(error, SCOPE);
-  return errorJson(mapErrorToResponse(error));
+  return jsonErrorResult(mapErrorToResponse(error));
 }
 
 /** Client-side request rejections are still upstream failures, not server bugs. */
@@ -112,11 +116,4 @@ function mapYouTubeError(error: YouTubeApiError): ApiErrorResult {
     case "not_found":
       return apiErrorResult("UPSTREAM_ERROR", UPSTREAM_ERROR_MESSAGE);
   }
-}
-
-/** Errors are never cacheable: a 429 or a 500 must not be replayed to other users. */
-function errorJson(result: ApiErrorResult): NextResponse<ApiErrorBody> {
-  const response = jsonErrorResult(result);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
 }

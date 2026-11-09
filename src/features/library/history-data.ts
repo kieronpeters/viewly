@@ -17,6 +17,8 @@ import { getDb } from "@/lib/db/client";
 import { createLibraryRepository, type HistoryRow } from "@/lib/db/repositories/library.repository";
 import type { VideoSummary } from "@/shared/types";
 
+import { displayThumbnailUrl } from "./video-snapshot";
+
 /**
  * One history row as the tab needs it.
  *
@@ -41,6 +43,14 @@ export interface HistoryEntry {
  * deterministically: `channelId` and `publishedAt` have no stored value, and
  * `viewCount` is the *YouTube* count (unknown at view time), not the local
  * watch count.
+ *
+ * The thumbnail is projected through {@link displayThumbnailUrl} for the same
+ * reason as the favourites and watch-later reads: a row written before the host
+ * check (or by an older version) may point at a host `next/image` rejects, and
+ * passing such a `src` straight to the card throws while rendering and takes the
+ * whole history tab down. An off-host URL therefore renders YouTube's canonical
+ * still for the id; the stored row is not rewritten, so the original value stays
+ * in SQLite.
  */
 export function historyRowToVideoSummary(row: HistoryRow): VideoSummary {
   return {
@@ -48,7 +58,7 @@ export function historyRowToVideoSummary(row: HistoryRow): VideoSummary {
     title: row.title,
     channelId: "",
     channelTitle: row.channelTitle,
-    thumbnailUrl: row.thumbnailUrl,
+    thumbnailUrl: displayThumbnailUrl(row.videoId, row.thumbnailUrl),
     publishedAt: "",
     durationSeconds: row.durationSeconds,
     viewCount: null,

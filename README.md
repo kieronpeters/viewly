@@ -9,8 +9,9 @@ database and no public deployment.
 Working today:
 
 - Next.js 16 App Router foundation with a responsive app shell (desktop sidebar, mobile bottom nav).
-- Midnight Purple theme and shared UI primitives: buttons, cards, inputs, skeletons, empty/error
-  states, toasts.
+- Midnight Purple theme and shared UI primitives: buttons, inputs, skeletons, and empty/error
+  states. `Card` and `Toast` also live in `src/components/ui`, but no screen uses them yet; treat
+  them as internal primitives rather than shipped UI.
 - YouTube discovery: home page with trending and category rows, paginated search, and category pages,
   backed by a server-only client with a process-local TTL cache and typed errors.
 - Watch page with the official YouTube embed, video metadata and description, favourite and watch
@@ -23,8 +24,8 @@ Working today:
   "YouTube is not configured" setup state that names the variable, instead of the player or the
   error boundary. The tab title stays neutral.
 - SQLite + Drizzle ORM: schema for favourites, watch later, history, playlists and playlist items,
-  generated migrations, Server Actions for the save, history and playlist writes, and a server-only
-  database client.
+  plus a `settings` key/value table that holds the sweep marker; generated migrations, Server
+  Actions for the save, history and playlist writes, and a server-only database client.
 - Server-only environment module that reads the YouTube API key and fails with a named error when it
   is missing.
 - Vitest suite, plus lint, type-check and formatting checks.
@@ -34,9 +35,14 @@ Not finished or not verified:
 - **Live YouTube calls.** No owner-supplied API key is available in this workspace, so the YouTube
   client has only run against a stubbed `fetch`. Search, trending, video details and suggestions are
   unverified against the real API.
-- **Retention (T46).** Saved metadata is kept indefinitely, with no TTL, refresh or sweep. The
-  30-day limit for Non-Authorized API Data is still an open decision; see
-  [`docs/YOUTUBE_DATA_POLICY.md`](docs/YOUTUBE_DATA_POLICY.md).
+- **Retention (T46) is lazy.** Saved metadata is refreshed by a 30-day sweep on the `/library`
+  request path, not a background job. The first request where `settings.last_sweep_at` is missing or
+  older than 30 days re-fetches every distinct saved video in batches of 50 and rewrites its title,
+  channel, thumbnail and duration. A video YouTube no longer returns keeps its row and becomes the
+  authored "Unavailable video" placeholder. Because the sweep only runs when the app is opened, rows
+  can be older than 30 days while Viewly is closed. An upstream failure leaves every stored snapshot
+  untouched, and the sweep is retried on the next request because the marker is only advanced at the
+  end. See [`docs/YOUTUBE_DATA_POLICY.md`](docs/YOUTUBE_DATA_POLICY.md).
 - **Real-browser and player checks.** No browser or end-to-end test covers the embed, the save
   controls or the library tabs; they are exercised only in jsdom. Made-for-Kids handling,
   identifying the client to the player, card-level YouTube attribution and the Branding Guidelines

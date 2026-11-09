@@ -69,9 +69,10 @@ Current flows:
   reach the error boundary. The normal result renders the official player, metadata/description
   panel and save controls.
 - `GET /library`: resolves `?tab=` to favourites (default), watch later, history or playlists;
-  unknown or stale values fall back to favourites. Tab counts come from `countLibraryEntries` and
-  only the active tab's list is read from SQLite inside `Suspense`. The playlists tab creates
-  playlists and links to their detail pages.
+  unknown or stale values fall back to favourites. Before either read it awaits
+  `sweepLibraryMetadata()`, so cards never render a snapshot the sweep was about to replace. Tab
+  counts come from `countLibraryEntries` and only the active tab's list is read from SQLite inside
+  `Suspense`. The playlists tab creates playlists and links to their detail pages.
 - `GET /library/playlists/[playlistId]`: validates the id, reads the playlist and its ordered item
   ids, then batches `getVideos` for the valid ids. Missing metadata renders an "Unavailable video"
   row that can still be removed; the page also offers rename and delete controls.
@@ -96,9 +97,10 @@ per render.
 
 ## 3. Server/client boundaries
 
-- `src/lib/env.ts`, `src/lib/db/client.ts`, `src/lib/youtube/client.ts` and
-  `src/lib/db/repositories/library.repository.ts` import `server-only`, so a client import fails at
-  build time.
+- `src/lib/env.ts`, `src/lib/db/client.ts`, `src/lib/youtube/client.ts`,
+  `src/lib/db/repositories/library.repository.ts` and
+  `src/features/library/metadata-sweep.ts` import `server-only`, so a client import fails at build
+  time.
 - The YouTube key is read from `process.env.YOUTUBE_API_KEY` on the server only, lazily per call.
   It is never prefixed `NEXT_PUBLIC_`, never returned, and only written into the outbound request
   URL. Error logging redacts key-shaped strings.
@@ -121,15 +123,16 @@ per render.
   any request-time SQLite read during rendering must be wrapped in `connection()` from
   `next/server` or placed behind a `Suspense` boundary. API route handlers already run per request,
   and `/search`, `/library`, `/library/playlists/[playlistId]` and `/watch/[videoId]` put
-  request-time work behind `Suspense`. `/library` (tab counts and the active list),
-  `/library/playlists/[playlistId]` (playlist and items) and `/watch/[videoId]` (saved state)
+  request-time work behind `Suspense`. `/library` (the metadata sweep, tab counts and the active
+  list), `/library/playlists/[playlistId]` (playlist and items) and `/watch/[videoId]` (saved state)
   perform SQLite reads there.
 
 ## 4. Data model
 
-Five tables, defined once in `src/db/schema.ts` and created by
-`src/db/migrations/0000_mute_slapstick.sql`. “Snapshot” means `title`, `channel_title`,
-`thumbnail_url` and nullable `duration_seconds`.
+Six tables, defined once in `src/db/schema.ts` and created by
+`src/db/migrations/0000_mute_slapstick.sql` (the five library tables) and
+`src/db/migrations/0001_solid_betty_ross.sql` (`settings`). “Snapshot” means `title`,
+`channel_title`, `thumbnail_url` and nullable `duration_seconds`.
 
 | Table            | Primary key               | Other columns                            | Constraints and indexes                                                                                                                                  |
 | ---------------- | ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -138,6 +141,7 @@ Five tables, defined once in `src/db/schema.ts` and created by
 | `history`        | `video_id`                | snapshot, `last_viewed_at`, `view_count` | `view_count` defaults to 1 and has CHECK `>= 0`; index `history_last_viewed_at_idx`                                                                      |
 | `playlists`      | `id` (application UUID)   | `name`, `created_at`, `updated_at`       | no additional index                                                                                                                                      |
 | `playlist_items` | `(playlist_id, video_id)` | `position`, `added_at`                   | FK `playlist_id` -> `playlists.id` ON DELETE CASCADE; CHECK `position >= 0`; index `playlist_items_playlist_id_position_idx` (`playlist_id`, `position`) |
+| `settings`       | `key` (text)              | `value`, `updated_at`                    | key/value store; today holds only `last_sweep_at` for the metadata sweep                                                                                 |
 
 Notes:
 
@@ -152,6 +156,9 @@ Notes:
   it for the app; tests, scripts and `sqlite3` sessions must set it too, or deleting a playlist
   leaves its items behind.
 - `position` is append-only and not unique; removing an item leaves a gap rather than renumbering.
+- `settings` is application state, not API Data: `key` is a text primary key, `value` is a non-null
+  string and `updated_at` is UTC milliseconds. Its only key today is `last_sweep_at`, an ISO-8601
+  timestamp written by the metadata sweep.
 
 ## 5. Route surface
 
@@ -177,7 +184,7 @@ The shell links to `/search` and `/library`.
 ```bash
 npm test              # Vitest once
 npm run test:watch    # Vitest watch mode
-npm run typecheck     # tsc --noEmit
+npm run typecheck     # next typegen && tsc --noEmit
 npm run lint          # ESLint
 npm run format:check  # Prettier check
 npm run build         # next build
@@ -194,11 +201,18 @@ Background: [`README.md`](../README.md) · [`PROJECT_STRUCTURE.md`](PROJECT_STRU
 
 ## 7. Known gaps
 
-- **Playback compliance.** `/watch/[videoId]` renders the official YouTube embed
-  (`youtube-nocookie.com`, `rel=0`, lazy loading, no autoplay) with an "Open on YouTube" fallback
-  link, plus the metadata/description panel. The Made-for-Kids lookup, identifying the client to the
-  player and the Branding Guidelines review are still open.
-- **Retention.** The 30-day retention problem in `YOUTUBE_DATA_POLICY.md` is unresolved; the
-  retention decision is T46.
+- **Playback compliance.** `/watch/[videoId]` mounts the official YouTube IFrame API player
+  (`https://www.youtube.com/iframe_api`) with `host: https://www.youtube-nocookie.com` and
+  `playerVars: { rel: 0, autoplay: 0 }`; the API creates the iframe and Viewly sets its title,
+  `loading="lazy"` and size on ready, with an "Open on YouTube" fallback link beside the box. The
+  Made-for-Kids lookup, identifying the client to the player and the Branding Guidelines review are
+  still open.
+- **Retention is lazy.** Saved snapshots are refreshed by `src/features/library/metadata-sweep.ts`,
+  not a scheduled job: the first `/library` request where `settings.last_sweep_at` is missing or
+  older than 30 days re-fetches every distinct saved video in batches of 50, rewrites the snapshot,
+  and relabels videos YouTube no longer returns as the authored "Unavailable video". Nothing is
+  deleted. Rows can be older than 30 days while the app is closed. An upstream failure leaves every
+  stored snapshot untouched and the sweep is retried on the next request, because the marker is only
+  advanced at the end.
 - **Live YouTube smoke.** Unit tests cover request shape and error mapping with a stubbed `fetch`.
   No real API call has been recorded because no owner-supplied key is available in this workspace.

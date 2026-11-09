@@ -43,6 +43,19 @@ function callRoute(id: string): Promise<Response> {
   return GET(request, { params: Promise.resolve({ id }) });
 }
 
+/**
+ * Mimics the error Next throws when a handler touches a Request-time API
+ * (`fetch` is patched during prerender) while Next is trying to prerender it.
+ */
+function nextPrerenderBailout(): Error {
+  return Object.assign(
+    new Error(
+      "Route /api/videos/[id] needs to bail out of prerendering at this point because it used fetch.",
+    ),
+    { digest: "NEXT_PRERENDER_INTERRUPTED" },
+  );
+}
+
 let errorLog: MockInstance;
 
 beforeEach(() => {
@@ -78,6 +91,7 @@ describe("GET /api/videos/[id]", () => {
     };
 
     expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body.error.code).toBe("VALIDATION_FAILED");
     expect(body.error.field).toBe("videoId");
     expect(body.error.message).toContain("Video id");
@@ -91,6 +105,7 @@ describe("GET /api/videos/[id]", () => {
     const body = (await response.json()) as { error: { code: string; message: string } };
 
     expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body.error.code).toBe("NOT_FOUND");
     expect(body.error.message.length).toBeGreaterThan(0);
     expect(body.error.message).toContain("video");
@@ -110,6 +125,7 @@ describe("GET /api/videos/[id]", () => {
     const body = (await response.json()) as { error: { code: string; message: string } };
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body.error.code).toBe("RATE_LIMITED");
     expect(body.error.message.length).toBeGreaterThan(0);
 
@@ -136,6 +152,7 @@ describe("GET /api/videos/[id]", () => {
     const raw = JSON.stringify(await response.json());
 
     expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(raw).toContain("UPSTREAM_ERROR");
     expect(raw).not.toContain("RATE_LIMITED");
     expect(raw).not.toContain("backendError");
@@ -162,6 +179,7 @@ describe("GET /api/videos/[id]", () => {
     const raw = JSON.stringify(body);
 
     expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body.error.code).toBe("UPSTREAM_ERROR");
     expect(body.error.message.length).toBeGreaterThan(0);
     expect(raw).not.toContain("upstream body");
@@ -182,6 +200,7 @@ describe("GET /api/videos/[id]", () => {
     const raw = JSON.stringify(await response.json());
 
     expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(raw).toContain("CONFIGURATION_ERROR");
     expect(raw).not.toContain("keyInvalid");
     expect(raw).not.toContain("YOUTUBE_API_KEY");
@@ -200,6 +219,7 @@ describe("GET /api/videos/[id]", () => {
     const raw = JSON.stringify(await response.json());
 
     expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(raw).toContain("CONFIGURATION_ERROR");
     expect(raw).not.toContain("YOUTUBE_API_KEY");
     expect(raw).not.toContain(".env.local");
@@ -213,9 +233,30 @@ describe("GET /api/videos/[id]", () => {
     const raw = JSON.stringify(await response.json());
 
     expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(raw).toContain("INTERNAL_ERROR");
     expect(raw).not.toContain("boom");
     expect(raw).not.toContain("/internal/path");
     expect(raw).not.toContain(FAKE_KEY);
+  });
+
+  it("rethrows Next's prerender bailout from the upstream fetch without logging it", async () => {
+    const bailout = nextPrerenderBailout();
+    getVideoMock.mockRejectedValue(bailout);
+
+    await expect(callRoute(VIDEO_ID)).rejects.toBe(bailout);
+
+    // Control flow, not an application failure: no phantom [api-error] line.
+    expect(errorLog).not.toHaveBeenCalled();
+  });
+
+  it("rethrows Next's prerender bailout from params without logging it", async () => {
+    const bailout = nextPrerenderBailout();
+    const request = new Request(`https://viewly.test/api/videos/${VIDEO_ID}`);
+
+    await expect(GET(request, { params: Promise.reject(bailout) })).rejects.toBe(bailout);
+
+    expect(errorLog).not.toHaveBeenCalled();
+    expect(getVideoMock).not.toHaveBeenCalled();
   });
 });

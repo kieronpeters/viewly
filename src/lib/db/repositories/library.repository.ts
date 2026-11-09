@@ -60,6 +60,15 @@
  * `PRAGMA foreign_keys = ON`, which `src/lib/db/client.ts` sets for the app;
  * any other connection (tests, scripts) must set it too. This module does not
  * delete items by hand.
+ *
+ * ## Settings and metadata refresh (T46)
+ *
+ * `settings` is a generic key/value table; {@link LibraryRepository.settings}
+ * reads and upserts one row. {@link LibraryRepository.snapshots} serves the
+ * lazy metadata sweep: `listVideoIds` returns the distinct saved ids across
+ * the three display-snapshot tables and `update` writes one refreshed snapshot
+ * to every copy in a single transaction. Neither function deletes a row, so a
+ * video that YouTube no longer returns keeps its saved id.
  */
 import "server-only";
 
@@ -67,7 +76,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, count, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
 
-import { favourites, history, playlistItems, playlists, watchLater } from "@/db/schema";
+import { favourites, history, playlistItems, playlists, settings, watchLater } from "@/db/schema";
 import type { ViewlyDatabase } from "@/lib/db/client";
 
 /** A row of `favourites`, with `savedAt` as a `Date`. */
@@ -84,6 +93,9 @@ export type PlaylistRow = typeof playlists.$inferSelect;
 
 /** A row of `playlist_items`, with `addedAt` as a `Date`. */
 export type PlaylistItemRow = typeof playlistItems.$inferSelect;
+
+/** A row of `settings`, with `updatedAt` as a `Date`. */
+export type SettingRow = typeof settings.$inferSelect;
 
 /**
  * The display snapshot shared by favourites, watch later and history.
@@ -132,6 +144,14 @@ export interface AddPlaylistItemInput {
   /** When the video was added, UTC milliseconds. */
   addedAt: Date;
 }
+
+/**
+ * A display snapshot to write back over every saved row for one video (T46).
+ *
+ * The same shape is stored by favourites, watch later and history, so one
+ * refresh updates all three copies and they cannot drift apart.
+ */
+export type SnapshotRefreshInput = VideoSnapshot;
 
 /** A playlist plus the number of videos inside it. */
 export type PlaylistWithItemCount = PlaylistRow & { itemCount: number };
@@ -210,6 +230,21 @@ export interface LibraryRepository {
     remove(playlistId: string, videoId: string): boolean;
     /** A playlist's items, ordered by position ascending. */
     list(playlistId: string): PlaylistItemRow[];
+  };
+  readonly settings: {
+    /** Reads a setting's serialized value, or `undefined` when it is unset. */
+    get(key: string): string | undefined;
+    /** Inserts or replaces a setting and records `updatedAt`. */
+    set(key: string, value: string, updatedAt: Date): SettingRow;
+  };
+  readonly snapshots: {
+    /** Distinct video ids across favourites, watch later and history, sorted. */
+    listVideoIds(): string[];
+    /**
+     * Writes a display snapshot over every saved row for the video, across all
+     * three tables. Returns the number of rows changed; never deletes a row.
+     */
+    update(input: SnapshotRefreshInput): number;
   };
 }
 
@@ -490,6 +525,76 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
           .where(eq(playlistItems.playlistId, playlistId))
           .orderBy(asc(playlistItems.position), asc(playlistItems.videoId))
           .all();
+      },
+    },
+
+    settings: {
+      get(key) {
+        return db
+          .select({ value: settings.value })
+          .from(settings)
+          .where(eq(settings.key, key))
+          .get()?.value;
+      },
+      set(key, value, updatedAt) {
+        // Upsert rather than read-then-write: the key is the primary key, so
+        // the second write replaces the first atomically.
+        const row = db
+          .insert(settings)
+          .values({ key, value, updatedAt })
+          .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } })
+          .returning()
+          .get();
+
+        if (row === undefined) {
+          throw new Error(`Setting ${key} was not returned by the upsert.`);
+        }
+
+        return row;
+      },
+    },
+
+    snapshots: {
+      listVideoIds() {
+        // Three DISTINCT reads, merged in memory. The tables are small and
+        // local, and this keeps each query inside the query builder instead of
+        // hand-writing a UNION.
+        const ids = new Set<string>();
+
+        for (const table of [favourites, watchLater, history]) {
+          const rows = db.selectDistinct({ videoId: table.videoId }).from(table).all();
+          for (const row of rows) {
+            ids.add(row.videoId);
+          }
+        }
+
+        // Sorted so a sweep's batches are deterministic across requests and
+        // tests, independent of SQLite's unspecified DISTINCT order.
+        return [...ids].sort();
+      },
+      update(input) {
+        const snapshot = {
+          title: input.title,
+          channelTitle: input.channelTitle,
+          thumbnailUrl: input.thumbnailUrl,
+          durationSeconds: input.durationSeconds,
+        };
+
+        // One transaction over all three copies: a sweep never leaves the same
+        // video with a refreshed title in one list and a stale one in another.
+        return db.transaction((tx) => {
+          let changes = 0;
+
+          for (const table of [favourites, watchLater, history]) {
+            changes += tx
+              .update(table)
+              .set(snapshot)
+              .where(eq(table.videoId, input.videoId))
+              .run().changes;
+          }
+
+          return changes;
+        });
       },
     },
   };

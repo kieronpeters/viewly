@@ -18,6 +18,8 @@ export {
 export type { PlaylistPageData } from "./library-data";
 export { countLibraryEntries } from "./library-counts";
 export type { LibraryCounts } from "./library-counts";
+export { sweepLibraryMetadata } from "./metadata-sweep";
+export type { SweepResult, SweepStatus } from "./metadata-sweep";
 export {
   favouriteSnapshotFromVideo,
   parseFavouriteSnapshot,

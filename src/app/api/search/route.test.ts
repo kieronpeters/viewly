@@ -46,6 +46,19 @@ async function errorBody(response: Response): Promise<ApiErrorBody> {
   return (await response.json()) as ApiErrorBody;
 }
 
+/**
+ * Mimics the error Next throws when a handler touches a Request-time API
+ * (`fetch` is patched during prerender) while Next is trying to prerender it.
+ */
+function nextPrerenderBailout(): Error {
+  return Object.assign(
+    new Error(
+      "Route /api/search needs to bail out of prerendering at this point because it used fetch.",
+    ),
+    { digest: "NEXT_PRERENDER_INTERRUPTED" },
+  );
+}
+
 beforeEach(() => {
   searchVideosMock.mockReset();
   // Any attempt to reach the network is a test bug, not a fallback.
@@ -101,6 +114,7 @@ describe("GET /api/search", () => {
     const response = await get();
 
     expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const body = await errorBody(response);
     expect(body.error.code).toBe("VALIDATION_FAILED");
     expect(body.error.field).toBe("searchQuery");
@@ -212,6 +226,7 @@ describe("GET /api/search", () => {
     const response = await get("?q=rick");
 
     expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const body = await errorBody(response);
     expect(body.error.code).toBe("CONFIGURATION_ERROR");
     expect(JSON.stringify(body)).not.toContain(FAKE_KEY);
@@ -224,10 +239,21 @@ describe("GET /api/search", () => {
     const response = await get("?q=rick");
 
     expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const body = await errorBody(response);
     expect(body.error.code).toBe("INTERNAL_ERROR");
     expect(JSON.stringify(body)).not.toContain(FAKE_KEY);
     expect(JSON.stringify(body)).not.toContain("boom");
+  });
+
+  it("rethrows a Next prerender bailout instead of logging or answering it", async () => {
+    const bailout = nextPrerenderBailout();
+    searchVideosMock.mockRejectedValue(bailout);
+
+    await expect(get("?q=rick")).rejects.toBe(bailout);
+
+    // The bailout is control flow: no phantom [api-error] and no 500 envelope.
+    expect(console.error).not.toHaveBeenCalled();
   });
 
   it("never calls fetch directly", async () => {

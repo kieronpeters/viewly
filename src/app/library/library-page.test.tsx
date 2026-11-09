@@ -8,6 +8,7 @@ const {
   listPlaylistsMock,
   listHistoryEntriesMock,
   countLibraryEntriesMock,
+  sweepLibraryMetadataMock,
   clearHistoryEntryMock,
   clearAllHistoryMock,
 } = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const {
   listPlaylistsMock: vi.fn(),
   listHistoryEntriesMock: vi.fn(),
   countLibraryEntriesMock: vi.fn(),
+  sweepLibraryMetadataMock: vi.fn(),
   clearHistoryEntryMock: vi.fn(),
   clearAllHistoryMock: vi.fn(),
 }));
@@ -28,6 +30,7 @@ vi.mock("@/features/library", () => ({
   listWatchLaterVideos: listWatchLaterVideosMock,
   listPlaylists: listPlaylistsMock,
   countLibraryEntries: countLibraryEntriesMock,
+  sweepLibraryMetadata: sweepLibraryMetadataMock,
 }));
 // History reads and writes are server-only; replace both modules so the tab
 // renders fixtures and the clear controls call spies.
@@ -121,6 +124,13 @@ beforeEach(() => {
   listHistoryEntriesMock.mockReturnValue(HISTORY);
   countLibraryEntriesMock.mockReset();
   countLibraryEntriesMock.mockReturnValue(COUNTS);
+  sweepLibraryMetadataMock.mockReset();
+  sweepLibraryMetadataMock.mockResolvedValue({
+    status: "skipped",
+    videoCount: 0,
+    refreshedCount: 0,
+    unavailableCount: 0,
+  });
   clearHistoryEntryMock.mockReset();
   clearHistoryEntryMock.mockResolvedValue(undefined);
   clearAllHistoryMock.mockReset();
@@ -190,6 +200,28 @@ describe("LibraryPageContent tab bar", () => {
 });
 
 describe("LibraryPageContent", () => {
+  it("runs the metadata sweep before reading the active list", async () => {
+    const order: string[] = [];
+
+    sweepLibraryMetadataMock.mockImplementation(async () => {
+      order.push("sweep");
+
+      return { status: "completed", videoCount: 0, refreshedCount: 0, unavailableCount: 0 };
+    });
+    listFavouriteVideosMock.mockImplementation(() => {
+      order.push("list");
+
+      return VIDEOS;
+    });
+
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "favourites" }) }));
+
+    // The list must see the post-sweep rows, never a snapshot the sweep was
+    // about to replace.
+    expect(order).toEqual(["sweep", "list"]);
+    expect(sweepLibraryMetadataMock).toHaveBeenCalledTimes(1);
+  });
+
   it("lists favourites newest first with the toggle enabled on every card", async () => {
     render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "favourites" }) }));
 

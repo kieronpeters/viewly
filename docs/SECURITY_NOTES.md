@@ -1,28 +1,37 @@
 # Security Notes
 
-Owner: Victoria (Security Engineer). This file records security checks that were actually run, with
+Maintained by the security workstream. This file records security checks that were actually run, with
 the commands and their output, so the evidence can be re-verified. Do not add a check here that has
 not been executed.
 
-Baseline for this note: commit `9562733`, Next.js 16.4.5 (Turbopack), Node v24.21.0, Windows /
-PowerShell. The working tree also contained other agents' in-progress changes (`src/db/**`,
-`src/lib/youtube/probe.test.ts`, `tests/schema.test.ts`); none of them were modified by this check.
+## Status
 
-## T08 — API key isolation and server-only boundaries
+- **T08 below is a historical record**, captured on 10 November 2026 against commit `9562733`. It is
+  kept as written so the result stays re-readable; it does not describe the current tree. Where a
+  statement has since become false, the text is annotated rather than rewritten.
+- **Current re-check** is at the end of this file and records only what was re-run on 10 November
+  2026 against commit `0d75f5c` (HEAD at the time).
+
+## T08 — API key isolation and server-only boundaries (historical, commit `9562733`)
+
+Baseline: commit `9562733`, Next.js 16.4.5 (Turbopack), Node v24.21.0, Windows / PowerShell. The
+working tree also contained other in-progress changes under `src/db/**` and `tests/**`; none of them
+were modified by this check.
 
 ### What was checked
 
 1. Server-only markers on every module that reads the YouTube key:
    - `src/lib/env.ts:13` — `import "server-only";` (first import, after the module doc comment).
    - `src/lib/db/client.ts:51` — `import "server-only";` (first import).
-   - `src/lib/youtube/client.ts` — **not present at the time of this check.** The folder contained
-     `.gitkeep` and `probe.test.ts` (Alex's in-progress work); the client itself had not landed, so
-     its marker could not be verified. Re-check when it exists.
+   - `src/lib/youtube/client.ts` — **not present at the time of this check.** The folder held only
+     `.gitkeep` and an in-progress test file; the client itself had not landed, so its marker could
+     not be verified. It exists today; see the re-check at the end of this file.
 2. Import graph: no Client Component imports these modules. The only `"use client"` files in `src/`
    are `src/app/error.tsx` and `src/components/layout/nav-links.tsx`; neither imports `lib/env`,
    `lib/db/client`, or `lib/youtube`. Repo-wide, the only importers of `@/lib/env` are
    `src/lib/errors.ts` (a server module) and the unit tests; `@/lib/db/client` is imported only by
-   its own test. `lib/youtube` has no importers yet.
+   its own test. `lib/youtube` has no importers yet. (Historical: `src/` now contains more client
+   components and `lib/youtube` has importers.)
 3. No `NEXT_PUBLIC_` reference exists in `src/`; the only mentions are the wording inside
    `src/lib/env.ts` (an error message) and its test.
 4. Production client bundle scanned for the variable name and for a fake key value.
@@ -90,6 +99,8 @@ check-secrets: scanning .next\static
 check-secrets: PASS — scanned 25 file(s) (807395 bytes) in .next\static; neither "YOUTUBE_API_KEY" nor the SECRET_SENTINEL value is present.
 ```
 
+At that commit the build emitted 25 files; the same scan now reports 34 (see the re-check below).
+
 Independent grep, not using the script:
 
 ```powershell
@@ -100,7 +111,7 @@ $files | Select-String -SimpleMatch 'AIzaSySENTINEL_DO_NOT_USE_000000000'
 
 - `YOUTUBE_API_KEY`: no matches.
 - `AIzaSySENTINEL_DO_NOT_USE_000000000`: no matches.
-- `.next/static` contained 25 files and no `.map` source maps.
+- `.next/static` contained 25 files at that commit and no `.map` source maps.
 - Extra sanity greps in `.next/static` for `getYoutubeApiKey`, `EnvConfigurationError`,
   `YOUTUBE_API_KEY_ENV_VAR`, `better-sqlite3` and `DATABASE_PATH`: 0 matches each.
 - The sentinel does not appear anywhere under `.next` (server output included), consistent with
@@ -118,12 +129,54 @@ $files | Select-String -SimpleMatch 'AIzaSySENTINEL_DO_NOT_USE_000000000'
 - **The value scan depends on `SECRET_SENTINEL`.** Without it during the build, only the
   `YOUTUBE_API_KEY` name check runs. A future `NEXT_PUBLIC_YOUTUBE_API_KEY` would also not be
   caught by the name check (different literal) and would only be caught by the value scan.
-- **The current green result is partly vacuous.** `src/lib/env.ts` is imported by
-  `src/lib/errors.ts`, which nothing in `src/app` or `src/components` imports yet, so the env
-  module (and any key handling) is not in the built graph today. Re-run this check when the YouTube
-  client (T13) and route code land.
-- **YouTube client unverified.** `src/lib/youtube/client.ts` does not exist yet, so its
-  `server-only` marker and import boundary remain unconfirmed. This note must be revisited once it
-  lands, and the `check:secrets` run repeated then.
+- **The T08 result was partly vacuous.** At that commit `src/lib/env.ts` was imported by
+  `src/lib/errors.ts`, which nothing in `src/app` or `src/components` imported yet, so the env
+  module (and any key handling) was not in the built graph. The re-check below scans a larger build
+  whose server output does contain the YouTube client (see below).
+- **YouTube client unverified at the time.** `src/lib/youtube/client.ts` did not exist on
+  `9562733`, so its `server-only` marker and import boundary were unconfirmed. The marker is
+  verified in the re-check below; the import boundary has not been re-reviewed.
 - Source maps are not emitted into `.next/static` today. The script would scan them if they were,
   but maps emitted outside that directory would not be covered.
+
+## Current re-check — 10 November 2026 (commit `0d75f5c`, HEAD at the time)
+
+Only the checks listed here were re-run. The `.next/static` directory was produced by a `next build`
+already present in this workspace; no source file was changed for this re-check, and the planted-leak
+negative control was not repeated.
+
+### Bundle scan
+
+```powershell
+$env:SECRET_SENTINEL='AIzaSySENTINEL_DO_NOT_USE_000000000'
+npm run check:secrets
+```
+
+```text
+check-secrets: scanning .next\static
+check-secrets: PASS — scanned 34 file(s) (923085 bytes) in .next\static; neither "YOUTUBE_API_KEY" nor the SECRET_SENTINEL value is present.
+```
+
+The file count rose from 25 to 34 as routes and client components landed. The scan is still
+client-bundle only, and every residual risk above still applies.
+
+The build behind this run is not the minimal T08 build: `.next/server/app` contains the search,
+trending, video, watch, library and category routes, and `YOUTUBE_CACHE_DISABLED` appears in
+`.next/server/chunks/src_lib_youtube_client_ts_*.js`, so the YouTube client is in the compiled
+server graph. That is what makes the client-bundle scan meaningful this time.
+
+### Server-only markers
+
+`Select-String` over the modules that read the key or the database finds the marker in all four
+modules [`ARCHITECTURE.md`](ARCHITECTURE.md) relies on:
+
+| Module                                          | Marker  |
+| ----------------------------------------------- | ------- |
+| `src/lib/env.ts`                                | line 13 |
+| `src/lib/db/client.ts`                          | line 51 |
+| `src/lib/youtube/client.ts`                     | line 73 |
+| `src/lib/db/repositories/library.repository.ts` | line 64 |
+
+`NEXT_PUBLIC_` still appears nowhere in `src/` except the wording inside `src/lib/env.ts` and in test
+assertions that quote that message. The Client Component import graph was not re-reviewed, so the
+T08 conclusion about it should be treated as unverified for the current tree.

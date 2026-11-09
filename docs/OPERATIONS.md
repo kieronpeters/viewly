@@ -1,8 +1,8 @@
 # Operations
 
-Quota, troubleshooting, compliance status and day-to-day operation of the local Viewly app. Owner:
-Priya (Technical Writer). Figures checked on **10 November 2026**; re-check before a release that
-changes caching, endpoints or playback.
+Quota, troubleshooting, compliance status and day-to-day operation of the local Viewly app.
+Maintained by the technical writing workstream. Figures checked on **10 November 2026**; re-check
+before a release that changes caching, endpoints or playback.
 
 ## 1. Quota
 
@@ -24,7 +24,8 @@ including an invalid one, costs at least one point.
 | `getTrending`         | `videos.list` (chart)  | 1 of 10,000 units/day               |
 | `listVideoCategories` | `videoCategories.list` | 1 of 10,000 units/day, per region   |
 
-Every retry of a 429/5xx response and every extra results page is another billable call.
+Every retry of a 429/5xx response and every extra results page is another billable call. The lazy
+library sweep adds one `videos.list` call per 50 distinct saved videos, at most once every 30 days.
 
 ### Cache TTLs
 
@@ -78,8 +79,9 @@ consumption is on the Google Cloud console **Quotas** page linked from that docu
 | `Port 3000 is already in use`                                | Another process holds the port              | `npm run dev -- --port 3001`, or stop that process.                                      |
 | Suspected stale result                                       | A live cache entry inside its TTL           | `YOUTUBE_CACHE_DISABLED=1` (or `true`/`yes`/`on`); read per call, no rebuild.            |
 
-Keep `src/db/migrations/0000_mute_slapstick.sql` and `meta/_journal.json` committed, or Drizzle Kit
-loses its history. After a schema edit run `npm run db:generate`, then `npm run db:migrate`.
+Keep every file under `src/db/migrations/` — currently `0000_mute_slapstick.sql` (library tables) and
+`0001_solid_betty_ross.sql` (`settings`) — plus `meta/_journal.json` committed, or Drizzle Kit loses
+its history. After a schema edit run `npm run db:generate`, then `npm run db:migrate`.
 
 **Reset the local database.** Delete `data/viewly.db` plus any `-wal` / `-shm` files
 (`Remove-Item data/viewly.db* -ErrorAction SilentlyContinue` on Windows, or
@@ -97,12 +99,16 @@ the browser only ever receives authored copy. Validation failures (400) are not 
 See [`YOUTUBE_DATA_POLICY.md`](YOUTUBE_DATA_POLICY.md) for the full review, sources and clause
 references. Read it before any release.
 
-- **30-day retention gap — open.** Non-Authorized API Data may be kept no longer than 30 calendar
-  days (III.E.4.d). Saved favourites keep title, channel, thumbnail and duration indefinitely with
-  no TTL, refresh or sweep; `watch_later` and `history` share the same schema. The in-memory cache is
-  within the limit (24 h maximum, gone on restart), the library tables are not. **T46 is open and
-  needs an owner decision** on refresh-on-load, revalidation or a sweep. Do not call stored metadata
-  compliant.
+- **30-day retention — implemented as a lazy sweep (T46, option A).** Non-Authorized API Data may be
+  kept no longer than 30 calendar days (III.E.4.d). `src/features/library/metadata-sweep.ts` runs on
+  the `/library` request path: if `settings.last_sweep_at` is absent or older than 30 days, it
+  re-fetches every distinct saved video in batches of 50 and rewrites the snapshot before the tab
+  counts and list render. The marker is written only after every row has been applied, so an upstream
+  failure leaves every stored snapshot untouched and the sweep is retried on the next request. A
+  video YouTube no longer returns keeps its row and becomes the authored "Unavailable video"
+  placeholder. **Lazy caveat:** there is no background worker, so rows can be older than 30 days
+  while the app is closed — the next visit is the sweep. The in-memory cache stays within the limit
+  (24 h maximum, gone on restart).
 - **Attribution and official player.** The watch page uses YouTube's official embed
   (`youtube-nocookie.com`, no proxying, downloading or re-hosting) and shows an "Open on YouTube"
   link. `VideoCard` still links only to the internal `/watch/[id]` route and carries no YouTube
@@ -110,7 +116,8 @@ references. Read it before any release.
 - **Playback compliance items.** The official player and autoplay-off are in place. Made-for-Kids
   handling, identifying the client to the player (Required Minimum Functionality) and the Branding
   Guidelines / Required Minimum Functionality review are still missing or unreviewed.
-- No privacy policy screen, YouTube Terms link or in-app deletion control exists.
+- No privacy policy screen or YouTube Terms link exists, and there is no single "delete all my data"
+  control.
 
 Nothing in the current build should be presented as fully compliant with the YouTube API Services
 Terms or Developer Policies.

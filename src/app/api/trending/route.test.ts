@@ -50,6 +50,19 @@ async function readError(response: Response): Promise<{
   };
 }
 
+/**
+ * Mimics the error Next throws when a handler reads a Request-time API
+ * (`request.url` here) while Next is trying to prerender it.
+ */
+function nextPrerenderBailout(): Error {
+  return Object.assign(
+    new Error(
+      "Route /api/trending needs to bail out of prerendering at this point because it used request.url.",
+    ),
+    { digest: "NEXT_PRERENDER_INTERRUPTED" },
+  );
+}
+
 beforeEach(() => {
   getTrendingMock.mockReset();
   delete process.env.YOUTUBE_REGION;
@@ -139,6 +152,7 @@ describe("GET /api/trending", () => {
       const { error } = await readError(response);
       expect(error.code).toBe("VALIDATION_FAILED");
       expect(error.field).toBe("region");
+      expect(response.headers.get("cache-control")).toBe("no-store");
       expect(getTrendingMock).not.toHaveBeenCalled();
     },
   );
@@ -152,6 +166,7 @@ describe("GET /api/trending", () => {
       const { error } = await readError(response);
       expect(error.code).toBe("VALIDATION_FAILED");
       expect(error.field).toBe("maxResults");
+      expect(response.headers.get("cache-control")).toBe("no-store");
       expect(getTrendingMock).not.toHaveBeenCalled();
     },
   );
@@ -180,6 +195,7 @@ describe("GET /api/trending", () => {
     expect(response.status).toBe(502);
     const { error } = await readError(response);
     expect(error.code).toBe("UPSTREAM_ERROR");
+    expect(response.headers.get("cache-control")).toBe("no-store");
 
     const serialized = JSON.stringify(error);
     expect(serialized).not.toContain("HTTP 500");
@@ -202,6 +218,7 @@ describe("GET /api/trending", () => {
     const response = await GET(trendingRequest());
 
     expect(response.status).toBe(status);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const { error } = await readError(response);
     expect(error.code).toBe(errorCode);
     expect(error.message).not.toContain("authored upstream copy.");
@@ -217,6 +234,7 @@ describe("GET /api/trending", () => {
     const response = await GET(trendingRequest());
 
     expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const { error } = await readError(response);
     expect(error.code).toBe("VALIDATION_FAILED");
     expect(error.field).toBe("regionCode");
@@ -230,6 +248,7 @@ describe("GET /api/trending", () => {
     const response = await GET(trendingRequest());
 
     expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const { error } = await readError(response);
     expect(error.code).toBe("UPSTREAM_ERROR");
     // Not caller input: no field and none of the normalizer's wording.
@@ -242,6 +261,7 @@ describe("GET /api/trending", () => {
     const response = await GET(trendingRequest("?region=USA"));
 
     expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const { error } = await readError(response);
     expect(error.code).toBe("VALIDATION_FAILED");
     expect(error.field).toBe("region");
@@ -254,9 +274,36 @@ describe("GET /api/trending", () => {
     const response = await GET(trendingRequest());
 
     expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const { error } = await readError(response);
     expect(error.code).toBe("INTERNAL_ERROR");
     expect(JSON.stringify(error)).not.toContain("AIza");
     expect(JSON.stringify(error)).not.toContain("socket");
+  });
+
+  it("rethrows Next's prerender bailout from request.url without logging it", async () => {
+    const bailout = nextPrerenderBailout();
+    // The exact shape of the defect: reading `request.url` is what Next
+    // intercepts while prerendering, and the throw lands inside the try block.
+    const request = {
+      get url(): string {
+        throw bailout;
+      },
+    } as unknown as Request;
+
+    await expect(GET(request)).rejects.toBe(bailout);
+
+    // Control flow, not an application failure: no [api-error] line at build time.
+    expect(console.error).not.toHaveBeenCalled();
+    expect(getTrendingMock).not.toHaveBeenCalled();
+  });
+
+  it("rethrows a Next prerender bailout raised by the client's fetch", async () => {
+    const bailout = nextPrerenderBailout();
+    getTrendingMock.mockRejectedValue(bailout);
+
+    await expect(GET(trendingRequest())).rejects.toBe(bailout);
+
+    expect(console.error).not.toHaveBeenCalled();
   });
 });

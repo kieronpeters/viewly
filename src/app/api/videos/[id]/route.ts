@@ -33,6 +33,7 @@ import {
   jsonError,
   jsonErrorResult,
   logServerError,
+  rethrowNextControlFlow,
   type ApiErrorBody,
   type ApiErrorResult,
 } from "@/lib/errors";
@@ -107,6 +108,9 @@ export async function GET(
       headers: { "cache-control": CACHE_CONTROL },
     });
   } catch (error) {
+    // `params` is request-scoped, so Next may signal a prerender bailout by
+    // throwing here. That is control flow, not a failed lookup.
+    rethrowNextControlFlow(error);
     return errorResponse(error);
   }
 }

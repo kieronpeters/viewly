@@ -3,8 +3,8 @@
 What Viewly stores from the YouTube Data API, what it deliberately does not store, and where the
 current code does not yet meet the YouTube API Services Terms of Service or Developer Policies.
 
-Owner: Priya (Technical Writer). Reviewed: **10 November 2026**. Re-check the sources before any
-release that changes caching, playback or sharing.
+Maintained by the technical writing workstream. Reviewed: **10 November 2026**. Re-check the sources
+before any release that changes caching, playback or sharing.
 
 This is an engineering record of what the code does, checked against the published terms. It is not
 legal advice, and it does not replace the YouTube documents it cites.
@@ -38,7 +38,8 @@ rather than a user grant.
 
 ## What Viewly stores
 
-The schema in `src/db/schema.ts` is the authoritative list. There are five tables and no others.
+The schema in `src/db/schema.ts` is the authoritative list. There are six tables and no others: five
+library tables and one `settings` key/value table.
 
 | Table            | Columns stored                                                                                            |
 | ---------------- | --------------------------------------------------------------------------------------------------------- |
@@ -47,6 +48,7 @@ The schema in `src/db/schema.ts` is the authoritative list. There are five table
 | `history`        | `video_id`, `title`, `channel_title`, `thumbnail_url`, `duration_seconds`, `last_viewed_at`, `view_count` |
 | `playlists`      | `id` (application-generated UUID), `name`, `created_at`, `updated_at`                                     |
 | `playlist_items` | `playlist_id`, `video_id`, `position`, `added_at`                                                         |
+| `settings`       | `key` (text primary key), `value`, `updated_at`                                                           |
 
 Notes on that table, all verifiable in the schema file:
 
@@ -61,14 +63,18 @@ Notes on that table, all verifiable in the schema file:
   not YouTube's view count and is not presented as one.
 - `playlist_items` stores **no** title, channel, thumbnail or duration. Playlist contents can only be
   rendered by fetching those videos from the API. See "Known gaps".
+- `settings` stores application state, not API Data: today its only key is `last_sweep_at`, an
+  ISO-8601 timestamp written by the metadata sweep. It holds no title, channel, thumbnail, duration
+  or id.
 - Thumbnail URLs point at YouTube's own hosts (`i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`).
   Viewly stores the URL, not the image. Images are loaded from YouTube, either by the browser or by
   the Next.js image optimiser, which keeps a short-lived copy under `.next/cache/images`.
-- Runtime writes exist for favourites only: `toggleFavourite` in
-  `src/features/library/actions.ts` writes through `src/lib/db/repositories/library.repository.ts`,
-  and `/library` and `/watch/[videoId]` read it. `watch_later`, `history` and playlists have schema
-  but no committed mutation. The storage contract above is the schema; the only exercised path is
-  favourites.
+- Runtime writes exist for all three saved-video tables and for playlists. `toggleFavourite` and
+  `toggleWatchLater` in `src/features/library/actions.ts`, `recordView` /
+  `clearHistoryEntry` / `clearAllHistory` in `src/features/library/history-actions.ts`, and
+  `createPlaylist` / `renamePlaylist` / `deletePlaylist` / `addToPlaylist` / `removeFromPlaylist` in
+  `src/features/library/playlist-actions.ts` all write through
+  `src/lib/db/repositories/library.repository.ts`. The storage contract above is the schema.
 
 ## What Viewly does not store
 
@@ -102,19 +108,23 @@ The only place an API payload is retained is the process-local TTL cache in
 - Keys contain the endpoint and normalized parameters only. The API key is appended after the cache
   lookup and never stored; errors are never cached, and concurrent identical calls share one request.
 - The longest TTL (24 h) is far inside the 30-day limit for Non-Authorized API Data (III.E.4.d).
-- A cached search result never becomes a library row on its own. Only an explicit save writes to
-  `favourites`, the one implemented save path.
+- A cached search result never becomes a library row on its own. Only an explicit save or a playback
+  record writes a row, and only to `favourites`, `watch_later` or `history`.
 - `YOUTUBE_CACHE_DISABLED=1` bypasses the cache for debugging.
 - Thumbnail bytes cached by the image optimiser are also API Data and remain covered by this review.
 
 ## Playback
 
-**Playback is built** with the official YouTube embedded player. `src/components/video/youtube-player.tsx`
-renders `https://www.youtube-nocookie.com/embed/<id>?rel=0` with the video title as the iframe name,
-`loading="lazy"`, no autoplay parameter, `allowFullScreen`, and an "Open on YouTube" link to
-`https://www.youtube.com/watch?v=<id>`. The player is unmodified; Viewly does not proxy, download,
-re-host or separate the audio and video components, and there is no background player (III.E.1,
-III.I.6–III.I.9).
+**Playback is built** with the official YouTube embedded player, driven by the YouTube IFrame API.
+`src/components/video/youtube-player.tsx` loads `https://www.youtube.com/iframe_api` (only once the
+player nears the viewport) and constructs `YT.Player` with the video id,
+`host: "https://www.youtube-nocookie.com"` and `playerVars: { rel: 0, autoplay: 0 }`. The API creates
+the iframe itself; Viewly's `onReady` handler sets the accessible title, `loading="lazy"` and a 100%
+size inside a React-owned 16:9 box, and does not set `allowFullScreen` itself — fullscreen is
+whatever the API's iframe permits. An "Open on YouTube" link to
+`https://www.youtube.com/watch?v=<id>` sits beside the box. The player is unmodified; Viewly does not
+proxy, download, re-host or separate the audio and video components, and there is no background
+player (III.E.1, III.I.6–III.I.9).
 
 Still open for playback:
 
@@ -123,8 +133,8 @@ Still open for playback:
 - identifying the client to the player as required by the Required Minimum Functionality document;
 - reviewing the Branding Guidelines and confirming the player's attribution (III.F.2).
 
-Autoplay is off: no autoplay parameter is sent, so playback data is not shared before the user
-interacts (III.E.4.i).
+Autoplay is off: `autoplay: 0` is passed in `playerVars`, so playback data is not shared before the
+user interacts (III.E.4.i).
 
 ## Attribution and branding
 
@@ -172,12 +182,22 @@ The first two points remain open for `VideoCard`. See "Known gaps".
 - Deleting the database removes everything: `data/viewly.db` plus `viewly.db-wal` and
   `viewly.db-shm`. The README documents this reset. There is no backup, no sync and no other copy.
 - Deletion is immediate, which satisfies the "as soon as possible and within 7 calendar days"
-  requirement for a user's deletion request (III.E.4.g). What is missing is an in-app control — see
-  "Known gaps".
+  requirement for a user's deletion request (III.E.4.g). History can be cleared from `/library`;
+  what is missing is one action that covers every table — see "Known gaps".
 
-**Retention is the main open problem.** Rows are kept indefinitely and are never refreshed. III.E.4.d
-allows Non-Authorized API Data to be stored only while necessary and **not longer than 30 calendar
-days**, after which it must be deleted or refreshed. A favourite saved two years ago is neither.
+**Retention is handled by a lazy 30-day sweep (T46, option A).** III.E.4.d allows Non-Authorized API
+Data to be stored only while necessary and **not longer than 30 calendar days**, after which it must
+be deleted or refreshed. `src/features/library/metadata-sweep.ts` runs on the `/library` request
+path: when the `last_sweep_at` value in `settings` is absent or older than 30 days, it re-fetches
+every distinct saved video in batches of 50 and rewrites the stored snapshot before the tab counts
+and list render. The marker is written only after every row has been applied, so an upstream failure
+leaves every stored snapshot untouched and the sweep is retried on the next request. Nothing is
+deleted: a video YouTube no longer returns keeps its row and is relabelled with the authored
+"Unavailable video" snapshot and an `i.ytimg.com` thumbnail URL.
+
+The limit is not enforced while the app is closed. There is no background worker, so a library that
+is not opened for months holds rows older than 30 days until the next visit, which sweeps before
+showing them. Playlist items store ids only and are not swept; their metadata is fetched per render.
 
 ## Quota
 
@@ -198,15 +218,15 @@ and no request budgeting. Quota exhaustion and the user-facing copy are document
 These are places where the current or planned behaviour does not meet the published terms. They are
 listed rather than worked around.
 
-1. **Permanent snapshots exceed the 30-day storage limit (III.E.4.d).** `favourites` rows keep title,
-   channel, thumbnail and duration indefinitely with no TTL and no refresh job; `watch_later` and
-   `history` share the same design but have no write path yet. Because Viewly uses a bare API key,
-   this is Non-Authorized Data, not Authorized Data, so the longer retention allowed by III.E.4.b.2
-   does not apply. A remediation (refresh on library load, a scheduled revalidation of rows older
-   than 30 days, or a 30-day sweep) is needed before the library is considered release-ready.
-2. **Stored metadata drifts (III.E.4.e, III.E.4.f).** Titles, thumbnails and durations change;
-   videos are made private or deleted. A snapshot never updates, and the UI does not label it as
-   saved-at-a-point-in-time. The same fix as gap 1 covers this.
+1. **The 30-day refresh is lazy, not guaranteed (III.E.4.d).** The sweep above refreshes a saved
+   snapshot on the first library visit after 30 days, so the limit is enforced on the request path
+   rather than on a clock. A library left unopened keeps older rows until it is opened, and a failed
+   sweep does not advance the marker, so the rows stay stale until a later request succeeds. A
+   scheduled job would close this; a single-user local app has no worker to run one.
+2. **Metadata can still drift between sweeps (III.E.4.e, III.E.4.f).** Titles, thumbnails and
+   durations change, and videos are made private or deleted. The sweep corrects that at most every 30
+   days, and the UI does not label a snapshot as saved-at-a-point-in-time. The sweep is the
+   remediation; the labelling is still missing.
 3. **No user-facing privacy policy or YouTube terms link (III.A.1, III.A.2).** The policies require
    a prominently displayed privacy policy that names YouTube API Services and links the Google
    Privacy Policy, plus a link to the YouTube Terms of Service and a statement that using the app
@@ -227,15 +247,18 @@ listed rather than worked around.
 7. **"Substitute service" risk (III.I.1).** A YouTube client must add significant independent value
    and must not recreate YouTube's browse experience. Viewly's discovery-plus-local-library premise
    is defensible, but this should be re-read whenever discovery, playback or quota handling changes.
-8. **No in-app deletion control (III.E.4.g).** Deletion is fast, but the only mechanism is removing a
-   row or deleting the database file by hand. A "delete all my data" action would make the
-   requirement demonstrable.
+8. **No single "delete all my data" control (III.E.4.g).** History can be cleared per entry or in
+   full from `/library`, and saved videos and playlists can be removed one at a time, but there is no
+   one action that wipes every table; deleting the database file by hand is the only complete reset.
+   A "delete all my data" action would make the requirement demonstrable.
 
 ## Verifying this document
 
 Each storage claim can be checked against `src/db/schema.ts`; each key-handling claim against
-`src/lib/env.ts`, `src/lib/youtube/client.ts` and `src/lib/errors.ts`; each "not stored" claim by
-searching `src/` for the field name. Formatting is checked with:
+`src/lib/env.ts`, `src/lib/youtube/client.ts` and `src/lib/errors.ts`; each retention claim against
+`src/features/library/metadata-sweep.ts` (and `metadata-sweep.test.ts`); each playback claim against
+`src/components/video/youtube-player.tsx`; each "not stored" claim by searching `src/` for the field
+name. Formatting is checked with:
 
 ```bash
 npx prettier --check docs/YOUTUBE_DATA_POLICY.md README.md

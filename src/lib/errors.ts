@@ -15,9 +15,14 @@
  *   try {
  *     ...
  *   } catch (error) {
+ *     rethrowNextControlFlow(error); // Next bails out by throwing: never log it
  *     logServerError(error, "GET /api/search"); // id is printed in the log line
  *     return jsonError(error);
  *   }
+ *
+ * Every error response is sent with `Cache-Control: no-store`, so a 404 or a 502
+ * can never be cached and replayed. Success responses keep whatever caching
+ * policy the route chooses.
  */
 
 import { NextResponse } from "next/server";
@@ -131,9 +136,66 @@ export function jsonError(error: unknown): NextResponse<ApiErrorBody> {
   return jsonErrorResult(mapErrorToResponse(error));
 }
 
-/** Same wrapper for envelopes built with `apiErrorResult`. */
+/**
+ * Same wrapper for envelopes built with `apiErrorResult`.
+ *
+ * `Cache-Control: no-store` is set here rather than per route: an error is never
+ * a cacheable representation of the resource. A cached 404 would outlive a
+ * video that becomes available again, and a cached 429/502 would hand one
+ * caller's transient failure to everybody else.
+ */
 export function jsonErrorResult(result: ApiErrorResult): NextResponse<ApiErrorBody> {
-  return NextResponse.json(result.body, { status: result.status });
+  return NextResponse.json(result.body, {
+    status: result.status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+/**
+ * Digest prefixes Next uses for the errors it throws to steer rendering. These
+ * are control flow, not failures: they must reach Next untouched.
+ */
+const NEXT_DIGEST_PREFIX = "NEXT_";
+
+/**
+ * Legacy static-generation bailout digest. It predates the `NEXT_` prefix but
+ * means the same thing: "stop prerendering this route".
+ */
+const DYNAMIC_SERVER_USAGE_DIGEST = "DYNAMIC_SERVER_USAGE";
+
+/**
+ * True for Next's own thrown control-flow signals, e.g. the
+ * `NEXT_PRERENDER_INTERRUPTED` error raised when a route handler reads
+ * `request.url` while Next is trying to prerender it.
+ *
+ * `digest` is React/Next's transport field for these markers, so the prefix is
+ * the documented way to recognise one without importing Next internals.
+ */
+export function isNextControlFlowError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("digest" in error)) {
+    return false;
+  }
+
+  const { digest } = error as { digest?: unknown };
+  if (typeof digest !== "string") {
+    return false;
+  }
+
+  return digest.startsWith(NEXT_DIGEST_PREFIX) || digest === DYNAMIC_SERVER_USAGE_DIGEST;
+}
+
+/**
+ * Rethrows a Next control-flow signal so it keeps propagating.
+ *
+ * A route handler's `catch` must call this before logging: otherwise a build
+ * logs a phantom `[api-error]` for a request that never failed, and a prerender
+ * bailout is turned into a 500 envelope that Next may treat as the route's
+ * output.
+ */
+export function rethrowNextControlFlow(error: unknown): void {
+  if (isNextControlFlowError(error)) {
+    throw error;
+  }
 }
 
 /** Extra, safe-to-log metadata. Never put request bodies or secrets here. */

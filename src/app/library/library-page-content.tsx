@@ -8,6 +8,7 @@ import {
   listFavouriteVideos,
   listPlaylists,
   listWatchLaterVideos,
+  sweepLibraryMetadata,
 } from "@/features/library";
 import { listHistoryEntries, type HistoryEntry } from "@/features/library/history-data";
 import { PlaylistCreateForm } from "@/features/library/playlist-create-form";
@@ -36,9 +37,18 @@ export interface LibraryPageContentProps {
  * Switching tabs is a navigation, so only the newly active tab's list is read.
  * The four tab counts are separate `COUNT(*)` queries (`countLibraryEntries`),
  * never list reads: a tab that is not open must not be loaded to size it.
+ *
+ * The lazy 30-day metadata sweep (T46) runs before the list read, so the cards
+ * below never render a snapshot that the sweep was about to replace. It is
+ * awaited inside the same `<Suspense>` boundary, so a slow or failed sweep
+ * delays or leaves the list as-is rather than breaking the page; the sweep
+ * itself never throws.
  */
 export async function LibraryPageContent({ searchParams }: LibraryPageContentProps) {
   const params = await searchParams;
+
+  await sweepLibraryMetadata();
+
   const tab = resolveLibraryTab(params.tab);
   const counts = countLibraryEntries();
 

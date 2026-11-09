@@ -23,6 +23,7 @@ import {
 import type { PlaylistSummary, VideoSummary } from "@/shared/types";
 
 import { parsePlaylistId } from "./playlists";
+import { displayThumbnailUrl } from "./video-snapshot";
 
 /**
  * Maps a stored favourite to the shape `VideoCard` renders.
@@ -32,6 +33,13 @@ import { parsePlaylistId } from "./playlists";
  * `publishedAt` have no stored value, and `viewCount` is unknown at save time.
  * The card reads only id, title, channel, thumbnail and duration, so no UI is
  * affected by those placeholders.
+ *
+ * The thumbnail is projected through {@link displayThumbnailUrl}: rows written
+ * before the host check (or by an older version) may point at a host
+ * `next/image` rejects, and passing such a `src` straight to the card throws
+ * while rendering and takes the whole tab down. An off-host URL therefore
+ * renders YouTube's canonical still for the id; the stored row is not
+ * rewritten, so the original value stays in SQLite.
  */
 export function favouriteToVideoSummary(row: FavouriteRow): VideoSummary {
   return {
@@ -39,7 +47,7 @@ export function favouriteToVideoSummary(row: FavouriteRow): VideoSummary {
     title: row.title,
     channelId: "",
     channelTitle: row.channelTitle,
-    thumbnailUrl: row.thumbnailUrl,
+    thumbnailUrl: displayThumbnailUrl(row.videoId, row.thumbnailUrl),
     publishedAt: "",
     durationSeconds: row.durationSeconds,
     viewCount: null,

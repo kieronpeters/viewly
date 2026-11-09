@@ -8,9 +8,10 @@ document defines where code belongs and which imports are allowed. Empty folders
 
 ```text
 src/
-  app/                     Routes only: layouts, pages, route handlers (Alex owns)
-  components/              Shared presentational UI: shadcn primitives + app-wide components (Alex owns)
+  app/                     Routes only: layouts, pages, route handlers
+  components/              Shared presentational UI: shadcn primitives + app-wide components
   features/
+    home/                  Home discovery feature: trending and category sections
     search/                Search feature: UI, hooks, use-cases, types
     video/                 Video detail/playback feature
     library/               Saved videos / library feature
@@ -20,14 +21,17 @@ src/
     utils.ts               Existing `cn` helper (shadcn)
   db/
     migrations/            SQL migration files
-    schema.ts              Single schema definition file (created in a later ticket)
-  shared/                  Cross-cutting types/utils/constants (Victoria owns)
+    schema.ts              Single schema definition file
+  shared/                  Cross-cutting types/utils/constants (framework-free, no I/O)
 docs/                      Project documentation
 ```
 
+Shared layers, not one feature's code: a change under `src/app` or `src/components` can affect every
+route, so it is checked against the boundaries below. `src/shared` is framework-free by contract.
+
 `src/db/schema/` is deliberately **not** created. One schema file at `src/db/schema.ts` is easier to
 review and keeps the skeleton small; split it into a folder only if the schema outgrows one file.
-`src/db/migrations/` is created now because migrations arrive as raw SQL.
+`src/db/migrations/` holds the committed SQL migrations and their Drizzle Kit journal.
 
 ## What belongs in each folder
 
@@ -67,27 +71,31 @@ Allowed direction: `app` → `features` → (`components`, `shared`, `lib`) → 
 
 ## SQL rule
 
-SQL lives **only** in repositories under `src/lib/db` (for example `videos.repository.ts`). No SQL
-string, query builder call, or schema import may appear in `src/app`, `src/components`,
-`src/features`, or `src/lib/youtube`. Migrations under `src/db/migrations` are the one exception:
-they define schema and are not application queries. Repositories expose typed functions; callers
-never see the database client.
+SQL lives **only** in repositories under `src/lib/db` (for example
+`src/lib/db/repositories/library.repository.ts`). No SQL string, query builder call, or schema import
+may appear in `src/app`, `src/components`, `src/features`, or `src/lib/youtube`. Migrations under
+`src/db/migrations` are the one exception: they define schema and are not application queries.
+Repositories expose typed functions; callers never see the database client.
 
 ## Server-only rule
 
-Environment access (`src/lib/env.ts`), the database client (`src/lib/db/client.ts`), and the YouTube
-client (`src/lib/youtube/client.ts`) are server-only. Each module must import the `server-only`
-marker as its first import when it lands (T04, T10, T13), so any client-component import fails at
-build time instead of leaking secrets.
+Environment access (`src/lib/env.ts`), the database client (`src/lib/db/client.ts`), the YouTube
+client (`src/lib/youtube/client.ts`), the library repository
+(`src/lib/db/repositories/library.repository.ts`) and the metadata sweep
+(`src/features/library/metadata-sweep.ts`) are server-only. Each imports the `server-only` marker,
+so any client-component import fails at build time instead of leaking secrets.
 
-> Prerequisite: the `server-only` package is not currently in `package.json`. It must be added in
-> T04/T10 before those modules are written (this ticket does not change dependencies).
+> `server-only` is a dependency in `package.json` (`^0.0.1`). Any new module that reads the key or
+> the database must add the marker as its first import.
 
 ## Rendering note (Next.js 16)
 
 `cacheComponents` is enabled in `next.config.ts`, so request-time SQLite reads sit behind a
-`Suspense` boundary. `/library` (the favourites list) and `/watch/[videoId]` (saved state) read
-SQLite that way today.
+`Suspense` boundary. `/library` (tab counts and the active tab's list),
+`/library/playlists/[playlistId]` and `/watch/[videoId]` (saved state) read SQLite that way today.
+`/library` also awaits the lazy 30-day metadata sweep (`src/features/library/metadata-sweep.ts`)
+inside that boundary before it reads the counts and the list, so cards never render a snapshot the
+sweep was about to replace.
 
 ## Conventions
 

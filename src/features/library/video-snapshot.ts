@@ -29,6 +29,70 @@ const MAX_CHANNEL_TITLE_LENGTH = 200;
 const MAX_THUMBNAIL_URL_LENGTH = 2_048;
 
 /**
+ * Thumbnail hosts `next/image` is configured for in `next.config.ts`.
+ *
+ * The list must stay in sync with `images.remotePatterns`: `next/image` throws
+ * while rendering a `src` on any other host, which would break the whole tab
+ * rather than just one card. Restricting the snapshot here keeps a stored URL
+ * renderable, and {@link displayThumbnailUrl} repairs rows written before this
+ * check existed.
+ */
+export const THUMBNAIL_HOSTS = ["i.ytimg.com", "img.youtube.com", "yt3.ggpht.com"] as const;
+
+/**
+ * YouTube's public still for a video, always on an allowed host.
+ *
+ * Used both as the parse-time fallback for a missing thumbnail and as the
+ * display-time fallback for a stored URL `next/image` cannot render.
+ */
+export function fallbackThumbnailUrl(videoId: string): string {
+  return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+}
+
+/** Whether a URL is absolute `https` on one of {@link THUMBNAIL_HOSTS}. */
+export function isAllowedThumbnailUrl(value: string): boolean {
+  const url = parseThumbnailUrl(value);
+
+  return url !== null && isAllowedThumbnailHost(url);
+}
+
+/**
+ * The stored URL when `next/image` can render it, otherwise the canonical
+ * fallback for the video.
+ *
+ * Existing rows may predate the host check (or have been written by an older
+ * version), so the library projects them through this instead of throwing: a
+ * bad row shows YouTube's default still and the library keeps rendering. The
+ * stored value itself is never rewritten.
+ */
+export function displayThumbnailUrl(videoId: string, thumbnailUrl: string): string {
+  return isAllowedThumbnailUrl(thumbnailUrl) ? thumbnailUrl : fallbackThumbnailUrl(videoId);
+}
+
+/** Parses an absolute URL, or returns `null` when the text is not one. */
+function parseThumbnailUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `https` on an allowed host, with no explicit port.
+ *
+ * `URL` lowercases the hostname, so `I.YTIMG.COM` is accepted. A non-default
+ * port is rejected because the `remotePatterns` entries pin the default one.
+ */
+function isAllowedThumbnailHost(url: URL): boolean {
+  return (
+    url.protocol === "https:" &&
+    url.port === "" &&
+    (THUMBNAIL_HOSTS as readonly string[]).includes(url.hostname)
+  );
+}
+
+/**
  * The display snapshot a saved video stores.
  *
  * Mirrors `VideoSnapshot` in the library repository, but is declared here so the
@@ -40,7 +104,7 @@ export interface VideoSnapshot {
   title: string;
   /** May be empty when the source did not provide a channel name. */
   channelTitle: string;
-  /** Absolute `https` URL. */
+  /** Absolute `https` URL on one of {@link THUMBNAIL_HOSTS}. */
   thumbnailUrl: string;
   /** Whole seconds, or `null` for live streams and missing details. */
   durationSeconds: number | null;
@@ -127,16 +191,15 @@ function readText(value: unknown, field: string, maxLength: number): string {
 }
 
 /**
- * Absolute `https` URL, returned exactly as supplied (no normalization) so the
- * stored snapshot matches what the page rendered.
+ * Absolute `https` URL on a host `next/image` accepts, returned exactly as
+ * supplied (no normalization) so the stored snapshot matches what the page
+ * rendered.
  */
 function requireThumbnailUrl(value: unknown): string {
   const raw = requireText(value, "thumbnailUrl", MAX_THUMBNAIL_URL_LENGTH);
 
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
+  const url = parseThumbnailUrl(raw);
+  if (url === null) {
     throw new DomainValidationError("invalid_format", "thumbnailUrl must be a valid URL.", {
       field: "thumbnailUrl",
     });
@@ -146,6 +209,14 @@ function requireThumbnailUrl(value: unknown): string {
     throw new DomainValidationError("invalid_format", "thumbnailUrl must use https.", {
       field: "thumbnailUrl",
     });
+  }
+
+  if (!isAllowedThumbnailHost(url)) {
+    throw new DomainValidationError(
+      "invalid_format",
+      `thumbnailUrl must be on ${THUMBNAIL_HOSTS.join(", ")}.`,
+      { field: "thumbnailUrl" },
+    );
   }
 
   return raw;

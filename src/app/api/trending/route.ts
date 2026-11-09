@@ -21,7 +21,13 @@
 
 import { NextResponse } from "next/server";
 
-import { apiErrorResult, jsonError, jsonErrorResult, logServerError } from "@/lib/errors";
+import {
+  apiErrorResult,
+  jsonError,
+  jsonErrorResult,
+  logServerError,
+  rethrowNextControlFlow,
+} from "@/lib/errors";
 import { type YouTubeApiErrorCode, getTrending, isYouTubeApiError } from "@/lib/youtube/client";
 import type { ApiErrorBody, ApiErrorResult } from "@/lib/errors";
 import type { VideoSummary } from "@/shared/types";
@@ -110,6 +116,10 @@ export async function GET(request: Request): Promise<NextResponse> {
       headers: { "Cache-Control": CACHE_CONTROL },
     });
   } catch (error) {
+    // `request.url` in the try block is a Request-time API, so Next may bail out
+    // of prerendering by throwing. That is control flow: it must propagate
+    // untouched, or the build logs a phantom [api-error] for it.
+    rethrowNextControlFlow(error);
     return toErrorResponse(error, regionCode);
   }
 }
