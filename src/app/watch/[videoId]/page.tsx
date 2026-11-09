@@ -4,9 +4,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Skeleton } from "@/components/ui";
-import { getWatchVideo } from "@/features/video";
 
 import { parseWatchVideoId } from "./parse-watch-video-id";
+import { readWatchVideo } from "./read-watch-video";
 import { WatchPageContent } from "./watch-page-content";
 
 interface WatchPageProps {
@@ -17,7 +17,15 @@ interface WatchPageProps {
   params: Promise<{ videoId: string }>;
 }
 
-/** Title comes from the same cached read the page body uses (one request). */
+/**
+ * Title comes from the same cached read the page body uses (one request).
+ *
+ * A missing API key must not throw here: an exception in `generateMetadata`
+ * fails the whole route in dev and replaces the page with the generic error
+ * boundary in production, which is exactly the state T47 fixes. The read
+ * helper catches `EnvConfigurationError` and returns a neutral title instead;
+ * every other failure still propagates.
+ */
 export async function generateMetadata({ params }: WatchPageProps): Promise<Metadata> {
   const { videoId } = await params;
   const id = parseWatchVideoId(videoId);
@@ -26,9 +34,15 @@ export async function generateMetadata({ params }: WatchPageProps): Promise<Meta
     return { title: "Video not found" };
   }
 
-  const video = await getWatchVideo(id);
+  const read = await readWatchVideo(id);
 
-  return { title: video?.title ?? "Video not found" };
+  if (read.status === "configuration_error") {
+    // Deliberately neutral: the setup explanation lives in the page body, not
+    // in the tab title, so metadata never carries configuration detail.
+    return { title: "Video unavailable" };
+  }
+
+  return { title: read.video?.title ?? "Video not found" };
 }
 
 /**

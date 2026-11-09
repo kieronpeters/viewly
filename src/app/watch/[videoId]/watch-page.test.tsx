@@ -68,6 +68,7 @@ vi.mock("@/features/library/playlist-actions", () => ({
 // Next's real notFound() throws a control-flow error Next catches; mirror it.
 vi.mock("next/navigation", () => ({ notFound: notFoundMock }));
 
+import { EnvConfigurationError } from "@/lib/env";
 import type { VideoDetail } from "@/shared/types";
 
 import { generateMetadata } from "./page";
@@ -304,5 +305,99 @@ describe("generateMetadata", () => {
     await expect(generateMetadata({ params: paramsFor(VIDEO_ID) })).resolves.toEqual({
       title: "Video not found",
     });
+  });
+});
+
+/**
+ * T47: a keyless deployment must explain itself on the watch page.
+ *
+ * `readWatchVideo` turns `EnvConfigurationError` into a value, so neither
+ * `generateMetadata` nor the body throws and no server detail (message, stack,
+ * path, key) can reach the HTML.
+ */
+describe("when YOUTUBE_API_KEY is missing", () => {
+  const RAW_MESSAGE =
+    "YOUTUBE_API_KEY is missing. Add it to .env.local in the project root; " +
+    "it is server-side only and must not be prefixed with NEXT_PUBLIC_.";
+
+  function configurationError(message = RAW_MESSAGE): EnvConfigurationError {
+    return new EnvConfigurationError("missing_youtube_api_key", message);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getVideoMock.mockRejectedValue(configurationError());
+  });
+
+  it("renders the authored setup state instead of the player", async () => {
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "YouTube is not configured" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("YOUTUBE_API_KEY")).toBeInTheDocument();
+    expect(screen.getByText(".env.local")).toBeInTheDocument();
+    expect(screen.getByText(/restart the app/i)).toBeInTheDocument();
+    // The player, suggestions and saved-state reads are skipped entirely.
+    expect(screen.queryByRole("region", { name: "Video player" })).not.toBeInTheDocument();
+    expect(isVideoFavouriteMock).not.toHaveBeenCalled();
+    expect(notFoundMock).not.toHaveBeenCalled();
+  });
+
+  it("never renders the error message, a stack, a path or the key value", async () => {
+    // Deliberately hostile: a message that carries a local path, a stack frame
+    // and the configured key, in case a future change forwards it.
+    const keyValue = "AIzaSyFAKEKEYvalue0123456789abcdefg";
+    const hostileMessage =
+      `${RAW_MESSAGE} C:\\Users\\Asus\\source\\repos\\Viewly\\src\\lib\\env.ts ` +
+      `at getYoutubeApiKey (C:\\Users\\Asus\\source\\repos\\Viewly\\src\\lib\\env.ts:61:11) ` +
+      `key=${keyValue}`;
+
+    getVideoMock.mockRejectedValue(configurationError(hostileMessage));
+
+    const { container } = render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+    const html = container.innerHTML;
+
+    expect(html).not.toContain(RAW_MESSAGE);
+    expect(html).not.toContain(keyValue);
+    expect(html).not.toContain("C:\\");
+    expect(html).not.toContain("/src/");
+    expect(html).not.toContain("node_modules");
+    expect(html).not.toContain("EnvConfigurationError");
+    expect(html).not.toContain("at getYoutubeApiKey");
+    expect(html).not.toMatch(/\.(?:ts|tsx|js|mjs|cjs):\d+/);
+    // The only mentions are the two authored setup instructions.
+    expect(html).toContain("YOUTUBE_API_KEY");
+    expect(html).toContain(".env.local");
+  });
+
+  it("returns a metadata title instead of throwing", async () => {
+    const metadata = await generateMetadata({ params: paramsFor(VIDEO_ID) });
+
+    expect(metadata).toEqual({ title: "Video unavailable" });
+    expect(JSON.stringify(metadata)).not.toContain("YOUTUBE_API_KEY");
+  });
+
+  it("still 404s an invalid id before touching the client", async () => {
+    await expect(WatchPageContent({ params: paramsFor("not-a-video-id") })).rejects.toThrow(
+      "NEXT_NOT_FOUND",
+    );
+
+    expect(getVideoMock).not.toHaveBeenCalled();
+    expect(notFoundMock).toHaveBeenCalledTimes(1);
+    await expect(generateMetadata({ params: paramsFor("not-a-video-id") })).resolves.toEqual({
+      title: "Video not found",
+    });
+  });
+
+  it("rethrows a genuine failure to the existing error boundary", async () => {
+    getVideoMock.mockRejectedValue(new Error("upstream exploded"));
+
+    await expect(WatchPageContent({ params: paramsFor(VIDEO_ID) })).rejects.toThrow(
+      "upstream exploded",
+    );
+    await expect(generateMetadata({ params: paramsFor(VIDEO_ID) })).rejects.toThrow(
+      "upstream exploded",
+    );
   });
 });

@@ -10,10 +10,11 @@ import { PlaylistPicker } from "@/features/library/playlist-picker";
 import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
 import { videoSnapshotFromVideo } from "@/features/library/video-snapshot";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
-import { getWatchVideo } from "@/features/video";
 import type { VideoDetail } from "@/shared/types";
 
 import { parseWatchVideoId } from "./parse-watch-video-id";
+import { readWatchVideo } from "./read-watch-video";
+import { WatchConfigurationState } from "./watch-configuration-state";
 import { WatchPlayer } from "./watch-player";
 import { WatchSuggestions, WatchSuggestionsSkeleton } from "./watch-suggestions";
 
@@ -29,6 +30,11 @@ export interface WatchPageContentProps {
  * and the uncached `getWatchVideo` read, so the breadcrumb and skeleton stay in
  * the prerendered shell. Invalid ids and unknown/private videos both resolve to
  * the segment's 404 before anything reaches the player or metadata panel.
+ *
+ * A missing YouTube API key is not a 404 and not a crash: `readWatchVideo`
+ * reports it as a value and this component renders an authored setup state.
+ * Genuine failures are rethrown, so the route's error boundary still handles
+ * them.
  */
 export async function WatchPageContent({ params }: WatchPageContentProps) {
   const { videoId } = await params;
@@ -38,7 +44,13 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
     notFound();
   }
 
-  const video = await getWatchVideo(id);
+  const read = await readWatchVideo(id);
+
+  if (read.status === "configuration_error") {
+    return <WatchConfigurationState />;
+  }
+
+  const { video } = read;
 
   if (video === null) {
     notFound();
