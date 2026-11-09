@@ -58,19 +58,23 @@ Not finished or not verified:
 ## Quick start
 
 ```bash
-# 1. Install dependencies (uses the bundled better-sqlite3 prebuild)
+# 1. Clone the repository and enter it
+git clone https://github.com/kieronpeters/viewly.git
+cd viewly
+
+# 2. Install dependencies (uses the bundled better-sqlite3 prebuild)
 npm install
 
-# 2. Create your local env file — run the line for your shell
+# 3. Create your local env file — run the line for your shell
 copy .env.example .env.local     # Windows
 cp .env.example .env.local       # macOS/Linux
 
-# 3. Set YOUTUBE_API_KEY in .env.local (see "Getting a YouTube API key")
+# 4. Set YOUTUBE_API_KEY in .env.local (see "Getting a YouTube API key")
 
-# 4. Apply migrations (Drizzle Kit creates data/ and the database file)
+# 5. Apply migrations (Drizzle Kit creates data/ and the database file)
 npm run db:migrate
 
-# 5. Start the dev server
+# 6. Start the dev server
 npm run dev
 ```
 
@@ -85,7 +89,7 @@ Open <http://localhost:3000>.
 | `npm run check:secrets` | `node scripts/check-secrets.mjs` | Scan `.next/static` for the key variable name and an optional sentinel value. |
 | `npm run start`         | `next start`                     | Serve the production build (run `build` first).                               |
 | `npm run lint`          | `eslint`                         | Lint the project with the Next.js config.                                     |
-| `npm run typecheck`     | `tsc --noEmit`                   | Type-check without emitting files.                                            |
+| `npm run typecheck`     | `next typegen && tsc --noEmit`   | Generate Next.js route types, then type-check without emitting files.         |
 | `npm test`              | `vitest run`                     | Run the test suite once.                                                      |
 | `npm run test:watch`    | `vitest`                         | Run tests in watch mode.                                                      |
 | `npm run format`        | `prettier --write .`             | Format the project in place.                                                  |
