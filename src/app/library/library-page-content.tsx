@@ -107,7 +107,7 @@ function LibraryList({ tab }: LibraryListProps) {
               : "Use the heart on any video to save it to your library."
           }
           action={
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" className="min-h-11">
               <Link href="/">Browse videos</Link>
             </Button>
           }
@@ -184,7 +184,7 @@ function HistoryList({ entries }: HistoryListProps) {
           title="No watch history yet"
           message="Start a video and it will appear here. History is kept on this device."
           action={
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" className="min-h-11">
               <Link href="/">Browse videos</Link>
             </Button>
           }
@@ -254,7 +254,7 @@ function PlaylistList({ playlists }: PlaylistListProps) {
                 href={`/library/playlists/${playlist.id}`}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-card-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
-                <span className="font-medium">{playlist.name}</span>
+                <span className="min-w-0 font-medium break-words">{playlist.name}</span>
                 <span className="text-sm text-muted-foreground">
                   {playlist.itemCount} {playlist.itemCount === 1 ? "video" : "videos"}
                 </span>

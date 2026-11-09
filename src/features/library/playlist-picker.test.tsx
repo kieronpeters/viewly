@@ -83,6 +83,24 @@ describe("PlaylistPicker", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("bounds the panel to the viewport and keeps its options tappable", async () => {
+    // The panel is right-aligned to its trigger, which can sit near the left of
+    // a 360px screen once the watch header stacks. The viewport cap is what
+    // stops it from hanging off-screen; jsdom cannot measure it, so the guard
+    // is the class itself plus the 44px option height.
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+
+    const panel = screen.getByRole("group", { name: "Add to playlist" });
+
+    expect(panel).toHaveClass("w-60", "max-w-[calc(100vw_-_2rem)]");
+    expect(within(panel).getByRole("button", { name: "Road trip" })).toHaveClass("min-h-11");
+    expect(within(panel).getByRole("button", { name: "New playlist" })).toHaveClass("min-h-11");
+  });
+
   it("adds the video to a playlist and announces the result", async () => {
     const user = userEvent.setup();
 

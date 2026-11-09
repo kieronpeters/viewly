@@ -66,9 +66,9 @@ export function PlaylistCreateForm() {
           autoComplete="off"
           disabled={isPending}
           onChange={(event) => setName(event.target.value)}
-          className="sm:max-w-xs"
+          className="min-h-11 sm:max-w-xs"
         />
-        <Button type="submit" disabled={isPending}>
+        <Button type="submit" className="min-h-11" disabled={isPending}>
           Create playlist
         </Button>
       </div>

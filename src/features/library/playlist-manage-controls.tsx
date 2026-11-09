@@ -71,9 +71,9 @@ export function PlaylistRenameForm({ playlistId, name }: PlaylistManageProps) {
           autoComplete="off"
           disabled={isPending}
           onChange={(event) => setValue(event.target.value)}
-          className="sm:max-w-xs"
+          className="min-h-11 sm:max-w-xs"
         />
-        <Button type="submit" variant="outline" disabled={isPending}>
+        <Button type="submit" variant="outline" className="min-h-11" disabled={isPending}>
           Rename
         </Button>
       </div>
@@ -128,7 +128,12 @@ export function PlaylistDeleteButton({ playlistId, name }: PlaylistManageProps) 
   if (!confirming) {
     return (
       <div className="flex flex-col items-start gap-1">
-        <Button type="button" variant="destructive" onClick={() => setConfirming(true)}>
+        <Button
+          type="button"
+          variant="destructive"
+          className="min-h-11"
+          onClick={() => setConfirming(true)}
+        >
           Delete playlist
         </Button>
         {error === null ? null : (
@@ -146,16 +151,23 @@ export function PlaylistDeleteButton({ playlistId, name }: PlaylistManageProps) 
       aria-label="Confirm delete playlist"
       className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
     >
-      <p className="text-sm text-foreground">
+      <p className="text-sm break-words text-foreground">
         Delete “{name}”? This also removes every video from the playlist.
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="destructive" disabled={isPending} onClick={handleDelete}>
+        <Button
+          type="button"
+          variant="destructive"
+          className="min-h-11"
+          disabled={isPending}
+          onClick={handleDelete}
+        >
           Delete permanently
         </Button>
         <Button
           type="button"
           variant="outline"
+          className="min-h-11"
           disabled={isPending}
           onClick={() => {
             setConfirming(false);

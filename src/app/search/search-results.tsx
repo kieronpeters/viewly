@@ -81,7 +81,7 @@ export async function SearchResults({ searchParams }: SearchResultsProps) {
       <h2 id="search-results-heading" className="sr-only">
         Search results
       </h2>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm break-words text-muted-foreground">
         Results for <span className="font-medium text-foreground">“{query}”</span>
       </p>
 
@@ -98,7 +98,7 @@ export async function SearchResults({ searchParams }: SearchResultsProps) {
 
       {page.nextPageToken === null ? null : (
         <div className="flex justify-center pt-2">
-          <Button asChild variant="outline" size="lg">
+          <Button asChild variant="outline" size="lg" className="min-h-11">
             <Link href={buildSearchHref(query, page.nextPageToken)} prefetch={false}>
               Load more results
             </Link>

@@ -46,7 +46,7 @@ export function VideoRowSection({
         {viewAllHref === undefined ? null : (
           <Link
             href={viewAllHref}
-            className="inline-flex min-h-9 items-center rounded-md text-sm font-medium text-muted-foreground underline-offset-4 transition-colors outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-muted-foreground underline-offset-4 transition-colors outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             View all<span className="sr-only"> {title}</span>
           </Link>

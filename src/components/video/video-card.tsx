@@ -114,7 +114,7 @@ export function VideoCard({
       {hasControls ? (
         <div
           data-slot="video-card-controls"
-          className="absolute top-2 right-2 flex items-start justify-end gap-1.5"
+          className="absolute top-2 right-2 flex max-w-[calc(100%_-_0.5rem)] items-start justify-end gap-1.5"
         >
           {isFavourite === undefined ? null : (
             <FavouriteButton

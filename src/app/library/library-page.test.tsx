@@ -279,6 +279,17 @@ describe("LibraryPageContent", () => {
     expect(listWatchLaterVideosMock).not.toHaveBeenCalled();
   });
 
+  it("wraps a long playlist name instead of overflowing its row", async () => {
+    // Playlist names are user input up to 60 characters with no spaces, so the
+    // row has to break the word rather than widen the page.
+    const longName = "a".repeat(60);
+    listPlaylistsMock.mockReturnValue([{ id: "playlist-long", name: longName, itemCount: 1 }]);
+
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "playlists" }) }));
+
+    expect(screen.getByText(longName)).toHaveClass("min-w-0", "break-words");
+  });
+
   it("renders a playlists empty state above the create form", async () => {
     listPlaylistsMock.mockReturnValue([]);
 

@@ -47,6 +47,7 @@ export function PlaylistItemRemove({ playlistId, videoId, label }: PlaylistItemR
         type="button"
         variant="outline"
         size="sm"
+        className="min-h-11"
         aria-label={`Remove ${label} from playlist`}
         aria-busy={isPending}
         disabled={isPending}

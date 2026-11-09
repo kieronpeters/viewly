@@ -34,7 +34,13 @@ export function ErrorState({
         {message}
       </p>
       {onRetry ? (
-        <Button type="button" variant="outline" size="sm" onClick={onRetry} className="mt-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onRetry}
+          className="mt-1 min-h-11"
+        >
           {retryLabel}
         </Button>
       ) : null}

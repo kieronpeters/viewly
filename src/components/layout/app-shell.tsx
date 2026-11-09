@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { NavLinks } from "@/components/layout/nav-links";
 
 const wordmarkClasses =
-  "rounded-sm text-lg font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
+  "inline-flex min-h-11 items-center rounded-sm text-lg font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
 
 /**
  * `NavLinks` reads `usePathname()`, which is runtime-only URL data. It is wrapped in

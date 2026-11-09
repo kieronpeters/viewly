@@ -88,7 +88,7 @@ export async function CategoryPageContent({ params, searchParams }: CategoryPage
 
       {page.nextPageToken === null ? null : (
         <div className="flex justify-center pt-2">
-          <Button asChild variant="outline" size="lg">
+          <Button asChild variant="outline" size="lg" className="min-h-11">
             <Link href={categoryHref(slug, page.nextPageToken)} prefetch={false}>
               Load more videos
             </Link>
@@ -150,7 +150,7 @@ function CategoryLoadError({ slug, pageToken, error }: CategoryLoadErrorProps) {
             : "The videos could not be loaded. Please try again in a moment."
         }
       />
-      <Button asChild variant="outline" size="sm">
+      <Button asChild variant="outline" size="sm" className="min-h-11">
         <Link href={target} prefetch={false}>
           {invalidToken ? "Back to the first page" : "Try again"}
         </Link>

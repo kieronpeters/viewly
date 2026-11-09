@@ -118,6 +118,20 @@ describe("WatchPageContent", () => {
     expect(notFoundMock).not.toHaveBeenCalled();
   });
 
+  it("stacks the save controls under the title on small screens", async () => {
+    // The 360px header cannot hold a wrapping title and three 44px controls in
+    // one row, so the header reflows to a column below `sm` and returns to a
+    // row from `sm` up. jsdom has no layout, so the strategy is the assertion.
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const header = screen.getByRole("heading", { level: 1 }).closest("header");
+
+    expect(header).not.toBeNull();
+    expect(header).toHaveClass("flex-col", "sm:flex-row");
+  });
+
   it("mounts the player and the metadata panel in their labelled slots", async () => {
     getVideoMock.mockResolvedValue(VIDEO);
 

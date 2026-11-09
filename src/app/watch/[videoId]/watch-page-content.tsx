@@ -87,7 +87,7 @@ export function WatchVideoDetail({
 }: WatchVideoDetailProps) {
   return (
     <article aria-labelledby="watch-title" className="flex min-w-0 flex-col gap-5">
-      <header className="flex items-start justify-between gap-3">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1.5">
           <h1
             id="watch-title"
@@ -96,14 +96,14 @@ export function WatchVideoDetail({
             {video.title}
           </h1>
           {video.channelTitle === "" ? null : (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm break-words text-muted-foreground">
               <span className="sr-only">Channel: </span>
               <span>{video.channelTitle}</span>
             </p>
           )}
         </div>
 
-        <div className="flex shrink-0 items-start gap-2">
+        <div className="flex shrink-0 flex-wrap items-start justify-end gap-2">
           <FavouriteButton
             video={favouriteSnapshotFromVideo(video)}
             initialFavourite={isFavourite}

@@ -25,8 +25,10 @@ export function EmptyState({ title, message, icon, action, className }: EmptySta
       )}
     >
       {icon ? <div className="text-muted-foreground">{icon}</div> : null}
-      <h2 className="text-base font-semibold text-foreground">{title}</h2>
-      {message ? <p className="max-w-sm text-sm text-muted-foreground">{message}</p> : null}
+      <h2 className="text-base font-semibold break-words text-foreground">{title}</h2>
+      {message ? (
+        <p className="max-w-sm text-sm break-words text-muted-foreground">{message}</p>
+      ) : null}
       {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );

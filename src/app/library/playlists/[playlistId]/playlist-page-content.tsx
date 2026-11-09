@@ -113,7 +113,7 @@ export function PlaylistDetailView({ playlist, rows }: PlaylistDetailViewProps) 
           title="No videos in this playlist yet"
           message="Add videos from the watch page or from your library."
           action={
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" className="min-h-11">
               <Link href="/">Browse videos</Link>
             </Button>
           }

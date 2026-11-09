@@ -36,7 +36,7 @@ export default function CategoryError({ error, retry, reset }: CategoryErrorProp
         message="Something went wrong while loading these videos. Please try again."
         onRetry={retry ?? reset}
       />
-      <Button asChild variant="outline" size="sm">
+      <Button asChild variant="outline" size="sm" className="min-h-11">
         <Link href="/">Back to home</Link>
       </Button>
     </div>

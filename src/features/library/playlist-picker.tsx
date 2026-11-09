@@ -225,7 +225,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
           data-slot="playlist-picker-panel"
           role="group"
           aria-labelledby={headingId}
-          className="absolute top-full right-0 z-20 mt-2 flex w-60 flex-col gap-2 rounded-xl border border-border bg-background p-3 text-left shadow-lg"
+          className="absolute top-full right-0 z-20 mt-2 flex w-60 max-w-[calc(100vw_-_2rem)] flex-col gap-2 rounded-xl border border-border bg-background p-3 text-left shadow-lg"
         >
           <p
             id={headingId}
@@ -249,13 +249,14 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
                 onChange={(event) => setName(event.target.value)}
               />
               <div className="flex flex-wrap gap-2">
-                <Button type="submit" size="sm" disabled={isPending}>
+                <Button type="submit" size="sm" className="min-h-11" disabled={isPending}>
                   Create and add
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
+                  className="min-h-11"
                   disabled={isPending}
                   onClick={() => {
                     setCreating(false);
@@ -279,7 +280,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
                         type="button"
                         disabled={isPending}
                         onClick={() => handleAdd(option)}
-                        className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                        className="flex min-h-11 w-full items-center rounded-md px-2 py-1.5 text-left text-sm break-words text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                       >
                         {option.name}
                       </button>
@@ -292,6 +293,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
                 type="button"
                 size="sm"
                 variant="outline"
+                className="min-h-11"
                 disabled={isPending}
                 onClick={() => {
                   setCreating(true);
@@ -308,7 +310,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
       {status === null ? null : (
         <p
           role="status"
-          className="max-w-44 rounded bg-background/95 px-1.5 py-0.5 text-right text-xs text-muted-foreground"
+          className="max-w-44 rounded bg-background/95 px-1.5 py-0.5 text-right text-xs break-words text-muted-foreground"
         >
           {status}
         </p>
@@ -317,7 +319,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
       {error === null ? null : (
         <p
           role="alert"
-          className="max-w-44 rounded bg-background/95 px-1.5 py-0.5 text-right text-xs text-destructive"
+          className="max-w-44 rounded bg-background/95 px-1.5 py-0.5 text-right text-xs break-words text-destructive"
         >
           {error}
         </p>

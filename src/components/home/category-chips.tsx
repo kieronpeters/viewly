@@ -32,7 +32,7 @@ export function CategoryChips({ categories }: CategoryChipsProps) {
           <li key={category.slug}>
             <Link
               href={`/category/${category.slug}`}
-              className="inline-flex min-h-9 items-center rounded-full border border-border bg-surface px-3 text-sm font-medium text-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="inline-flex min-h-11 items-center rounded-full border border-border bg-surface px-3 text-sm font-medium text-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {category.name}
             </Link>

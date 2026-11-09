@@ -53,6 +53,7 @@ export function HistoryClearEntryButton({ videoId, title }: HistoryClearEntryBut
           type="button"
           variant="ghost"
           size="sm"
+          className="min-h-11"
           aria-label={`Remove ${title} from history`}
           onClick={() => setConfirming(true)}
         >
@@ -73,12 +74,15 @@ export function HistoryClearEntryButton({ videoId, title }: HistoryClearEntryBut
       aria-label="Confirm remove from history"
       className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
     >
-      <p className="text-sm text-foreground">Remove “{title}” from your watch history?</p>
+      <p className="text-sm break-words text-foreground">
+        Remove “{title}” from your watch history?
+      </p>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           variant="destructive"
           size="sm"
+          className="min-h-11"
           disabled={isPending}
           onClick={handleClear}
         >
@@ -88,6 +92,7 @@ export function HistoryClearEntryButton({ videoId, title }: HistoryClearEntryBut
           type="button"
           variant="outline"
           size="sm"
+          className="min-h-11"
           disabled={isPending}
           onClick={() => {
             setConfirming(false);
@@ -138,7 +143,12 @@ export function HistoryClearAllButton({ count }: HistoryClearAllButtonProps) {
   if (!confirming) {
     return (
       <div className="flex flex-col items-start gap-1">
-        <Button type="button" variant="outline" onClick={() => setConfirming(true)}>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11"
+          onClick={() => setConfirming(true)}
+        >
           Clear watch history
         </Button>
         {error === null ? null : (
@@ -160,12 +170,19 @@ export function HistoryClearAllButton({ count }: HistoryClearAllButtonProps) {
         Clear all {count} watched {count === 1 ? "video" : "videos"}? This cannot be undone.
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="destructive" disabled={isPending} onClick={handleClearAll}>
+        <Button
+          type="button"
+          variant="destructive"
+          className="min-h-11"
+          disabled={isPending}
+          onClick={handleClearAll}
+        >
           Clear permanently
         </Button>
         <Button
           type="button"
           variant="outline"
+          className="min-h-11"
           disabled={isPending}
           onClick={() => {
             setConfirming(false);

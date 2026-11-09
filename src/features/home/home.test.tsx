@@ -118,6 +118,21 @@ describe("CategoryChips", () => {
     expect(within(nav).getAllByRole("link")).toHaveLength(CATEGORIES.length);
     expect(CATEGORIES).toHaveLength(8);
   });
+
+  it("keeps every chip a 44px target in a wrapping row", () => {
+    // jsdom does no layout: this guards the strategy that keeps 360px safe —
+    // the row wraps between chips instead of scrolling, and each chip is tall
+    // enough to tap.
+    render(<CategoryChips categories={getAllCategories()} />);
+
+    const nav = screen.getByRole("navigation", { name: "Browse categories" });
+
+    expect(within(nav).getByRole("list")).toHaveClass("flex-wrap");
+
+    for (const link of within(nav).getAllByRole("link")) {
+      expect(link).toHaveClass("min-h-11");
+    }
+  });
 });
 
 describe("TrendingSection", () => {
