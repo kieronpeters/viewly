@@ -19,8 +19,13 @@
  * even read. Entries are keyed by endpoint plus normalized parameters (never by
  * key material), bounded at 200 entries with LRU eviction, and expired by TTL:
  * search 60 s, video details 10 min, trending 5 min, categories 24 h. Concurrent
- * identical calls share one upstream request. Only fulfilled requests are
- * cached; errors are always propagated and immediately forgotten.
+ * identical calls share one upstream request.
+ *
+ * The cached value is the **normalized domain object**, not the raw payload:
+ * fetching and normalization both run inside the cached loader, so a 200
+ * response whose body fails normalization is never stored. Only fulfilled
+ * loads are cached; errors — transport, HTTP and normalization alike — are
+ * always propagated and immediately forgotten, and the next call re-fetches.
  * `YOUTUBE_CACHE_DISABLED=1` bypasses the cache entirely for debugging, and
  * `clearYouTubeCache()` empties it (tests and manual debugging).
  *
@@ -111,7 +116,7 @@ const SAFE_REASON_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 /**
  * Process-wide request cache. One instance per server process; bounded by
  * `DEFAULT_MAX_ENTRIES` (200) with LRU eviction, so it can never grow without
- * limit. Holds raw upstream payloads only for their TTL (60 s to 24 h).
+ * limit. Holds normalized domain values only, for their TTL (60 s to 24 h).
  */
 const requestCache: Cache = createTtlCache();
 
@@ -206,19 +211,17 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
   const pageToken = assertPageToken(options.pageToken ?? null);
   const maxResults = clampMaxResults(options.maxResults);
 
-  const payload = await requestJson(
-    "search",
-    {
-      part: "snippet",
-      type: "video",
-      q: query,
-      maxResults: String(maxResults),
-      pageToken: pageToken ?? undefined,
-    },
-    YOUTUBE_CACHE_TTLS_MS.search,
-  );
+  const params = {
+    part: "snippet",
+    type: "video",
+    q: query,
+    maxResults: String(maxResults),
+    pageToken: pageToken ?? undefined,
+  };
 
-  return normalizeSearchResponse(payload);
+  return cachedRequest("search", params, YOUTUBE_CACHE_TTLS_MS.search, async () =>
+    normalizeSearchResponse(await fetchJson("search", params)),
+  );
 }
 
 /**
@@ -231,16 +234,18 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
 export async function getVideo(id: string): Promise<VideoDetail | null> {
   const videoId = assertVideoId(id);
 
-  const payload = await requestJson(
-    "videos",
-    {
-      part: VIDEO_PARTS,
-      id: videoId,
-    },
-    YOUTUBE_CACHE_TTLS_MS.videoDetails,
-  );
+  const params = {
+    part: VIDEO_PARTS,
+    id: videoId,
+  };
 
-  return normalizeVideoResponse(payload);
+  return cachedRequest(
+    "videos",
+    params,
+    YOUTUBE_CACHE_TTLS_MS.videoDetails,
+    async () => normalizeVideoResponse(await fetchJson("videos", params)),
+    "videos:detail",
+  );
 }
 
 /**
@@ -264,16 +269,20 @@ export async function getVideos(ids: readonly string[]): Promise<VideoSummary[]>
 
   const byId = new Map<string, VideoSummary>();
   for (const batch of chunk(uniqueIds, IDS_PER_REQUEST)) {
-    const payload = await requestJson(
+    const params = {
+      part: VIDEO_PARTS,
+      id: batch.join(","),
+    };
+
+    const summaries = await cachedRequest(
       "videos",
-      {
-        part: VIDEO_PARTS,
-        id: batch.join(","),
-      },
+      params,
       YOUTUBE_CACHE_TTLS_MS.videoDetails,
+      async () => normalizeVideoList(await fetchJson("videos", params)),
+      "videos:list",
     );
 
-    for (const summary of normalizeVideoList(payload)) {
+    for (const summary of summaries) {
       byId.set(summary.id, summary);
     }
   }
@@ -298,42 +307,14 @@ export async function getVideos(ids: readonly string[]): Promise<VideoSummary[]>
 export async function listVideoCategories(regionCode?: string): Promise<VideoCategory[]> {
   const region = regionCode === undefined ? DEFAULT_REGION_CODE : assertRegionCode(regionCode);
 
-  const payload = await requestJson(
-    "videoCategories",
-    {
-      part: "snippet",
-      regionCode: region,
-    },
-    YOUTUBE_CACHE_TTLS_MS.categories,
+  const params = {
+    part: "snippet",
+    regionCode: region,
+  };
+
+  return cachedRequest("videoCategories", params, YOUTUBE_CACHE_TTLS_MS.categories, async () =>
+    normalizeCategoryList(await fetchJson("videoCategories", params)),
   );
-
-  if (!isRecord(payload) || !Array.isArray(payload.items)) {
-    throw malformedPayload("Video category response must contain an items array.");
-  }
-
-  const categories: VideoCategory[] = [];
-  for (const item of payload.items) {
-    if (!isRecord(item) || typeof item.id !== "string" || item.id.length === 0) {
-      continue;
-    }
-
-    if (!isRecord(item.snippet)) {
-      continue;
-    }
-
-    const title = typeof item.snippet.title === "string" ? item.snippet.title.trim() : "";
-    if (title.length === 0) {
-      continue;
-    }
-
-    categories.push({
-      id: item.id,
-      title,
-      assignable: item.snippet.assignable === true,
-    });
-  }
-
-  return categories;
 }
 
 /**
@@ -347,44 +328,51 @@ export async function getTrending(options: TrendingOptions = {}): Promise<VideoS
     options.regionCode === undefined ? DEFAULT_REGION_CODE : assertRegionCode(options.regionCode);
   const maxResults = clampMaxResults(options.maxResults);
 
-  const payload = await requestJson(
-    "videos",
-    {
-      part: VIDEO_PARTS,
-      chart: "mostPopular",
-      regionCode,
-      maxResults: String(maxResults),
-    },
-    YOUTUBE_CACHE_TTLS_MS.trending,
-  );
+  const params = {
+    part: VIDEO_PARTS,
+    chart: "mostPopular",
+    regionCode,
+    maxResults: String(maxResults),
+  };
 
-  return normalizeVideoList(payload);
+  return cachedRequest("videos", params, YOUTUBE_CACHE_TTLS_MS.trending, async () =>
+    normalizeVideoList(await fetchJson("videos", params)),
+  );
 }
 
 /**
- * Returns the parsed payload for one logical API call, from the cache when a
- * live entry exists.
+ * Runs one logical API call through the cache and returns its **normalized**
+ * value. `load` must perform both the fetch and the normalization, so only a
+ * result that survived normalization can ever be stored: a payload that throws
+ * `DomainValidationError` leaves no entry behind and the next call re-fetches.
  *
- * The cache key is derived from `endpoint` and `params` only, before the API key
+ * The cache key is derived from `keyScope` and `params` only, before the API key
  * is read, so key material can never enter a cache key or a stored value. A hit
- * never touches `getYoutubeApiKey()`. When `YOUTUBE_CACHE_DISABLED` is set, or
- * the TTL is non-positive, the call goes straight to the network.
+ * never touches `getYoutubeApiKey()`, because `load` only runs on a miss. When
+ * `YOUTUBE_CACHE_DISABLED` is set, or the TTL is non-positive, the call goes
+ * straight to the network with no read, no write and no coalescing.
+ *
+ * `keyScope` defaults to `endpoint` and exists because two callers can share the
+ * same request parameters while caching differently shaped values (`getVideo`
+ * stores one detail, `getVideos` stores a list). Those must not share an entry.
  *
  * @throws {EnvConfigurationError} on a miss when no API key is configured.
- * @throws {YouTubeApiError} for transport, HTTP and payload failures. Errors are
- * never cached.
+ * @throws {YouTubeApiError} for transport and HTTP failures.
+ * @throws {DomainValidationError} when the payload fails normalization.
  */
-async function requestJson(
+async function cachedRequest<T>(
   endpoint: string,
   params: Record<string, string | undefined>,
   ttlMs: number,
-): Promise<unknown> {
+  load: () => Promise<T>,
+  keyScope: string = endpoint,
+): Promise<T> {
   if (ttlMs <= 0 || isYouTubeCacheDisabled()) {
-    return fetchJson(endpoint, params);
+    return load();
   }
 
-  const cacheKey = buildRequestCacheKey(endpoint, params);
-  return requestCache.getOrLoad(cacheKey, ttlMs, () => fetchJson(endpoint, params));
+  const cacheKey = buildRequestCacheKey(keyScope, params);
+  return requestCache.getOrLoad(cacheKey, ttlMs, load);
 }
 
 /**
@@ -564,6 +552,40 @@ function normalizeVideoList(payload: unknown): VideoSummary[] {
   }
 
   return summaries;
+}
+
+/**
+ * Normalizes a `videoCategories.list` payload into categories, dropping entries
+ * without a usable id, snippet or title.
+ */
+function normalizeCategoryList(payload: unknown): VideoCategory[] {
+  if (!isRecord(payload) || !Array.isArray(payload.items)) {
+    throw malformedPayload("Video category response must contain an items array.");
+  }
+
+  const categories: VideoCategory[] = [];
+  for (const item of payload.items) {
+    if (!isRecord(item) || typeof item.id !== "string" || item.id.length === 0) {
+      continue;
+    }
+
+    if (!isRecord(item.snippet)) {
+      continue;
+    }
+
+    const title = typeof item.snippet.title === "string" ? item.snippet.title.trim() : "";
+    if (title.length === 0) {
+      continue;
+    }
+
+    categories.push({
+      id: item.id,
+      title,
+      assignable: item.snippet.assignable === true,
+    });
+  }
+
+  return categories;
 }
 
 /** Clamps a requested page size to 1..50, falling back to the module default. */
