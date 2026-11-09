@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
 import { FavouriteButton } from "@/components/video/favourite-button";
 import { VideoMetadata } from "@/components/video/video-metadata";
@@ -14,6 +15,7 @@ import type { VideoDetail } from "@/shared/types";
 
 import { parseWatchVideoId } from "./parse-watch-video-id";
 import { WatchPlayer } from "./watch-player";
+import { WatchSuggestions, WatchSuggestionsSkeleton } from "./watch-suggestions";
 
 export interface WatchPageContentProps {
   /** Next 16 passes `params` as a promise; only this boundary awaits it. */
@@ -121,18 +123,25 @@ export function WatchVideoDetail({
       </header>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
-        {/* T30 slot: the official YouTube embed, with a fallback link. T35
-            wraps it in the client component that records the first playback. */}
-        <section
-          data-slot="watch-player-slot"
-          aria-labelledby="watch-player-heading"
-          className="flex min-w-0 flex-col"
-        >
-          <h2 id="watch-player-heading" className="sr-only">
-            Video player
-          </h2>
-          <WatchPlayer snapshot={videoSnapshotFromVideo(video)} />
-        </section>
+        {/* Left column: the player and, below it, the suggestions. T30/T35 own
+            the embed; T32 streams its cards in their own boundary so playback
+            and metadata never wait on the extra search. */}
+        <div className="flex min-w-0 flex-col gap-5">
+          <section
+            data-slot="watch-player-slot"
+            aria-labelledby="watch-player-heading"
+            className="flex min-w-0 flex-col"
+          >
+            <h2 id="watch-player-heading" className="sr-only">
+              Video player
+            </h2>
+            <WatchPlayer snapshot={videoSnapshotFromVideo(video)} />
+          </section>
+
+          <Suspense fallback={<WatchSuggestionsSkeleton />}>
+            <WatchSuggestions channelTitle={video.channelTitle} currentVideoId={video.id} />
+          </Suspense>
+        </div>
 
         {/* T31 slot: compact metadata and the expandable description. */}
         <aside

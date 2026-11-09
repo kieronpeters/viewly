@@ -1,21 +1,38 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getVideoMock, notFoundMock, isVideoFavouriteMock, isInWatchLaterMock, listPlaylistsMock } =
-  vi.hoisted(() => ({
-    getVideoMock: vi.fn(),
-    notFoundMock: vi.fn(() => {
-      throw new Error("NEXT_NOT_FOUND");
-    }),
-    isVideoFavouriteMock: vi.fn(),
-    isInWatchLaterMock: vi.fn(),
-    listPlaylistsMock: vi.fn(),
-  }));
+const {
+  getVideoMock,
+  watchSuggestionsPropsMock,
+  notFoundMock,
+  isVideoFavouriteMock,
+  isInWatchLaterMock,
+  listPlaylistsMock,
+} = vi.hoisted(() => ({
+  getVideoMock: vi.fn(),
+  watchSuggestionsPropsMock: vi.fn(),
+  notFoundMock: vi.fn(() => {
+    throw new Error("NEXT_NOT_FOUND");
+  }),
+  isVideoFavouriteMock: vi.fn(),
+  isInWatchLaterMock: vi.fn(),
+  listPlaylistsMock: vi.fn(),
+}));
 
 // `server-only` throws outside a Server Component graph; Vitest is not one.
 vi.mock("server-only", () => ({}));
 // The page tests never hit the YouTube API; the client boundary is mocked.
 vi.mock("@/lib/youtube/client", () => ({ getVideo: getVideoMock }));
+// The suggestions section is an async Server Component. React cannot render an
+// async component in a client test tree, so it is replaced by a sync stub that
+// records its props; the real section is covered in `watch-suggestions.test`.
+vi.mock("./watch-suggestions", () => ({
+  WatchSuggestions: (props: { channelTitle: string; currentVideoId: string }) => {
+    watchSuggestionsPropsMock(props);
+    return <section aria-label="More from this channel" data-slot="watch-suggestions" />;
+  },
+  WatchSuggestionsSkeleton: () => <p>Loading suggestions…</p>,
+}));
 // The saved state is a local database read; stub it so no file is opened.
 vi.mock("@/features/library", () => ({
   isVideoFavourite: isVideoFavouriteMock,
@@ -119,6 +136,24 @@ describe("WatchPageContent", () => {
     expect(within(detailsSlot).getByText("1.5B")).toBeInTheDocument();
     expect(within(detailsSlot).getByText("3:33")).toBeInTheDocument();
     expect(within(detailsSlot).queryByText(/T31 mounts/)).not.toBeInTheDocument();
+  });
+
+  it("mounts the suggestions section below the player, wired to this video", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const playerSlot = screen.getByRole("region", { name: "Video player" });
+    const suggestions = screen.getByRole("region", { name: "More from this channel" });
+
+    // Below the player in the left column, not above the metadata panel.
+    expect(
+      playerSlot.compareDocumentPosition(suggestions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(watchSuggestionsPropsMock).toHaveBeenCalledWith({
+      channelTitle: VIDEO.channelTitle,
+      currentVideoId: VIDEO_ID,
+    });
   });
 
   it("hydrates the favourite control from the stored state", async () => {
