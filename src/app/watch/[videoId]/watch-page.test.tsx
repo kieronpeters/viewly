@@ -1,14 +1,16 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getVideoMock, notFoundMock, isVideoFavouriteMock, isInWatchLaterMock } = vi.hoisted(() => ({
-  getVideoMock: vi.fn(),
-  notFoundMock: vi.fn(() => {
-    throw new Error("NEXT_NOT_FOUND");
-  }),
-  isVideoFavouriteMock: vi.fn(),
-  isInWatchLaterMock: vi.fn(),
-}));
+const { getVideoMock, notFoundMock, isVideoFavouriteMock, isInWatchLaterMock, listPlaylistsMock } =
+  vi.hoisted(() => ({
+    getVideoMock: vi.fn(),
+    notFoundMock: vi.fn(() => {
+      throw new Error("NEXT_NOT_FOUND");
+    }),
+    isVideoFavouriteMock: vi.fn(),
+    isInWatchLaterMock: vi.fn(),
+    listPlaylistsMock: vi.fn(),
+  }));
 
 // `server-only` throws outside a Server Component graph; Vitest is not one.
 vi.mock("server-only", () => ({}));
@@ -18,11 +20,19 @@ vi.mock("@/lib/youtube/client", () => ({ getVideo: getVideoMock }));
 vi.mock("@/features/library", () => ({
   isVideoFavourite: isVideoFavouriteMock,
   isInWatchLater: isInWatchLaterMock,
+  listPlaylists: listPlaylistsMock,
 }));
 // The header controls import the actions; they stay inert in these tests.
 vi.mock("@/features/library/actions", () => ({
   toggleFavourite: vi.fn(),
   toggleWatchLater: vi.fn(),
+}));
+vi.mock("@/features/library/playlist-actions", () => ({
+  createPlaylist: vi.fn(),
+  renamePlaylist: vi.fn(),
+  deletePlaylist: vi.fn(),
+  addToPlaylist: vi.fn(),
+  removeFromPlaylist: vi.fn(),
 }));
 // Next's real notFound() throws a control-flow error Next catches; mirror it.
 vi.mock("next/navigation", () => ({ notFound: notFoundMock }));
@@ -59,6 +69,10 @@ describe("WatchPageContent", () => {
     isVideoFavouriteMock.mockReturnValue(false);
     isInWatchLaterMock.mockReset();
     isInWatchLaterMock.mockReturnValue(false);
+    listPlaylistsMock.mockReset();
+    listPlaylistsMock.mockReturnValue([
+      { id: "playlist-road-trip", name: "Road trip", itemCount: 2 },
+    ]);
   });
 
   it("renders the title and channel for a valid video", async () => {
@@ -137,6 +151,17 @@ describe("WatchPageContent", () => {
       "false",
     );
     expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID);
+  });
+
+  it("offers the add-to-playlist picker next to the save controls", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const picker = screen.getByRole("button", { name: "Add to playlist" });
+
+    expect(picker).toHaveAttribute("aria-expanded", "false");
+    expect(listPlaylistsMock).toHaveBeenCalledTimes(1);
   });
 
   it("reads both saved states only after the video resolves", async () => {

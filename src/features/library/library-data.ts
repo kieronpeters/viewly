@@ -1,10 +1,10 @@
 import "server-only";
 
 /**
- * Server-only reads for the personal library (T33/T34).
+ * Server-only reads for the personal library (T33/T34/T36).
  *
  * These functions are the read half of the saved-video features: the library
- * page lists favourites or watch-later entries newest first and the watch page
+ * page lists favourites, watch-later entries or playlists and the watch page
  * asks whether the current video is already saved. All of them are reached only
  * from Server Components that sit inside a `<Suspense>` boundary which also
  * awaits a runtime API (`params` or `searchParams`), so Cache Components treats
@@ -20,7 +20,9 @@ import {
   type FavouriteRow,
   type WatchLaterRow,
 } from "@/lib/db/repositories/library.repository";
-import type { VideoSummary } from "@/shared/types";
+import type { PlaylistSummary, VideoSummary } from "@/shared/types";
+
+import { parsePlaylistId } from "./playlists";
 
 /**
  * Maps a stored favourite to the shape `VideoCard` renders.
@@ -91,4 +93,51 @@ export function isInWatchLater(videoId: string): boolean {
   const repository = createLibraryRepository(getDb());
 
   return repository.watchLater.isInWatchLater(videoId);
+}
+
+/**
+ * One playlist as the list and picker need it.
+ *
+ * The repository row also carries timestamps; the UI reads only the id, name
+ * and count, so the projection keeps the serialized payload small.
+ */
+export function listPlaylists(): PlaylistSummary[] {
+  const repository = createLibraryRepository(getDb());
+
+  return repository.playlists.list().map((playlist) => ({
+    id: playlist.id,
+    name: playlist.name,
+    itemCount: playlist.itemCount,
+  }));
+}
+
+/** A playlist page's stored identity plus the ordered video ids it contains. */
+export interface PlaylistPageData {
+  id: string;
+  name: string;
+  /** Ordered by `position` ascending, exactly as the repository returns them. */
+  videoIds: string[];
+}
+
+/**
+ * Reads one playlist for its detail page.
+ *
+ * Playlist items deliberately store only the video id (T11 schema), so the
+ * page resolves display metadata through `getVideos` afterwards. Returning the
+ * ids here keeps the database read and the YouTube read separate.
+ */
+export function getPlaylistForPage(playlistId: string): PlaylistPageData | null {
+  const id = parsePlaylistId(playlistId);
+  const repository = createLibraryRepository(getDb());
+  const playlist = repository.playlists.get(id);
+
+  if (playlist === undefined) {
+    return null;
+  }
+
+  return {
+    id: playlist.id,
+    name: playlist.name,
+    videoIds: playlist.items.map((item) => item.videoId),
+  };
 }

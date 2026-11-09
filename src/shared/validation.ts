@@ -117,7 +117,15 @@ export function assertVideoId(value: unknown): string {
   return value;
 }
 
-/** Trimmed playlist name of 1 to 60 characters (code points). */
+/**
+ * Trimmed playlist name of 1 to 60 characters (code points), without control
+ * characters.
+ *
+ * The control-character rule mirrors {@link assertSearchQuery}: a name is
+ * rendered in lists, headings and form values, so tabs, line breaks and the
+ * other C0/C1 characters would either break the layout or smuggle invisible
+ * text into the UI.
+ */
 export function assertPlaylistName(value: unknown): string {
   if (typeof value !== "string") {
     throw new DomainValidationError("invalid_type", "Playlist name must be a string.", {
@@ -130,6 +138,14 @@ export function assertPlaylistName(value: unknown): string {
     throw new DomainValidationError("empty_value", "Playlist name must not be empty.", {
       field: "playlistName",
     });
+  }
+
+  if (CONTROL_CHARACTER_PATTERN.test(trimmed)) {
+    throw new DomainValidationError(
+      "control_characters",
+      "Playlist name must not contain control characters.",
+      { field: "playlistName" },
+    );
   }
 
   if (countCodePoints(trimmed) > MAX_PLAYLIST_NAME_LENGTH) {

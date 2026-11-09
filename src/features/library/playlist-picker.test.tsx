@@ -1,0 +1,204 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { addToPlaylistMock, createPlaylistMock } = vi.hoisted(() => ({
+  addToPlaylistMock: vi.fn(),
+  createPlaylistMock: vi.fn(),
+}));
+
+vi.mock("./playlist-actions", () => ({
+  addToPlaylist: addToPlaylistMock,
+  createPlaylist: createPlaylistMock,
+}));
+
+import { PlaylistPicker } from "./playlist-picker";
+import type { PlaylistSnapshot } from "./playlists";
+
+const VIDEO: PlaylistSnapshot = {
+  videoId: "dQw4w9WgXcQ",
+  title: "Never Gonna Give You Up (Official Video)",
+  channelTitle: "Rick Astley",
+  thumbnailUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+  durationSeconds: 213,
+};
+
+const PLAYLISTS = [
+  { id: "playlist-road-trip", name: "Road trip" },
+  { id: "playlist-lofi", name: "Lofi beats" },
+];
+
+beforeEach(() => {
+  addToPlaylistMock.mockReset();
+  addToPlaylistMock.mockResolvedValue({
+    added: true,
+    playlistId: "playlist-road-trip",
+    videoId: VIDEO.videoId,
+  });
+  createPlaylistMock.mockReset();
+});
+
+describe("PlaylistPicker", () => {
+  it("starts closed and exposes its expanded state on the trigger", () => {
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    const trigger = screen.getByRole("button", { name: "Add to playlist" });
+
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveAttribute("aria-controls");
+    expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+  });
+
+  it("opens inline, lists every playlist and focuses the first action", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+
+    const panel = screen.getByRole("group", { name: "Add to playlist" });
+
+    expect(screen.getByRole("button", { name: "Add to playlist" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(within(panel).getByRole("button", { name: "Road trip" })).toHaveFocus();
+    expect(within(panel).getByRole("button", { name: "Lofi beats" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "New playlist" })).toBeInTheDocument();
+  });
+
+  it("closes on Escape and returns focus to the trigger", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    const trigger = screen.getByRole("button", { name: "Add to playlist" });
+    await user.click(trigger);
+
+    fireEvent.keyDown(screen.getByRole("group", { name: "Add to playlist" }), {
+      key: "Escape",
+    });
+
+    expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("adds the video to a playlist and announces the result", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "Road trip" }));
+
+    await waitFor(() => {
+      expect(addToPlaylistMock).toHaveBeenCalledWith("playlist-road-trip", VIDEO);
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("Added to Road trip.");
+    expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+  });
+
+  it("creates a playlist and immediately adds the video", async () => {
+    const user = userEvent.setup();
+
+    createPlaylistMock.mockResolvedValue({ playlistId: "playlist-new", name: "Chill" });
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "New playlist" }));
+    await user.type(screen.getByLabelText("New playlist name"), "  Chill  ");
+    await user.click(screen.getByRole("button", { name: "Create and add" }));
+
+    await waitFor(() => {
+      expect(createPlaylistMock).toHaveBeenCalledWith("Chill");
+    });
+    expect(addToPlaylistMock).toHaveBeenCalledWith("playlist-new", VIDEO);
+    expect(await screen.findByRole("status")).toHaveTextContent("Added to Chill.");
+
+    // The new option is available on the next open without a reload.
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    expect(screen.getByRole("button", { name: "Chill" })).toBeInTheDocument();
+  });
+
+  it("rejects an empty playlist name before calling the action", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "New playlist" }));
+    await user.click(screen.getByRole("button", { name: "Create and add" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a playlist name.");
+    expect(createPlaylistMock).not.toHaveBeenCalled();
+    expect(addToPlaylistMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a stale playlist without closing the panel", async () => {
+    const user = userEvent.setup();
+
+    addToPlaylistMock.mockResolvedValue({
+      added: false,
+      playlistId: "playlist-road-trip",
+      videoId: VIDEO.videoId,
+    });
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "Road trip" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("That playlist no longer exists.");
+    expect(screen.getByRole("group", { name: "Add to playlist" })).toBeInTheDocument();
+  });
+
+  it("keeps a newly created playlist selectable when the add fails", async () => {
+    const user = userEvent.setup();
+
+    createPlaylistMock.mockResolvedValue({ playlistId: "playlist-new", name: "Chill" });
+    addToPlaylistMock.mockResolvedValue({
+      added: false,
+      playlistId: "playlist-new",
+      videoId: VIDEO.videoId,
+    });
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "New playlist" }));
+    await user.type(screen.getByLabelText("New playlist name"), "Chill");
+    await user.click(screen.getByRole("button", { name: "Create and add" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The playlist was created, but the video could not be added.",
+    );
+    expect(screen.getByRole("button", { name: "Chill" })).toBeInTheDocument();
+  });
+
+  it("shows an alert when the add fails", async () => {
+    const user = userEvent.setup();
+
+    addToPlaylistMock.mockRejectedValue(new Error("network"));
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "Road trip" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not add to playlist. Please try again.",
+    );
+  });
+
+  it("offers the new-playlist path even when there are no playlists yet", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+
+    expect(screen.getByText("No playlists yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New playlist" })).toBeInTheDocument();
+  });
+});

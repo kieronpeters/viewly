@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FavouriteButton } from "@/components/video/favourite-button";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
+import { PlaylistPicker } from "@/features/library/playlist-picker";
+import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatViewCount } from "@/shared/format";
@@ -37,6 +39,16 @@ export interface VideoCardProps {
    * control, both, or neither without changing the plain card.
    */
   isWatchLater?: boolean;
+  /**
+   * Opt-in add-to-playlist control.
+   *
+   * Discovery grids leave this off, so the card they render is unchanged. The
+   * library passes `true` together with {@link playlists}; the picker itself
+   * stays a Client Component and never queries the database.
+   */
+  showPlaylistPicker?: boolean;
+  /** Playlists offered by the picker; ignored unless the picker is shown. */
+  playlists?: readonly PlaylistOption[];
 }
 
 /**
@@ -50,14 +62,23 @@ export interface VideoCardProps {
  * controls are absolutely positioned over the thumbnail corner when the caller
  * opts in.
  *
- * DOM order is link, favourite, watch later, so the tab sequence is stable
- * whether one or both controls are rendered. The two buttons sit in a flex row
- * with a gap, and each control's inline error stacks underneath its own button.
+ * DOM order is link, favourite, watch later, playlist, so the tab sequence is
+ * stable whether one or more controls are rendered. The buttons sit in a flex
+ * row with a gap, and each control's inline error stacks underneath its own
+ * button.
  */
-export function VideoCard({ video, className, isFavourite, isWatchLater }: VideoCardProps) {
+export function VideoCard({
+  video,
+  className,
+  isFavourite,
+  isWatchLater,
+  showPlaylistPicker,
+  playlists,
+}: VideoCardProps) {
   const duration = formatDuration(video.durationSeconds);
   const viewCount = formatViewCount(video.viewCount);
-  const hasControls = isFavourite !== undefined || isWatchLater !== undefined;
+  const hasControls =
+    isFavourite !== undefined || isWatchLater !== undefined || showPlaylistPicker === true;
 
   return (
     <div data-slot="video-card" className={cn("relative min-w-0", className)}>
@@ -107,6 +128,9 @@ export function VideoCard({ video, className, isFavourite, isWatchLater }: Video
               initialInWatchLater={isWatchLater}
             />
           )}
+          {showPlaylistPicker === true ? (
+            <PlaylistPicker video={playlistSnapshotFromVideo(video)} playlists={playlists ?? []} />
+          ) : null}
         </div>
       ) : null}
     </div>

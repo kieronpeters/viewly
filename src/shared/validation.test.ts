@@ -260,6 +260,27 @@ describe("assertPlaylistName", () => {
     }
   });
 
+  it("rejects control characters inside the name", () => {
+    for (const value of [
+      "Road\u0000trip",
+      "Road\u0007trip",
+      "Road\ntrip",
+      "Road\ttrip",
+      "Road\rtrip",
+      "Road\u001ftrip",
+      "Road\u007ftrip",
+      "Road\u0085trip",
+      "\u0000",
+      "playlist\u008f",
+    ]) {
+      const error = caught(() => assertPlaylistName(value));
+
+      expect(error.code).toBe("control_characters");
+      expect(error.field).toBe("playlistName");
+      expect(error.message).not.toContain(value);
+    }
+  });
+
   it("accepts exactly 60 code points and rejects 61", () => {
     const atLimit = "a".repeat(MAX_PLAYLIST_NAME_LENGTH);
 

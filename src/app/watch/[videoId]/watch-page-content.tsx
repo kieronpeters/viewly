@@ -4,8 +4,10 @@ import { FavouriteButton } from "@/components/video/favourite-button";
 import { VideoMetadata } from "@/components/video/video-metadata";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { YoutubePlayer } from "@/components/video/youtube-player";
-import { isInWatchLater, isVideoFavourite } from "@/features/library";
+import { isInWatchLater, isVideoFavourite, listPlaylists } from "@/features/library";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
+import { PlaylistPicker } from "@/features/library/playlist-picker";
+import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
 import { getWatchVideo } from "@/features/video";
 import type { VideoDetail } from "@/shared/types";
@@ -43,8 +45,16 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
   // static shell can prerender while the saved state resolves per request.
   const isFavourite = isVideoFavourite(video.id);
   const inWatchLater = isInWatchLater(video.id);
+  const playlists = listPlaylists();
 
-  return <WatchVideoDetail video={video} isFavourite={isFavourite} inWatchLater={inWatchLater} />;
+  return (
+    <WatchVideoDetail
+      video={video}
+      isFavourite={isFavourite}
+      inWatchLater={inWatchLater}
+      playlists={playlists}
+    />
+  );
 }
 
 export interface WatchVideoDetailProps {
@@ -54,6 +64,8 @@ export interface WatchVideoDetailProps {
   isFavourite: boolean;
   /** Server-read watch-later state for the video. */
   inWatchLater: boolean;
+  /** Playlists offered by the add-to-playlist picker. */
+  playlists: readonly PlaylistOption[];
 }
 
 /**
@@ -64,7 +76,12 @@ export interface WatchVideoDetailProps {
  * structure. The save controls sit in the header, next to the title, and are
  * siblings of the heading text rather than wrappers around it.
  */
-export function WatchVideoDetail({ video, isFavourite, inWatchLater }: WatchVideoDetailProps) {
+export function WatchVideoDetail({
+  video,
+  isFavourite,
+  inWatchLater,
+  playlists,
+}: WatchVideoDetailProps) {
   return (
     <article aria-labelledby="watch-title" className="flex min-w-0 flex-col gap-5">
       <header className="flex items-start justify-between gap-3">
@@ -92,6 +109,11 @@ export function WatchVideoDetail({ video, isFavourite, inWatchLater }: WatchVide
           <WatchLaterButton
             video={watchLaterSnapshotFromVideo(video)}
             initialInWatchLater={inWatchLater}
+            className="shrink-0"
+          />
+          <PlaylistPicker
+            video={playlistSnapshotFromVideo(video)}
+            playlists={playlists}
             className="shrink-0"
           />
         </div>

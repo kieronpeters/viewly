@@ -19,9 +19,11 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => dbHolder.db }));
 import { createTestLibraryDatabase, type TestLibraryDatabase } from "../../../tests/library-db";
 import {
   favouriteToVideoSummary,
+  getPlaylistForPage,
   isInWatchLater,
   isVideoFavourite,
   listFavouriteVideos,
+  listPlaylists,
   listWatchLaterVideos,
   watchLaterToVideoSummary,
 } from "./library-data";
@@ -168,6 +170,70 @@ describe("watchLaterToVideoSummary", () => {
       id: "dQw4w9WgXcQ",
       durationSeconds: null,
     });
+  });
+});
+
+describe("listPlaylists", () => {
+  it("returns nothing for an empty library", () => {
+    expect(listPlaylists()).toEqual([]);
+  });
+
+  it("projects the id, name and item count in the repository's order", () => {
+    library.repository.playlists.create({
+      id: "playlist-older",
+      name: "Older",
+      createdAt: new Date(1_000),
+      updatedAt: new Date(1_000),
+    });
+    library.repository.playlists.create({
+      id: "playlist-newer",
+      name: "Newer",
+      createdAt: new Date(2_000),
+      updatedAt: new Date(2_000),
+    });
+    library.repository.playlistItems.add({
+      playlistId: "playlist-newer",
+      videoId: "aaaaaaaaaaa",
+      addedAt: new Date(2_000),
+    });
+    library.repository.playlistItems.add({
+      playlistId: "playlist-newer",
+      videoId: "bbbbbbbbbbb",
+      addedAt: new Date(2_001),
+    });
+
+    expect(listPlaylists()).toEqual([
+      { id: "playlist-newer", name: "Newer", itemCount: 2 },
+      { id: "playlist-older", name: "Older", itemCount: 0 },
+    ]);
+  });
+});
+
+describe("getPlaylistForPage", () => {
+  it("returns the name and the video ids in position order", () => {
+    library.repository.playlists.create({
+      id: "playlist-road-trip",
+      name: "Road trip",
+      createdAt: new Date(1_000),
+      updatedAt: new Date(1_000),
+    });
+    for (const videoId of ["aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"]) {
+      library.repository.playlistItems.add({
+        playlistId: "playlist-road-trip",
+        videoId,
+        addedAt: new Date(1_000),
+      });
+    }
+
+    expect(getPlaylistForPage("playlist-road-trip")).toEqual({
+      id: "playlist-road-trip",
+      name: "Road trip",
+      videoIds: ["aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"],
+    });
+  });
+
+  it("returns null for a missing playlist", () => {
+    expect(getPlaylistForPage("playlist-missing")).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 const { toggleFavouriteMock, toggleWatchLaterMock } = vi.hoisted(() => ({
@@ -11,6 +11,13 @@ const { toggleFavouriteMock, toggleWatchLaterMock } = vi.hoisted(() => ({
 vi.mock("@/features/library/actions", () => ({
   toggleFavourite: toggleFavouriteMock,
   toggleWatchLater: toggleWatchLaterMock,
+}));
+vi.mock("@/features/library/playlist-actions", () => ({
+  createPlaylist: vi.fn(),
+  renamePlaylist: vi.fn(),
+  deletePlaylist: vi.fn(),
+  addToPlaylist: vi.fn(),
+  removeFromPlaylist: vi.fn(),
 }));
 
 import { VideoCard } from "@/components/video/video-card";
@@ -31,6 +38,11 @@ const VIDEO_FIXTURE: VideoSummary = {
   durationSeconds: 213,
   viewCount: 1_500_000,
 };
+
+const PLAYLISTS = [
+  { id: "playlist-road-trip", name: "Road trip" },
+  { id: "playlist-lofi", name: "Lofi beats" },
+];
 
 describe("VideoCard", () => {
   it("makes the whole card one link to the watch page", () => {
@@ -165,5 +177,49 @@ describe("VideoCard", () => {
 
     expect(screen.queryByText("Rick Astley")).not.toBeInTheDocument();
     expect(screen.getByText(VIDEO_FIXTURE.title)).toBeInTheDocument();
+  });
+
+  it("keeps discovery cards free of the playlist picker unless the caller opts in", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} />);
+
+    expect(screen.queryByRole("button", { name: "Add to playlist" })).not.toBeInTheDocument();
+  });
+
+  it("renders the playlist picker as the last sibling control", () => {
+    const { container } = render(
+      <VideoCard
+        video={VIDEO_FIXTURE}
+        isFavourite
+        isWatchLater
+        showPlaylistPicker
+        playlists={PLAYLISTS}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
+    const controls = container.querySelector<HTMLElement>('[data-slot="video-card-controls"]');
+    const buttons = screen.getAllByRole("button");
+
+    expect(controls).not.toBeNull();
+    expect(link).not.toContainElement(controls);
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Remove from favourites",
+      "Remove from Watch Later",
+      "Add to playlist",
+    ]);
+    expect(buttons[2]).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens the picker inline and lists the playlists", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} showPlaylistPicker playlists={PLAYLISTS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to playlist" }));
+
+    const panel = screen.getByRole("group", { name: "Add to playlist" });
+
+    expect(panel).toHaveAttribute("data-slot", "playlist-picker-panel");
+    expect(within(panel).getByRole("button", { name: "Road trip" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Lofi beats" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "New playlist" })).toBeInTheDocument();
   });
 });

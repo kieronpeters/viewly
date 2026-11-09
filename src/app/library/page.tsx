@@ -28,8 +28,9 @@ export interface LibraryPageProps {
  * synchronous SQLite query live in `<LibraryPageContent>`, inside `<Suspense>`,
  * which is the boundary Cache Components requires for request-time data.
  *
- * Today the page lists favourites only. T37 extends the same shell with the
- * remaining tabs; the resolver in the content half already accepts `?tab=`.
+ * Today the page lists favourites, watch later or playlists depending on
+ * `?tab=`. T37 extends the same shell with the full tabbed page; the resolver in
+ * the content half already accepts `?tab=`.
  */
 export default function LibraryPage({ searchParams }: LibraryPageProps) {
   return (
