@@ -349,8 +349,8 @@ describe("when YOUTUBE_API_KEY is missing", () => {
     // and the configured key, in case a future change forwards it.
     const keyValue = "AIzaSyFAKEKEYvalue0123456789abcdefg";
     const hostileMessage =
-      `${RAW_MESSAGE} C:\\Users\\Asus\\source\\repos\\Viewly\\src\\lib\\env.ts ` +
-      `at getYoutubeApiKey (C:\\Users\\Asus\\source\\repos\\Viewly\\src\\lib\\env.ts:61:11) ` +
+      `${RAW_MESSAGE} C:\\Users\\dev\\app\\src\\lib\\env.ts ` +
+      `at getYoutubeApiKey (C:\\Users\\dev\\app\\src\\lib\\env.ts:61:11) ` +
       `key=${keyValue}`;
 
     getVideoMock.mockRejectedValue(configurationError(hostileMessage));
