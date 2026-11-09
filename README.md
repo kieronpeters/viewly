@@ -108,6 +108,7 @@ the browser. `.env.local` is git-ignored; the committed `.env.example` must neve
 - [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) — folder layout, module boundaries,
   import rules, and where SQL and server-only code may live.
 - [`docs/THEME.md`](docs/THEME.md) — Midnight Purple palette, tokens, contrast table, usage rules.
+- [`docs/YOUTUBE_DATA_POLICY.md`](docs/YOUTUBE_DATA_POLICY.md) — what Viewly stores from YouTube, and where it falls short of the API terms.
 
 ## Testing and quality
 
