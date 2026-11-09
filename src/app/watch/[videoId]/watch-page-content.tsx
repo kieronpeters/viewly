@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { VideoMetadata } from "@/components/video/video-metadata";
 import { YoutubePlayer } from "@/components/video/youtube-player";
 import { getWatchVideo } from "@/features/video";
 import type { VideoDetail } from "@/shared/types";
@@ -44,9 +45,9 @@ export interface WatchVideoDetailProps {
 /**
  * Layout half of the watch route: heading, player slot and side panel slot.
  *
- * The player component (T30) and the metadata/description panel (T31, still a
- * placeholder) each live in their own labelled landmark, so swapping either
- * one does not change the page structure.
+ * The player (T30) and the metadata/description panel (T31) each live in their
+ * own labelled landmark, so either one can change without disturbing the page
+ * structure.
  */
 export function WatchVideoDetail({ video }: WatchVideoDetailProps) {
   return (
@@ -79,18 +80,13 @@ export function WatchVideoDetail({ video }: WatchVideoDetailProps) {
           <YoutubePlayer videoId={video.id} title={video.title} />
         </section>
 
-        {/* T31 slot: replace the placeholder with metadata and description. */}
+        {/* T31 slot: compact metadata and the expandable description. */}
         <aside
           data-slot="watch-details-slot"
           aria-labelledby="watch-details-heading"
-          className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card p-4"
+          className="flex min-w-0 flex-col rounded-xl border border-border bg-card p-4"
         >
-          <h2 id="watch-details-heading" className="text-sm font-semibold text-foreground">
-            Video details
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            T31 mounts the metadata and description panel here.
-          </p>
+          <VideoMetadata video={video} />
         </aside>
       </div>
     </article>

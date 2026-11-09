@@ -51,12 +51,13 @@ describe("WatchPageContent", () => {
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
 
     expect(screen.getByRole("heading", { level: 1, name: VIDEO.title })).toBeInTheDocument();
-    expect(screen.getByText(VIDEO.channelTitle)).toBeInTheDocument();
+    // The channel appears under the title and again in the details panel.
+    expect(screen.getAllByText(VIDEO.channelTitle).length).toBeGreaterThan(0);
     expect(getVideoMock).toHaveBeenCalledWith(VIDEO_ID);
     expect(notFoundMock).not.toHaveBeenCalled();
   });
 
-  it("mounts the player in the player slot and leaves the details slot for T31", async () => {
+  it("mounts the player and the metadata panel in their labelled slots", async () => {
     getVideoMock.mockResolvedValue(VIDEO);
 
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
@@ -66,10 +67,12 @@ describe("WatchPageContent", () => {
 
     expect(playerSlot).toHaveAttribute("data-slot", "watch-player-slot");
     expect(detailsSlot).toHaveAttribute("data-slot", "watch-details-slot");
-    // T30 replaced the placeholder with the real embed; T31 still fills its slot.
     expect(within(playerSlot).getByTitle(/YouTube video player/)).toBeInTheDocument();
     expect(within(playerSlot).getByRole("link", { name: /open on youtube/i })).toBeInTheDocument();
-    expect(screen.getByText(/T31 mounts/)).toBeInTheDocument();
+    // T31 replaced the placeholder: the slot now renders real metadata.
+    expect(within(detailsSlot).getByText("1.5B")).toBeInTheDocument();
+    expect(within(detailsSlot).getByText("3:33")).toBeInTheDocument();
+    expect(within(detailsSlot).queryByText(/T31 mounts/)).not.toBeInTheDocument();
   });
 
   it("calls notFound when YouTube returns no video", async () => {
