@@ -105,6 +105,8 @@ the browser. `.env.local` is git-ignored; the committed `.env.example` must neve
 
 ## Project structure
 
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — runtime shape, request flow, data model, route
+  surface, and known gaps.
 - [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) — folder layout, module boundaries,
   import rules, and where SQL and server-only code may live.
 - [`docs/THEME.md`](docs/THEME.md) — Midnight Purple palette, tokens, contrast table, usage rules.
