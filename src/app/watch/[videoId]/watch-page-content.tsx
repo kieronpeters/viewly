@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { YoutubePlayer } from "@/components/video/youtube-player";
 import { getWatchVideo } from "@/features/video";
 import type { VideoDetail } from "@/shared/types";
 
@@ -43,9 +44,9 @@ export interface WatchVideoDetailProps {
 /**
  * Layout half of the watch route: heading, player slot and side panel slot.
  *
- * The player (T30) and the metadata/description panel (T31) are intentionally
- * placeholders. Each slot is its own labelled landmark so replacing the
- * placeholder does not change the page structure.
+ * The player component (T30) and the metadata/description panel (T31, still a
+ * placeholder) each live in their own labelled landmark, so swapping either
+ * one does not change the page structure.
  */
 export function WatchVideoDetail({ video }: WatchVideoDetailProps) {
   return (
@@ -66,7 +67,7 @@ export function WatchVideoDetail({ video }: WatchVideoDetailProps) {
       </header>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
-        {/* T30 slot: replace the placeholder with the embedded player. */}
+        {/* T30 slot: the official YouTube embed, with a fallback link. */}
         <section
           data-slot="watch-player-slot"
           aria-labelledby="watch-player-heading"
@@ -75,10 +76,7 @@ export function WatchVideoDetail({ video }: WatchVideoDetailProps) {
           <h2 id="watch-player-heading" className="sr-only">
             Video player
           </h2>
-          <div className="flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card px-4 text-center">
-            <p className="text-sm font-medium text-foreground">Player placeholder</p>
-            <p className="text-sm text-muted-foreground">T30 mounts the embedded player here.</p>
-          </div>
+          <YoutubePlayer videoId={video.id} title={video.title} />
         </section>
 
         {/* T31 slot: replace the placeholder with metadata and description. */}

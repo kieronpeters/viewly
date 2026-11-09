@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { getVideoMock, notFoundMock } = vi.hoisted(() => ({
@@ -56,7 +56,7 @@ describe("WatchPageContent", () => {
     expect(notFoundMock).not.toHaveBeenCalled();
   });
 
-  it("leaves labelled player and metadata slots for T30 and T31", async () => {
+  it("mounts the player in the player slot and leaves the details slot for T31", async () => {
     getVideoMock.mockResolvedValue(VIDEO);
 
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
@@ -66,8 +66,9 @@ describe("WatchPageContent", () => {
 
     expect(playerSlot).toHaveAttribute("data-slot", "watch-player-slot");
     expect(detailsSlot).toHaveAttribute("data-slot", "watch-details-slot");
-    // Both placeholders state who fills them, so the hand-off is explicit.
-    expect(screen.getByText(/T30 mounts/)).toBeInTheDocument();
+    // T30 replaced the placeholder with the real embed; T31 still fills its slot.
+    expect(within(playerSlot).getByTitle(/YouTube video player/)).toBeInTheDocument();
+    expect(within(playerSlot).getByRole("link", { name: /open on youtube/i })).toBeInTheDocument();
     expect(screen.getByText(/T31 mounts/)).toBeInTheDocument();
   });
 
