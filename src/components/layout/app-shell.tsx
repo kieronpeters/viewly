@@ -1,9 +1,31 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { NavLinks } from "@/components/layout/nav-links";
 
 const wordmarkClasses =
   "rounded-sm text-lg font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
+
+/**
+ * `NavLinks` reads `usePathname()`, which is runtime-only URL data. It is wrapped in
+ * `<Suspense>` so the shell can still prerender while the active link resolves on the
+ * client. These placeholders reserve exactly the space the nav occupies so the swap
+ * causes no layout shift: three `min-h-11` rows with `gap-1` for the sidebar, and one
+ * `min-h-14` strip for the bottom bar.
+ */
+function NavLinksFallback({ variant }: { variant: "sidebar" | "bottom" }) {
+  if (variant === "bottom") {
+    return <div aria-hidden="true" className="h-14 w-full bg-muted/40" />;
+  }
+
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-1">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div key={index} className="min-h-11 rounded-md bg-muted/40" />
+      ))}
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -22,7 +44,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
         <nav aria-label="Primary" className="flex-1 overflow-y-auto p-3">
-          <NavLinks />
+          <Suspense fallback={<NavLinksFallback variant="sidebar" />}>
+            <NavLinks />
+          </Suspense>
         </nav>
       </aside>
 
@@ -45,7 +69,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-label="Primary"
           className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
         >
-          <NavLinks variant="bottom" />
+          <Suspense fallback={<NavLinksFallback variant="bottom" />}>
+            <NavLinks variant="bottom" />
+          </Suspense>
         </nav>
       </div>
     </div>
