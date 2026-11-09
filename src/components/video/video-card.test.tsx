@@ -1,5 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const { toggleFavouriteMock } = vi.hoisted(() => ({ toggleFavouriteMock: vi.fn() }));
+
+// The favourite control imports the Server Action; the card test only needs it
+// to be inert. The action itself is covered in `features/library`.
+vi.mock("@/features/library/actions", () => ({ toggleFavourite: toggleFavouriteMock }));
 
 import { VideoCard } from "@/components/video/video-card";
 import type { VideoSummary } from "@/shared/types";
@@ -41,6 +47,39 @@ describe("VideoCard", () => {
     expect(within(link).queryAllByRole("link")).toHaveLength(0);
     expect(within(link).queryAllByRole("button")).toHaveLength(0);
     expect(link.querySelectorAll("a, button, input, select, textarea")).toHaveLength(0);
+  });
+
+  it("renders the favourite control as a sibling of the card link", () => {
+    const { container } = render(<VideoCard video={VIDEO_FIXTURE} isFavourite />);
+
+    const card = container.querySelector('[data-slot="video-card"]');
+    const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
+    const button = screen.getByRole("button", { name: "Remove from favourites" });
+
+    // The wrapper owns both tab stops; the button is never a descendant of the
+    // anchor, which is what keeps the markup valid and the control reachable.
+    expect(card).not.toBeNull();
+    expect(card).toContainElement(link);
+    expect(card).toContainElement(button);
+    expect(link).not.toContainElement(button);
+    expect(within(link).queryAllByRole("button")).toHaveLength(0);
+    expect(link.querySelectorAll("a, button")).toHaveLength(0);
+    expect(button).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("renders an unsaved favourite control when the caller opts in with false", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} isFavourite={false} />);
+
+    expect(screen.getByRole("button", { name: "Add to favourites" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("omits the favourite control unless the caller opts in", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} />);
+
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("renders the thumbnail with the title as its alt text", () => {

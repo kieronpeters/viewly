@@ -1,17 +1,22 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getVideoMock, notFoundMock } = vi.hoisted(() => ({
+const { getVideoMock, notFoundMock, isVideoFavouriteMock } = vi.hoisted(() => ({
   getVideoMock: vi.fn(),
   notFoundMock: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
+  isVideoFavouriteMock: vi.fn(),
 }));
 
 // `server-only` throws outside a Server Component graph; Vitest is not one.
 vi.mock("server-only", () => ({}));
 // The page tests never hit the YouTube API; the client boundary is mocked.
 vi.mock("@/lib/youtube/client", () => ({ getVideo: getVideoMock }));
+// The saved state is a local database read; stub it so no file is opened.
+vi.mock("@/features/library", () => ({ isVideoFavourite: isVideoFavouriteMock }));
+// The header control imports the action; it stays inert in these tests.
+vi.mock("@/features/library/actions", () => ({ toggleFavourite: vi.fn() }));
 // Next's real notFound() throws a control-flow error Next catches; mirror it.
 vi.mock("next/navigation", () => ({ notFound: notFoundMock }));
 
@@ -43,6 +48,8 @@ describe("WatchPageContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getVideoMock.mockResolvedValue(null);
+    isVideoFavouriteMock.mockReset();
+    isVideoFavouriteMock.mockReturnValue(false);
   });
 
   it("renders the title and channel for a valid video", async () => {
@@ -75,6 +82,29 @@ describe("WatchPageContent", () => {
     expect(within(detailsSlot).queryByText(/T31 mounts/)).not.toBeInTheDocument();
   });
 
+  it("hydrates the favourite control from the stored state", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+    isVideoFavouriteMock.mockReturnValue(true);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const button = screen.getByRole("button", { name: "Remove from favourites" });
+
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(isVideoFavouriteMock).toHaveBeenCalledWith(VIDEO_ID);
+  });
+
+  it("shows an add control for a video that is not saved", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(screen.getByRole("button", { name: "Add to favourites" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
   it("calls notFound when YouTube returns no video", async () => {
     getVideoMock.mockResolvedValue(null);
 
@@ -84,6 +114,7 @@ describe("WatchPageContent", () => {
 
     expect(getVideoMock).toHaveBeenCalledWith(VIDEO_ID);
     expect(notFoundMock).toHaveBeenCalledTimes(1);
+    expect(isVideoFavouriteMock).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid id before calling the client", async () => {
@@ -93,6 +124,7 @@ describe("WatchPageContent", () => {
 
     expect(getVideoMock).not.toHaveBeenCalled();
     expect(notFoundMock).toHaveBeenCalledTimes(1);
+    expect(isVideoFavouriteMock).not.toHaveBeenCalled();
   });
 
   it("rejects an empty id before calling the client", async () => {
