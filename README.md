@@ -11,22 +11,26 @@ Working today:
 - Next.js 16 App Router foundation with a responsive app shell (desktop sidebar, mobile bottom nav).
 - Midnight Purple theme and shared UI primitives: buttons, cards, inputs, skeletons, empty/error
   states, toasts.
+- YouTube discovery: home page with trending and category rows, paginated search, and category pages,
+  backed by a server-only client with a process-local TTL cache and typed errors.
+- Watch page with the official YouTube embed, video metadata and description, and a favourite toggle.
+- Library page listing favourites.
 - SQLite + Drizzle ORM: schema, generated migrations, and a server-only database client.
 - Server-only environment module that reads the YouTube API key and fails with a named error when it
   is missing.
 - Vitest suite, plus lint, type-check and formatting checks.
 
-Still being built: YouTube search, video playback, and the library (favourites, watch later,
-playlists, history). The home page is a placeholder and the `Search` / `Library` nav links have no
-routes behind them yet.
+Still being built: watch later, playlists and history. Card-level YouTube attribution and parts of
+playback compliance (Made-for-Kids handling, player client identification) are also open; see
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ## Requirements
 
 - **Node.js 22 or newer** — `better-sqlite3` 13 declares `engines.node >= 22`. Tested on Node 24.
 - **npm** (ships with Node.js).
 - **Git**.
-- **A YouTube Data API v3 key** for the discovery features, once they land. Everything installs and
-  runs without one.
+- **A YouTube Data API v3 key** for search, trending and video details. Everything installs and runs
+  without one; the YouTube-backed surfaces return a configuration error until it is set.
 
 ## Quick start
 
@@ -40,8 +44,7 @@ cp .env.example .env.local       # macOS/Linux
 
 # 3. Set YOUTUBE_API_KEY in .env.local (see "Getting a YouTube API key")
 
-# 4. Create the database folder, then apply migrations
-mkdir data                       # Drizzle Kit does not create the parent directory
+# 4. Apply migrations (Drizzle Kit creates data/ and the database file)
 npm run db:migrate
 
 # 5. Start the dev server
@@ -111,6 +114,8 @@ the browser. `.env.local` is git-ignored; the committed `.env.example` must neve
   import rules, and where SQL and server-only code may live.
 - [`docs/THEME.md`](docs/THEME.md) — Midnight Purple palette, tokens, contrast table, usage rules.
 - [`docs/YOUTUBE_DATA_POLICY.md`](docs/YOUTUBE_DATA_POLICY.md) — what Viewly stores from YouTube, and where it falls short of the API terms.
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — quota model, troubleshooting, compliance status and
+  the pre-release checklist.
 
 ## Testing and quality
 
@@ -134,10 +139,6 @@ startup. Error messages name the variable, never the value.
 Check `node --version`, upgrade if needed, then run `npm install` (or `npm rebuild better-sqlite3`)
 so the addon is built for the active Node version.
 
-**`Cannot open database because the directory does not exist`.** The parent folder of the database
-file is missing. Run `mkdir data` (or create your `DATABASE_PATH` folder) and re-run
-`npm run db:migrate`.
-
 **Port 3000 is already in use.** Use `npm run dev -- --port 3001` and open
 <http://localhost:3001>, or stop the process holding port 3000.
 
@@ -147,7 +148,8 @@ run `npm run db:migrate`. This discards all local data.
 ## Security and privacy
 
 - Single-user by design: no accounts, no auth layer, no per-user data separation. Run it locally.
-- No telemetry, no analytics, no third-party scripts.
+- No telemetry or analytics of our own. The watch page loads YouTube's embed, which is third-party
+  content.
 - The YouTube API key stays server-side; browser code never sees the variable name or its value.
 - The SQLite file is plain, unencrypted local storage — protect the machine, not the file.
 - Not intended for public deployment: nothing protects the database or your API quota.

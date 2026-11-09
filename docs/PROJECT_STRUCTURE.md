@@ -85,8 +85,9 @@ build time instead of leaking secrets.
 
 ## Rendering note (Next.js 16)
 
-`cacheComponents` is enabled in `next.config.ts`, so uncached SQLite reads will use `connection()`
-plus a `Suspense` boundary in later tickets; this skeleton adds no data fetching and no route code.
+`cacheComponents` is enabled in `next.config.ts`, so request-time SQLite reads sit behind a
+`Suspense` boundary. `/library` (the favourites list) and `/watch/[videoId]` (saved state) read
+SQLite that way today.
 
 ## Conventions
 

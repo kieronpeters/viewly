@@ -4,7 +4,7 @@ What Viewly stores from the YouTube Data API, what it deliberately does not stor
 current code does not yet meet the YouTube API Services Terms of Service or Developer Policies.
 
 Owner: Priya (Technical Writer). Reviewed: **10 November 2026**. Re-check the sources before any
-release that adds caching, playback or sharing.
+release that changes caching, playback or sharing.
 
 This is an engineering record of what the code does, checked against the published terms. It is not
 legal advice, and it does not replace the YouTube documents it cites.
@@ -26,7 +26,7 @@ that date is **1 June 2026** (a clarification to the derived-metrics and data-st
 
 Sections cited below are from the Developer Policies unless marked "ToS" (Terms of Service). The
 Branding Guidelines and Required Minimum Functionality have been identified but **not yet reviewed
-in detail**; that review belongs to the playback ticket (T30).
+in detail**; that review is still open (see "Playback").
 
 ## What Viewly is
 
@@ -51,8 +51,8 @@ The schema in `src/db/schema.ts` is the authoritative list. There are five table
 Notes on that table, all verifiable in the schema file:
 
 - The saved-video snapshot is exactly **video id, title, channel title, thumbnail URL and duration**.
-  The same four display fields are duplicated per row rather than referenced from a shared cache, so
-  a saved item can still render if the API is unavailable.
+  The same four display fields are duplicated per row rather than referenced from a shared videos
+  table, so a saved item can still render if the API is unavailable.
 - `duration_seconds` is nullable, because the API omits duration for live streams and for videos
   whose details are unavailable.
 - Timestamps (`saved_at`, `last_viewed_at`, `added_at`, `created_at`, `updated_at`) are UTC
@@ -64,80 +64,87 @@ Notes on that table, all verifiable in the schema file:
 - Thumbnail URLs point at YouTube's own hosts (`i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`).
   Viewly stores the URL, not the image. Images are loaded from YouTube, either by the browser or by
   the Next.js image optimiser, which keeps a short-lived copy under `.next/cache/images`.
-- No repository or route handler writes to these tables yet. The schema is committed, but at the time
-  of this review `src/lib/db/` contains only the connection module and `src/app/` has no API routes.
-  The storage contract above is therefore the schema, not observed runtime behaviour. It must be
-  re-checked when the library routes land.
+- Runtime writes exist for favourites only: `toggleFavourite` in
+  `src/features/library/actions.ts` writes through `src/lib/db/repositories/library.repository.ts`,
+  and `/library` and `/watch/[videoId]` read it. `watch_later`, `history` and playlists have schema
+  but no committed mutation. The storage contract above is the schema; the only exercised path is
+  favourites.
 
 ## What Viewly does not store
 
 - **No video or audio media.** No downloads, no stream URLs, no DASH/HLS manifests, no signed media
   URLs, no offline copies, no re-hosting. Developer Policies III.E.1 prohibits all of these without
   YouTube's prior written approval.
-- **No descriptions.** `VideoDetail.description` exists only in memory for a single watch request.
-  It is returned to the caller and never written to the database.
+- **No descriptions.** `VideoDetail.description` exists only in memory: it is returned to the caller
+  and may sit in the TTL cache for up to 10 minutes, but it is never written to the database.
 - **No YouTube statistics.** `viewCount` from the API is fetched as part of `videos.list` and held in
-  memory so a card can display it, but it is not persisted. If a future cache stores it, the 30-day
-  rule in III.E.4.b applies.
+  memory so a card can display it, but it is not persisted. The shared cache holds it in memory for
+  at most 10 minutes; the 30-day rule in III.E.4.b applies to anything persisted later.
 - **No channel ids, publish dates, categories, tags, captions or comments.** These are either
   normalised into memory (`channelId`, `publishedAt`) and discarded, or never requested.
 - **No search history.** Search queries and page tokens are not persisted.
 - **No credentials.** No passwords, no OAuth tokens, no Google account data. The only secret is the
   owner's API key, which lives in `.env.local` and is never written to the database.
-- **No telemetry or analytics.** Nothing about usage leaves the machine apart from the API requests
-  themselves.
+- **No telemetry or analytics of our own.** Outbound traffic is the API requests plus the YouTube
+  embed that the watch page loads; Viewly adds no analytics or tracking.
 
-## Search results and the future cache
+## Search results and the cache
 
 `searchVideos()` in `src/lib/youtube/client.ts` calls `search.list` with `part=snippet` and
 `type=video`, normalises the response in `src/shared/youtube.ts`, and returns a `SearchPage` in
-memory. The outbound request is sent with `cache: "no-store"`, and the client's own header comment
-states that caching and quota bookkeeping are out of scope and belong to a later ticket. There is no
-table for search results and nothing writes one.
+memory. There is no table for search results and nothing writes one.
 
-When T18 adds a cache:
+The only place an API payload is retained is the process-local TTL cache in
+`src/lib/youtube/cache.ts`, which wraps every client call:
 
-- entries must expire on a short TTL and be refreshed rather than kept;
-- a cached search result must never become a library row on its own — only an explicit user save
-  writes to `favourites`, `watch_later` or a playlist;
-- the cache must not outlive the 30-day limit that applies to Non-Authorized API Data
-  (III.E.4.d);
-- thumbnail bytes cached by the image optimiser are also API Data and should be covered by the same
-  review.
+- TTLs are search 60 s, video details 10 min, trending 5 min and categories 24 h. Entries are
+  bounded at 200 with LRU eviction and are lost on restart; nothing is written to disk.
+- Keys contain the endpoint and normalized parameters only. The API key is appended after the cache
+  lookup and never stored; errors are never cached, and concurrent identical calls share one request.
+- The longest TTL (24 h) is far inside the 30-day limit for Non-Authorized API Data (III.E.4.d).
+- A cached search result never becomes a library row on its own. Only an explicit save writes to
+  `favourites`, the one implemented save path.
+- `YOUTUBE_CACHE_DISABLED=1` bypasses the cache for debugging.
+- Thumbnail bytes cached by the image optimiser are also API Data and remain covered by this review.
 
 ## Playback
 
-**Playback is not built.** There is no player component, no embed URL and no iframe in `src/`. The
-video card links to an internal `/watch/[id]` route that does not exist yet.
+**Playback is built** with the official YouTube embedded player. `src/components/video/youtube-player.tsx`
+renders `https://www.youtube-nocookie.com/embed/<id>?rel=0` with the video title as the iframe name,
+`loading="lazy"`, no autoplay parameter, `allowFullScreen`, and an "Open on YouTube" link to
+`https://www.youtube.com/watch?v=<id>`. The player is unmodified; Viewly does not proxy, download,
+re-host or separate the audio and video components, and there is no background player (III.E.1,
+III.I.6–III.I.9).
 
-When T30 adds playback, the official YouTube embedded player (IFrame Player API) is the only
-mechanism. Viewly must not proxy, download, re-host or separate the audio and video components, and
-must not build a background player (III.E.1, III.I.6–III.I.9). The same ticket must also handle:
+Still open for playback:
 
 - looking up the Made for Kids status of every embedded video and disabling tracking where required
   (III.E.4.j);
-- keeping autoplay off by default, so playback data is not shared before the user interacts
-  (III.E.4.i);
 - identifying the client to the player as required by the Required Minimum Functionality document;
-- displaying the player and its attribution unmodified (III.F.2).
+- reviewing the Branding Guidelines and confirming the player's attribution (III.F.2).
+
+Autoplay is off: no autoplay parameter is sent, so playback data is not shared before the user
+interacts (III.E.4.i).
 
 ## Attribution and branding
 
-Nothing renders YouTube content today, so no attribution is implemented yet. The intended behaviour,
-to be built with the search and watch pages:
+Attribution is partial. The watch page renders the official player unmodified and offers an
+"Open on YouTube" link to `https://www.youtube.com/watch?v=<id>`. `VideoCard` links only to the
+internal `/watch/[id]` route and carries no YouTube mark, so cards do not yet identify YouTube as
+the source.
 
-- every video links to its YouTube watch page (`https://www.youtube.com/watch?v=<id>`), and the link
-  is clearly a link off-site;
-- YouTube is identified as the source of titles, thumbnails and durations, using YouTube Brand
-  Features in line with the Branding Guidelines (III.F.2, ToS §10);
-- YouTube branding inside the embedded player is never covered, cropped or replaced;
-- Viewly does not state or imply that YouTube sponsors, endorses or is affiliated with it
-  (ToS §13);
-- any locally computed value (such as `history.view_count`) is visibly not presented as YouTube data
-  (III.E.4.h).
+The finished surfaces must:
 
-The current `VideoCard` falls short of the first two points: it links internally and carries no
-YouTube mark. See "Known gaps".
+- link every video to its YouTube watch page (`https://www.youtube.com/watch?v=<id>`), clearly as a
+  link off-site;
+- identify YouTube as the source of titles, thumbnails and durations, using YouTube Brand Features
+  in line with the Branding Guidelines (III.F.2, ToS §10);
+- never cover, crop or replace YouTube branding inside the embedded player;
+- not state or imply that YouTube sponsors, endorses or is affiliated with Viewly (ToS §13);
+- keep any locally computed value (such as `history.view_count`) visibly not presented as YouTube
+  data (III.E.4.h).
+
+The first two points remain open for `VideoCard`. See "Known gaps".
 
 ## API key handling
 
@@ -180,22 +187,23 @@ Viewly) and 10,000 units per day shared across the other endpoints; daily quotas
 Pacific Time.
 
 `searchVideos`, `getVideo`, `getVideos`, `listVideoCategories` and `getTrending` all consume quota
-from those buckets. The client retries a 429 or 5xx response once, then maps `403 quotaExceeded` to
-the `quota` error code so the UI can show a specific message rather than a generic failure. There is
-no local quota ledger and no request budgeting yet. What the app does when the quota is exhausted
-will be specified in T43.
+from those buckets, and the shared cache absorbs repeat calls. The client retries a 429 or 5xx
+response once, then maps `403 quotaExceeded` to the `quota` error code. There is no local quota ledger
+and no request budgeting. Quota exhaustion and the user-facing copy are documented in
+[`OPERATIONS.md`](OPERATIONS.md): `quota` becomes 429 `RATE_LIMITED` on all three API routes
+(`/api/search`, `/api/trending`, `/api/videos/[id]`).
 
 ## Known gaps
 
 These are places where the current or planned behaviour does not meet the published terms. They are
 listed rather than worked around.
 
-1. **Permanent snapshots exceed the 30-day storage limit (III.E.4.d).** `favourites`, `watch_later`
-   and `history` keep title, channel, thumbnail and duration indefinitely with no TTL and no refresh
-   job. Because Viewly uses a bare API key, this is Non-Authorized Data, not Authorized Data, so the
-   longer retention allowed by III.E.4.b.2 does not apply. A remediation (refresh on library load,
-   a scheduled revalidation of rows older than 30 days, or a 30-day sweep) is needed before the
-   library ships.
+1. **Permanent snapshots exceed the 30-day storage limit (III.E.4.d).** `favourites` rows keep title,
+   channel, thumbnail and duration indefinitely with no TTL and no refresh job; `watch_later` and
+   `history` share the same design but have no write path yet. Because Viewly uses a bare API key,
+   this is Non-Authorized Data, not Authorized Data, so the longer retention allowed by III.E.4.b.2
+   does not apply. A remediation (refresh on library load, a scheduled revalidation of rows older
+   than 30 days, or a 30-day sweep) is needed before the library is considered release-ready.
 2. **Stored metadata drifts (III.E.4.e, III.E.4.f).** Titles, thumbnails and durations change;
    videos are made private or deleted. A snapshot never updates, and the UI does not label it as
    saved-at-a-point-in-time. The same fix as gap 1 covers this.
@@ -204,21 +212,21 @@ listed rather than worked around.
    Privacy Policy, plus a link to the YouTube Terms of Service and a statement that using the app
    means accepting them. This document is developer documentation and does not satisfy that, and the
    app has no such screen. It matters as soon as anyone other than the owner runs Viewly.
-4. **Attribution is not implemented (III.F.2, ToS §10).** `VideoCard` links to `/watch/[id]` and shows
-   no YouTube branding, so a card does not yet make clear that YouTube is the source. Search and
-   watch pages must fix this when they land.
+4. **Card attribution is incomplete (III.F.2, ToS §10).** The watch page embeds the official player
+   and links to the YouTube watch page, but `VideoCard` links only to `/watch/[id]` and shows no
+   YouTube branding, so list, search and library cards do not make the source clear.
 5. **`playlist_items` has no display snapshot.** The T19 brief assumed playlist items store title,
    channel, thumbnail and duration; they do not. Playlist rendering therefore needs a `videos.list`
    call, costs quota, and cannot show anything for a video that has been deleted or made private. It
    also contradicts the rationale in `src/db/schema.ts`, which says a saved item must render without
    an API call. Either add the snapshot columns (and the matching migration) or document playlists as
    an id-only list.
-6. **Playback requirements are unbuilt (III.E.4.i, III.E.4.j, III.C.1, III.F).** Made for Kids
-   handling, autoplay default, player identity and the Branding Guidelines and Required Minimum
-   Functionality documents are all T30 work. None of it exists or has been reviewed.
+6. **Some playback requirements remain (III.E.4.j, III.C.1, III.F).** The official embed and
+   autoplay-off are implemented, but Made for Kids handling, client identification to the player and
+   the Branding Guidelines / Required Minimum Functionality review are still missing.
 7. **"Substitute service" risk (III.I.1).** A YouTube client must add significant independent value
    and must not recreate YouTube's browse experience. Viewly's discovery-plus-local-library premise
-   is defensible, but this should be re-read at T30 and T43 rather than assumed.
+   is defensible, but this should be re-read whenever discovery, playback or quota handling changes.
 8. **No in-app deletion control (III.E.4.g).** Deletion is fast, but the only mechanism is removing a
    row or deleting the database file by hand. A "delete all my data" action would make the
    requirement demonstrable.

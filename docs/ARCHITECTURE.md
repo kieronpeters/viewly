@@ -15,9 +15,10 @@ progress is called out in [Known gaps](#7-known-gaps), not presented as shipped.
 - **Local storage.** One SQLite file, `data/viewly.db` by default (`DATABASE_PATH` overrides it),
   opened through `better-sqlite3` with WAL and `PRAGMA foreign_keys = ON`. It is plain local state;
   there is no database server.
-- **One external service.** Outbound HTTPS goes to the YouTube Data API v3
-  (`https://www.googleapis.com/youtube/v3`). There are no accounts, no auth layer, no cloud
-  database, no queue or worker, no telemetry and no third-party scripts.
+- **One external service.** Outbound HTTPS goes to YouTube: the Data API v3
+  (`https://www.googleapis.com/youtube/v3`) from the server, and the embed
+  (`https://www.youtube-nocookie.com`) from the watch page. There are no accounts, no auth layer, no
+  cloud database, no queue or worker, no telemetry and no third-party scripts of our own.
 
 `next.config.ts` enables `cacheComponents` and `partialPrefetching`, and allows images from
 `i.ytimg.com`, `img.youtube.com` and `yt3.ggpht.com`.
@@ -46,8 +47,9 @@ Browser
 
 Committed API handlers are thin and call the YouTube client directly. Feature-level use cases exist
 for categories (`src/features/search/categories.ts`) and the watch video (`src/features/video`), and
-both wrap the same client. Pages compose components and feature output; no committed page reads
-SQLite. Import rules are defined in [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).
+both wrap the same client. Pages compose components and feature output; `/library` and
+`/watch/[videoId]` read favourites through `src/features/library`. Import rules are defined in
+[`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).
 
 Current flows:
 
@@ -61,16 +63,25 @@ Current flows:
   results component awaits `searchParams`, validates `q`/`pageToken` and calls `searchVideos`
   in-process; it deliberately does not fetch `/api/search`.
 - `GET /watch/[videoId]`: the page forwards `params` into `Suspense`; the route validates the id
-  and `getWatchVideo` calls `getVideo`. An invalid id or unknown video calls `notFound()`.
+  and `getWatchVideo` calls `getVideo`. An invalid id or unknown video calls `notFound()`. The
+  result renders the official player and the metadata/description panel.
+- `GET /library`: resolves `?tab=` (favourites only today) and lists saved favourites from SQLite
+  inside `Suspense`.
+- `GET /category/[slug]`: resolves the public slug, fetches one page of videos with an optional
+  `?pageToken=`, and paginates by link. Unknown slugs call `notFound()`; API failures render in-page.
 
-Across requests, caching in the committed build is HTTP-only: search sends
+Across requests, two cache layers apply. The API route handlers send HTTP cache headers: search sends
 `public, max-age=60, stale-while-revalidate=300`; trending sends
 `public, max-age=60, s-maxage=60, stale-while-revalidate=120`; video details send
-`public, max-age=60, s-maxage=300`. The YouTube client sends `cache: "no-store"` with an 8 second
-timeout and retries a 429/5xx response once. `getWatchVideo` also uses React's `cache()` so
-`generateMetadata` and the page body share one call per render. There is no cross-request
-application cache and no SQLite query cache. T18 (shared YouTube cache) is in progress and is not
-described here.
+`public, max-age=60, s-maxage=300`. Separately, the YouTube client wraps every logical call in a
+process-local TTL cache (`src/lib/youtube/cache.ts`): search 60 s, video details 10 min, trending
+5 min, categories 24 h. Entries are keyed by endpoint and normalized parameters (never the API key),
+bounded at 200 with LRU eviction, and shared by concurrent identical calls. Errors are never
+cached, a hit returns before the key is read, and `YOUTUBE_CACHE_DISABLED=1` bypasses the cache for
+debugging. It is memory-only and lost on restart; there is no SQLite query cache. The client still
+sends `cache: "no-store"` upstream with an 8 second timeout and retries a 429/5xx response once.
+`getWatchVideo` also uses React's `cache()` so `generateMetadata` and the page body share one call
+per render.
 
 ## 3. Server/client boundaries
 
@@ -97,8 +108,8 @@ described here.
 - `cacheComponents` is enabled. `better-sqlite3` is synchronous and is not cached by Next.js, so
   any request-time SQLite read during rendering must be wrapped in `connection()` from
   `next/server` or placed behind a `Suspense` boundary. API route handlers already run per request,
-  and the committed `/search` and `/watch/[videoId]` pages put request-time work behind `Suspense`.
-  No committed page performs a database read.
+  and `/search`, `/library` and `/watch/[videoId]` put request-time work behind `Suspense`.
+  `/library` (the favourites list) and `/watch/[videoId]` (saved state) perform SQLite reads there.
 
 ## 4. Data model
 
@@ -133,17 +144,18 @@ Notes:
 Only committed routes are listed. `src/app/error.tsx` and `src/app/not-found.tsx` are global
 boundaries, not routes.
 
-| Route              | Method | Purpose                          | Statuses                                                                           |
-| ------------------ | ------ | -------------------------------- | ---------------------------------------------------------------------------------- |
-| `/`                | GET    | Static placeholder home page     | 200                                                                                |
-| `/search`          | GET    | Search form and streamed results | 200; invalid input and API failures render in-page states, not error statuses      |
-| `/watch/[videoId]` | GET    | Video detail page                | 200; 404 invalid id or unknown video; 500 via error boundary on unexpected failure |
-| `/api/search`      | GET    | One page of video search results | 200; 400 bad `q`/`pageToken`; 429 quota; 500 config/internal; 502 upstream         |
-| `/api/trending`    | GET    | Most popular videos for a region | 200; 400 bad `region`/`maxResults`; 429 quota; 500 config/internal; 502 upstream   |
-| `/api/videos/[id]` | GET    | One video's normalized details   | 200; 400 invalid id; 404 no usable video; 500 config/internal; 502 upstream        |
+| Route              | Method | Purpose                               | Statuses                                                                               |
+| ------------------ | ------ | ------------------------------------- | -------------------------------------------------------------------------------------- |
+| `/`                | GET    | Discovery: trending and category rows | 200                                                                                    |
+| `/search`          | GET    | Search form and streamed results      | 200; invalid input and API failures render in-page states, not error statuses          |
+| `/watch/[videoId]` | GET    | Player, metadata and description      | 200; 404 invalid id or unknown video; 500 via error boundary on unexpected failure     |
+| `/library`         | GET    | Favourites list from SQLite           | 200; an unknown `?tab=` falls back to favourites                                       |
+| `/category/[slug]` | GET    | Category results, link pagination     | 200; 404 unknown slug; API failures render in-page states                              |
+| `/api/search`      | GET    | One page of video search results      | 200; 400 bad `q`/`pageToken`; 429 quota; 500 config/internal; 502 upstream             |
+| `/api/trending`    | GET    | Most popular videos for a region      | 200; 400 bad `region`/`maxResults`; 429 quota; 500 config/internal; 502 upstream       |
+| `/api/videos/[id]` | GET    | One video's normalized details        | 200; 400 invalid id; 404 no usable video; 429 quota; 500 config/internal; 502 upstream |
 
-The shell links to `/search` and `/library`. `/search` is built; no page file for `/library` is
-committed, so in the committed tree it falls through to the 404 boundary.
+The shell links to `/search` and `/library`; both are built.
 
 ## 6. Testing and quality
 
@@ -167,11 +179,12 @@ Background: [`README.md`](../README.md) · [`PROJECT_STRUCTURE.md`](PROJECT_STRU
 
 ## 7. Known gaps
 
-- **Library UI and API.** The schema and `library.repository.ts` exist, but there are no library
-  pages, route handlers or feature components.
-- **Playback.** The committed watch page renders a placeholder in the player slot; the embedded
-  player (T30) and metadata/description panel (T31) are being built concurrently.
-- **Caching.** No cross-request YouTube cache is committed; the shared cache (T18) is in progress.
+- **Library UI and API.** `/library` lists favourites only; watch later, playlists and history are
+  still unbuilt, and there is no `/api/library` route.
+- **Playback compliance.** `/watch/[videoId]` renders the official YouTube embed
+  (`youtube-nocookie.com`, `rel=0`, lazy loading, no autoplay) with an "Open on YouTube" fallback
+  link, plus the metadata/description panel. The Made-for-Kids lookup, identifying the client to the
+  player and the Branding Guidelines review are still open.
 - **Retention.** The 30-day retention problem in `YOUTUBE_DATA_POLICY.md` is unresolved; the
   retention decision is T46.
 - **Live YouTube smoke.** Unit tests cover request shape and error mapping with a stubbed `fetch`.
