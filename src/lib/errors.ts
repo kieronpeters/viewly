@@ -27,12 +27,20 @@ import { isDomainValidationError } from "@/shared/validation";
 
 /** Stable, machine-readable codes. Adding a code is a breaking API change. */
 export type ApiErrorCode =
-  "VALIDATION_FAILED" | "NOT_FOUND" | "UPSTREAM_ERROR" | "CONFIGURATION_ERROR" | "INTERNAL_ERROR";
+  | "VALIDATION_FAILED"
+  | "NOT_FOUND"
+  | "RATE_LIMITED"
+  | "UNAVAILABLE"
+  | "UPSTREAM_ERROR"
+  | "CONFIGURATION_ERROR"
+  | "INTERNAL_ERROR";
 
 /** HTTP status for each code. Routes must not invent their own mapping. */
 export const API_ERROR_STATUS = {
   VALIDATION_FAILED: 400,
   NOT_FOUND: 404,
+  RATE_LIMITED: 429,
+  UNAVAILABLE: 503,
   UPSTREAM_ERROR: 502,
   CONFIGURATION_ERROR: 500,
   INTERNAL_ERROR: 500,
@@ -59,6 +67,9 @@ export interface ApiErrorResult {
 const CONFIGURATION_ERROR_MESSAGE =
   "The server is missing required configuration. Please try again later.";
 
+const UPSTREAM_MALFORMED_PAYLOAD_MESSAGE =
+  "The upstream service returned an unexpected response. Please try again later.";
+
 const INTERNAL_ERROR_MESSAGE = "Something went wrong on the server. Please try again later.";
 
 /**
@@ -83,7 +94,10 @@ export function apiErrorResult(
  * Pure mapping from a thrown value to an HTTP result. No logging, no I/O.
  *
  * - `DomainValidationError` -> 400 VALIDATION_FAILED, with its field and its
- *   authored message (those messages never echo user input).
+ *   authored message (those messages never echo user input). The exception is
+ *   code `malformed_payload`, which the normalizers raise when an *upstream*
+ *   body is malformed: that is a 502 UPSTREAM_ERROR with generic copy, because
+ *   the caller sent nothing wrong and the original text can quote the payload.
  * - `EnvConfigurationError` -> 500 CONFIGURATION_ERROR, with generic copy. The
  *   original message names the env var, so it is never forwarded.
  * - Anything else -> 500 INTERNAL_ERROR, with generic copy. A thrown string is
@@ -94,6 +108,10 @@ export function apiErrorResult(
  */
 export function mapErrorToResponse(error: unknown): ApiErrorResult {
   if (isDomainValidationError(error)) {
+    if (error.code === "malformed_payload") {
+      return apiErrorResult("UPSTREAM_ERROR", UPSTREAM_MALFORMED_PAYLOAD_MESSAGE);
+    }
+
     return apiErrorResult(
       "VALIDATION_FAILED",
       error.message,

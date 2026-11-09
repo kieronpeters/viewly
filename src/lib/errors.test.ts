@@ -5,8 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { EnvConfigurationError } from "@/lib/env";
-import { API_ERROR_STATUS, jsonError, logServerError, mapErrorToResponse } from "@/lib/errors";
-import { assertVideoId, DomainValidationError } from "@/shared/validation";
+import {
+  API_ERROR_STATUS,
+  apiErrorResult,
+  jsonError,
+  jsonErrorResult,
+  logServerError,
+  mapErrorToResponse,
+} from "@/lib/errors";
+import { assertSearchQuery, assertVideoId, DomainValidationError } from "@/shared/validation";
 
 /** Credential-shaped fake: never a real key, only used to prove redaction. */
 const FAKE_KEY = "AIzaSyFAKE-key-for-redaction-tests-000";
@@ -39,6 +46,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("API_ERROR_STATUS", () => {
+  it("keeps the existing code to status mapping", () => {
+    expect(API_ERROR_STATUS.VALIDATION_FAILED).toBe(400);
+    expect(API_ERROR_STATUS.NOT_FOUND).toBe(404);
+    expect(API_ERROR_STATUS.UPSTREAM_ERROR).toBe(502);
+    expect(API_ERROR_STATUS.CONFIGURATION_ERROR).toBe(500);
+    expect(API_ERROR_STATUS.INTERNAL_ERROR).toBe(500);
+  });
+
+  it("maps RATE_LIMITED to 429 and UNAVAILABLE to 503", () => {
+    expect(API_ERROR_STATUS.RATE_LIMITED).toBe(429);
+    expect(API_ERROR_STATUS.UNAVAILABLE).toBe(503);
+  });
+
+  it("builds envelopes with the new codes and their statuses", async () => {
+    const limited = apiErrorResult("RATE_LIMITED", "Quota exceeded.");
+    expect(limited.status).toBe(429);
+    expect(limited.body.error.code).toBe("RATE_LIMITED");
+
+    const unavailable = apiErrorResult("UNAVAILABLE", "Try again later.");
+    expect(unavailable.status).toBe(503);
+    expect(unavailable.body.error.code).toBe("UNAVAILABLE");
+
+    const response = jsonErrorResult(unavailable);
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "UNAVAILABLE", message: "Try again later." },
+    });
+  });
+});
+
 describe("mapErrorToResponse", () => {
   it("maps a DomainValidationError to 400 with its field and authored message", () => {
     const error = catchThrown(() => assertVideoId("too-short"));
@@ -52,6 +90,37 @@ describe("mapErrorToResponse", () => {
     expect(body.error.field).toBe("videoId");
     expect(body.error.message).toContain("Video id");
     expect(Object.keys(body.error).sort()).toEqual(["code", "field", "message"]);
+  });
+
+  it("maps a malformed_payload DomainValidationError to 502 UPSTREAM_ERROR", () => {
+    // Thrown by the normalizers when an upstream body is unusable, not by input
+    // validation; the hostile message proves payload text is never forwarded.
+    const error = new DomainValidationError(
+      "malformed_payload",
+      'Video response must contain an items array. got: {"items":"user-supplied-body"}',
+    );
+
+    const { status, body } = mapErrorToResponse(error);
+
+    expect(status).toBe(502);
+    expect(status).toBe(API_ERROR_STATUS.UPSTREAM_ERROR);
+    expect(body.error.code).toBe("UPSTREAM_ERROR");
+    expect(body.error).not.toHaveProperty("field");
+    expect(body.error.message).not.toContain("items");
+    expect(body.error.message).not.toContain("user-supplied-body");
+    expect(JSON.stringify(body)).not.toContain("user-supplied-body");
+  });
+
+  it("keeps input validation codes at 400 with their field", () => {
+    const error = catchThrown(() => assertSearchQuery("   "));
+
+    const { status, body } = mapErrorToResponse(error);
+
+    expect(status).toBe(400);
+    expect(status).toBe(API_ERROR_STATUS.VALIDATION_FAILED);
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+    expect(body.error.field).toBe("searchQuery");
+    expect(body.error.message).toBe("Search query must not be empty.");
   });
 
   it("maps an EnvConfigurationError to a generic 500 without the key or env name", () => {
