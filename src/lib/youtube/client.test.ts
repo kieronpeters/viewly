@@ -7,6 +7,7 @@ vi.mock("server-only", () => ({}));
 import {
   MAX_RESULTS_LIMIT,
   YouTubeApiError,
+  clearYouTubeCache,
   getTrending,
   getVideo,
   getVideos,
@@ -14,6 +15,7 @@ import {
   listVideoCategories,
   searchVideos,
 } from "@/lib/youtube/client";
+import { YOUTUBE_CACHE_TTLS_MS } from "@/lib/youtube/cache";
 import { DomainValidationError } from "@/shared/validation";
 
 /** Credential-shaped fake used only to prove the key stays in the request URL. */
@@ -138,12 +140,17 @@ function expectApiError(error: unknown, code: string): YouTubeApiError {
 
 beforeEach(() => {
   setKey(FAKE_KEY);
+  clearYouTubeCache();
+  delete process.env.YOUTUBE_CACHE_DISABLED;
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
 
 afterEach(() => {
   setKey(ORIGINAL_KEY);
+  delete process.env.YOUTUBE_CACHE_DISABLED;
+  clearYouTubeCache();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -293,7 +300,7 @@ describe("getVideos", () => {
 
 describe("getTrending and listVideoCategories", () => {
   it("requests the most popular chart for the region", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+    fetchMock.mockImplementation(async () => jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
 
     const videos = await getTrending({ regionCode: "gb", maxResults: 10 });
 
@@ -413,5 +420,154 @@ describe("error mapping", () => {
       "bad_request",
     );
     expect(badRequest.reason).toBe("invalidParameter");
+  });
+});
+
+describe("caching", () => {
+  it("serves a repeated search from cache with one upstream request", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    const first = await searchVideos({ query: "Cached  Query" });
+    const second = await searchVideos({ query: "cached query" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+    expect(JSON.stringify(second)).not.toContain(FAKE_KEY);
+  });
+
+  it("does not share entries between different parameters", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({ query: "same terms", maxResults: 10 });
+    await searchVideos({ query: "same terms", maxResults: 11 });
+    await searchVideos({ query: "different terms", maxResults: 10 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("refreshes a search after its 60 second TTL using fake timers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({ query: "ttl search" });
+    await searchVideos({ query: "ttl search" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.search - 1);
+    await searchVideos({ query: "ttl search" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await searchVideos({ query: "ttl search" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps video details for ten minutes and then refreshes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    fetchMock.mockImplementation(async () => jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
+
+    await getVideo(VIDEO_ID);
+    await getVideo(VIDEO_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.videoDetails - 1);
+    await getVideo(VIDEO_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await getVideo(VIDEO_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps trending for five minutes and categories for a day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    fetchMock.mockImplementation(async (input) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      return url.pathname.endsWith("/videoCategories")
+        ? jsonResponse({ items: [{ id: "10", snippet: { title: "Music", assignable: true } }] })
+        : jsonResponse(videoPayload([videoItem(VIDEO_ID)]));
+    });
+
+    await getTrending();
+    await listVideoCategories("us");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.trending - 1);
+    await getTrending();
+    await listVideoCategories("us");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(Date.now() + 1);
+    await getTrending();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // Categories survive the trending refresh and expire on their own TTL.
+    await listVideoCategories("us");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.categories);
+    await listVideoCategories("us");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("coalesces concurrent identical requests into one upstream fetch", async () => {
+    let resolveFetch: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const first = searchVideos({ query: "coalesced query" });
+    const second = searchVideos({ query: "coalesced query" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveFetch?.(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    const [firstPage, secondPage] = await Promise.all([first, second]);
+    expect(secondPage).toEqual(firstPage);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves a cache hit without reading the API key", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    const first = await searchVideos({ query: "keyless hit" });
+    setKey(undefined);
+
+    const second = await searchVideos({ query: "keyless hit" });
+
+    expect(second).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache errors, so the next call retries upstream", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(apiErrorPayload(400, "invalidParameter"), 400))
+      .mockResolvedValueOnce(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await expect(searchVideos({ query: "error then success" })).rejects.toBeInstanceOf(
+      YouTubeApiError,
+    );
+    const page = await searchVideos({ query: "error then success" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(page.items).toHaveLength(1);
+  });
+
+  it("honours the YOUTUBE_CACHE_DISABLED bypass", async () => {
+    process.env.YOUTUBE_CACHE_DISABLED = "1";
+    // A fresh Response per call: a body can only be read once.
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({ query: "bypass query" });
+    await searchVideos({ query: "bypass query" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

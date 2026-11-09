@@ -10,13 +10,51 @@
  * can branch without ever seeing the request URL.
  *
  * Responses are normalized by `src/shared/youtube.ts` before leaving this module;
- * this client never returns raw API payloads. Caching and quota bookkeeping are
- * deliberately out of scope (owned by a later ticket).
+ * this client never returns raw API payloads.
+ *
+ * ## Caching (T18)
+ *
+ * Each logical call is wrapped in the process-local cache in `./cache`: the
+ * public signatures are unchanged, and a cache hit returns before the API key is
+ * even read. Entries are keyed by endpoint plus normalized parameters (never by
+ * key material), bounded at 200 entries with LRU eviction, and expired by TTL:
+ * search 60 s, video details 10 min, trending 5 min, categories 24 h. Concurrent
+ * identical calls share one upstream request. Only fulfilled requests are
+ * cached; errors are always propagated and immediately forgotten.
+ * `YOUTUBE_CACHE_DISABLED=1` bypasses the cache entirely for debugging, and
+ * `clearYouTubeCache()` empties it (tests and manual debugging).
+ *
+ * ## Quota cost and daily budget
+ *
+ * Costs below were read from the official quota page on 2026-11-10:
+ * <https://developers.google.com/youtube/v3/determine_quota_cost>. Do not copy
+ * older figures: `search.list` is no longer billed as 100 units from the shared
+ * pool. It has its own bucket of **100 calls per day**, and each call costs one
+ * unit of that bucket. `videos.list` and `videoCategories.list` cost **1 unit**
+ * each from the shared **10,000 units/day** pool. `videos.insert` (unused by
+ * Viewly) has a separate 100/day bucket.
+ *
+ * | Client call            | Endpoint              | Cost per request                 |
+ * | ---------------------- | --------------------- | -------------------------------- |
+ * | `searchVideos`         | `search.list`         | 1 of 100 search calls/day        |
+ * | `getVideo`             | `videos.list`         | 1 of 10,000 units/day            |
+ * | `getVideos`            | `videos.list`         | 1 unit per 50 ids (batch)        |
+ * | `getTrending`          | `videos.list` (chart) | 1 of 10,000 units/day            |
+ * | `listVideoCategories`  | `videoCategories.list`| 1 of 10,000 units/day            |
+ *
+ * Every retry of a 429/5xx response and every extra results page is another
+ * billable call, which is why the cache exists. Budget picture for one local
+ * user: 100 searches per day (search only) and 10,000 units/day for details,
+ * trending and categories combined. A day of ordinary browsing — say 20
+ * searches, 200 detail views and 50 trending loads — costs 20 search calls plus
+ * 250 units, leaving most of both budgets untouched. Quota resets at midnight
+ * Pacific Time. Exceeding it is a policy violation (ToS §15), so the cache is a
+ * correctness control, not just a performance one.
  *
  * Live smoke check: PENDING. A real request against the YouTube Data API needs an
  * owner-supplied `YOUTUBE_API_KEY`, which is not available in this workspace, so
  * the live path has not been exercised. Unit tests stub `fetch` and cover the
- * request shape and error mapping only.
+ * request shape, error mapping, caching and coalescing only.
  */
 
 import "server-only";
@@ -31,6 +69,14 @@ import {
   isRecord,
 } from "@/shared/validation";
 import { normalizeSearchResponse, normalizeVideoResponse } from "@/shared/youtube";
+
+import {
+  type Cache,
+  YOUTUBE_CACHE_TTLS_MS,
+  buildRequestCacheKey,
+  createTtlCache,
+  isYouTubeCacheDisabled,
+} from "./cache";
 
 /** Base URL for the YouTube Data API v3. */
 const API_BASE_URL = "https://www.googleapis.com/youtube/v3";
@@ -61,6 +107,22 @@ const REGION_CODE_PATTERN = /^[A-Za-z]{2}$/;
 
 /** YouTube reasons are short enumerated identifiers, not free-form text. */
 const SAFE_REASON_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
+
+/**
+ * Process-wide request cache. One instance per server process; bounded by
+ * `DEFAULT_MAX_ENTRIES` (200) with LRU eviction, so it can never grow without
+ * limit. Holds raw upstream payloads only for their TTL (60 s to 24 h).
+ */
+const requestCache: Cache = createTtlCache();
+
+/**
+ * Empties the request cache. Test and debugging helper only: production code
+ * has no reason to flush it. In-flight loads that finish afterwards will still
+ * populate their entry.
+ */
+export function clearYouTubeCache(): void {
+  requestCache.clear();
+}
 
 /** Stable, machine-readable failure codes. Callers may branch on these. */
 export type YouTubeApiErrorCode =
@@ -144,13 +206,17 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
   const pageToken = assertPageToken(options.pageToken ?? null);
   const maxResults = clampMaxResults(options.maxResults);
 
-  const payload = await requestJson("search", {
-    part: "snippet",
-    type: "video",
-    q: query,
-    maxResults: String(maxResults),
-    pageToken: pageToken ?? undefined,
-  });
+  const payload = await requestJson(
+    "search",
+    {
+      part: "snippet",
+      type: "video",
+      q: query,
+      maxResults: String(maxResults),
+      pageToken: pageToken ?? undefined,
+    },
+    YOUTUBE_CACHE_TTLS_MS.search,
+  );
 
   return normalizeSearchResponse(payload);
 }
@@ -165,10 +231,14 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
 export async function getVideo(id: string): Promise<VideoDetail | null> {
   const videoId = assertVideoId(id);
 
-  const payload = await requestJson("videos", {
-    part: VIDEO_PARTS,
-    id: videoId,
-  });
+  const payload = await requestJson(
+    "videos",
+    {
+      part: VIDEO_PARTS,
+      id: videoId,
+    },
+    YOUTUBE_CACHE_TTLS_MS.videoDetails,
+  );
 
   return normalizeVideoResponse(payload);
 }
@@ -194,10 +264,14 @@ export async function getVideos(ids: readonly string[]): Promise<VideoSummary[]>
 
   const byId = new Map<string, VideoSummary>();
   for (const batch of chunk(uniqueIds, IDS_PER_REQUEST)) {
-    const payload = await requestJson("videos", {
-      part: VIDEO_PARTS,
-      id: batch.join(","),
-    });
+    const payload = await requestJson(
+      "videos",
+      {
+        part: VIDEO_PARTS,
+        id: batch.join(","),
+      },
+      YOUTUBE_CACHE_TTLS_MS.videoDetails,
+    );
 
     for (const summary of normalizeVideoList(payload)) {
       byId.set(summary.id, summary);
@@ -224,10 +298,14 @@ export async function getVideos(ids: readonly string[]): Promise<VideoSummary[]>
 export async function listVideoCategories(regionCode?: string): Promise<VideoCategory[]> {
   const region = regionCode === undefined ? DEFAULT_REGION_CODE : assertRegionCode(regionCode);
 
-  const payload = await requestJson("videoCategories", {
-    part: "snippet",
-    regionCode: region,
-  });
+  const payload = await requestJson(
+    "videoCategories",
+    {
+      part: "snippet",
+      regionCode: region,
+    },
+    YOUTUBE_CACHE_TTLS_MS.categories,
+  );
 
   if (!isRecord(payload) || !Array.isArray(payload.items)) {
     throw malformedPayload("Video category response must contain an items array.");
@@ -269,21 +347,51 @@ export async function getTrending(options: TrendingOptions = {}): Promise<VideoS
     options.regionCode === undefined ? DEFAULT_REGION_CODE : assertRegionCode(options.regionCode);
   const maxResults = clampMaxResults(options.maxResults);
 
-  const payload = await requestJson("videos", {
-    part: VIDEO_PARTS,
-    chart: "mostPopular",
-    regionCode,
-    maxResults: String(maxResults),
-  });
+  const payload = await requestJson(
+    "videos",
+    {
+      part: VIDEO_PARTS,
+      chart: "mostPopular",
+      regionCode,
+      maxResults: String(maxResults),
+    },
+    YOUTUBE_CACHE_TTLS_MS.trending,
+  );
 
   return normalizeVideoList(payload);
+}
+
+/**
+ * Returns the parsed payload for one logical API call, from the cache when a
+ * live entry exists.
+ *
+ * The cache key is derived from `endpoint` and `params` only, before the API key
+ * is read, so key material can never enter a cache key or a stored value. A hit
+ * never touches `getYoutubeApiKey()`. When `YOUTUBE_CACHE_DISABLED` is set, or
+ * the TTL is non-positive, the call goes straight to the network.
+ *
+ * @throws {EnvConfigurationError} on a miss when no API key is configured.
+ * @throws {YouTubeApiError} for transport, HTTP and payload failures. Errors are
+ * never cached.
+ */
+async function requestJson(
+  endpoint: string,
+  params: Record<string, string | undefined>,
+  ttlMs: number,
+): Promise<unknown> {
+  if (ttlMs <= 0 || isYouTubeCacheDisabled()) {
+    return fetchJson(endpoint, params);
+  }
+
+  const cacheKey = buildRequestCacheKey(endpoint, params);
+  return requestCache.getOrLoad(cacheKey, ttlMs, () => fetchJson(endpoint, params));
 }
 
 /**
  * Performs one logical API call: reads the key, builds the URL and runs the
  * request. A 429 or 5xx response is retried exactly once after a short delay.
  */
-async function requestJson(
+async function fetchJson(
   endpoint: string,
   params: Record<string, string | undefined>,
 ): Promise<unknown> {
