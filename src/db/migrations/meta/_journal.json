@@ -15,6 +15,34 @@
       "when": 1794258484130,
       "tag": "0001_solid_betty_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794305098193,
+      "tag": "0002_video_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794305918081,
+      "tag": "0003_tricky_kylun",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794308834912,
+      "tag": "0004_misty_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794313041628,
+      "tag": "0005_decode_entity_encoded_titles",
+      "breakpoints": true
     }
   ]
 }

@@ -98,6 +98,8 @@ describe("SearchResults", () => {
     const list = within(section).getByRole("list");
 
     expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    // The streamed grid fades in when the results skeleton is replaced.
+    expect(list).toHaveClass("content-in");
     // One tab stop per card: the grid link, and nothing else in discovery.
     expect(within(list).getAllByRole("link")).toHaveLength(2);
     expect(within(list).queryAllByRole("button")).toHaveLength(0);
@@ -135,6 +137,51 @@ describe("SearchResults", () => {
     expect(searchVideosMock).toHaveBeenCalledWith({ query: "rick", pageToken: "CAoQAA" });
   });
 
+  it("forwards validated filters to the YouTube client", async () => {
+    searchVideosMock.mockResolvedValue(page());
+
+    await renderResults({
+      q: "rick",
+      duration: "short",
+      order: "viewCount",
+      uploadDate: "week",
+    });
+
+    expect(searchVideosMock).toHaveBeenCalledWith({
+      query: "rick",
+      pageToken: null,
+      duration: "short",
+      order: "viewCount",
+      uploadDate: "week",
+    });
+  });
+
+  it("takes the first value of each repeated filter", async () => {
+    searchVideosMock.mockResolvedValue(page());
+
+    await renderResults({
+      q: "rick",
+      duration: ["short", "long"],
+      order: ["date", "relevance"],
+      uploadDate: ["week", "month"],
+    });
+
+    expect(searchVideosMock).toHaveBeenCalledWith({
+      query: "rick",
+      pageToken: null,
+      duration: "short",
+      order: "date",
+      uploadDate: "week",
+    });
+  });
+
+  it("rejects an invalid filter without calling YouTube", async () => {
+    await renderResults({ q: "rick", duration: "tiny" });
+
+    expect(screen.getByText("Those filters are not valid")).toBeInTheDocument();
+    expect(searchVideosMock).not.toHaveBeenCalled();
+  });
+
   it("renders a Load more link that keeps the query and advances the token", async () => {
     searchVideosMock.mockResolvedValue(page({ nextPageToken: "CAoQAA", totalResults: 100 }));
 
@@ -154,6 +201,26 @@ describe("SearchResults", () => {
     await renderResults({ q: "rick" });
 
     expect(screen.queryByRole("link", { name: /Load more results/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps the active filters on the Load more link", async () => {
+    searchVideosMock.mockResolvedValue(page({ nextPageToken: "CAoQAA", totalResults: 100 }));
+
+    await renderResults({
+      q: "rick",
+      duration: "long",
+      order: "date",
+      uploadDate: "month",
+    });
+
+    const link = screen.getByRole("link", { name: /Load more results/i });
+    const url = new URL(link.getAttribute("href") ?? "", "https://viewly.test");
+
+    expect(url.searchParams.get("q")).toBe("rick");
+    expect(url.searchParams.get("pageToken")).toBe("CAoQAA");
+    expect(url.searchParams.get("duration")).toBe("long");
+    expect(url.searchParams.get("order")).toBe("date");
+    expect(url.searchParams.get("uploadDate")).toBe("month");
   });
 
   it("renders a safe message when the YouTube quota is exhausted", async () => {

@@ -26,8 +26,9 @@
  * public signatures are unchanged, and a cache hit returns before the API key is
  * even read. Entries are keyed by endpoint plus normalized parameters (never by
  * key material), bounded at 200 entries with LRU eviction, and expired by TTL:
- * search 60 s, video details 10 min, trending 5 min, categories 24 h. Concurrent
- * identical calls share one upstream request.
+ * search 60 s, video details 10 min, trending 5 min, comments 5 min, channels
+ * 24 h, playlist items 10 min. Concurrent identical calls share one upstream
+ * request.
  *
  * The cached value is the **normalized domain object**, not the raw payload:
  * fetching and normalization both run inside the cached loader, so a 200
@@ -43,9 +44,9 @@
  * <https://developers.google.com/youtube/v3/determine_quota_cost>. Do not copy
  * older figures: `search.list` is no longer billed as 100 units from the shared
  * pool. It has its own bucket of **100 calls per day**, and each call costs one
- * unit of that bucket. `videos.list` and `videoCategories.list` cost **1 unit**
- * each from the shared **10,000 units/day** pool. `videos.insert` (unused by
- * Viewly) has a separate 100/day bucket.
+ * unit of that bucket. `videos.list`, `channels.list` and
+ * `playlistItems.list` cost **1 unit** each from the shared **10,000 units/day**
+ * pool. `videos.insert` (unused by Viewly) has a separate 100/day bucket.
  *
  * | Client call            | Endpoint              | Cost per request                 |
  * | ---------------------- | --------------------- | -------------------------------- |
@@ -53,16 +54,23 @@
  * | `getVideo`             | `videos.list`         | 1 of 10,000 units/day            |
  * | `getVideos`            | `videos.list`         | 1 unit per 50 ids (batch)        |
  * | `getTrending`          | `videos.list` (chart) | 1 of 10,000 units/day            |
- * | `listVideoCategories`  | `videoCategories.list`| 1 of 10,000 units/day            |
+ * | `listComments`         | `commentThreads.list` | 1 of 10,000 units/day            |
+ * | `getChannel`           | `channels.list`       | 1 of 10,000 units/day            |
+ * | `listPlaylistItems`    | `playlistItems.list`  | 1 of 10,000 units/day            |
  *
- * Every retry of a 429/5xx response and every extra results page is another
- * billable call, which is why the cache exists. Budget picture for one local
- * user: 100 searches per day (search only) and 10,000 units/day for details,
- * trending and categories combined. A day of ordinary browsing — say 20
- * searches, 200 detail views and 50 trending loads — costs 20 search calls plus
- * 250 units, leaving most of both budgets untouched. Quota resets at midnight
- * Pacific Time. Exceeding it is a policy violation (ToS §15), so the cache is a
- * correctness control, not just a performance one.
+ * `getChannel` is cached for 24 h, so one channel costs at most one unit per day
+ * however many of its videos are opened. `listPlaylistItems` is cached for 10
+ * min, so a channel page costs one unit for the channel (once a day) plus at
+ * most one unit per ten minutes for its uploads. Every retry of a 429/5xx
+ * response and every extra results page is another billable call, which is why
+ * the cache exists. Budget picture for one local user: 100 searches per day
+ * (search only) and 10,000 units/day for details, trending, comments,
+ * channels and uploads combined. A day of ordinary browsing — say 20 searches,
+ * 200 detail views, 50 trending loads, 40 comment pages, 60 distinct channels
+ * and 20 channel-page visits — costs 20 search calls plus under 400 units,
+ * leaving most of both budgets untouched. Quota resets at midnight Pacific Time.
+ * Exceeding it is a policy violation (ToS §15), so the cache is a correctness
+ * control, not just a performance one.
  *
  * Live smoke check: PENDING. A real request against the YouTube Data API needs an
  * owner-supplied `YOUTUBE_API_KEY`, which is not available in this workspace, so
@@ -73,15 +81,37 @@
 import "server-only";
 
 import { getYoutubeApiKey } from "@/lib/env";
-import type { SearchPage, VideoDetail, VideoSummary } from "@/shared/types";
+import {
+  type SearchDuration,
+  type SearchOrder,
+  type SearchUploadDate,
+  nonDefaultSearchFilters,
+  resolveSearchFilters,
+  searchPublishedAfter,
+} from "@/shared/search-filters";
+import type {
+  ChannelDetail,
+  CommentPage,
+  SearchPage,
+  VideoDetail,
+  VideoSummary,
+} from "@/shared/types";
 import {
   DomainValidationError,
+  assertChannelId,
   assertPageToken,
+  assertPlaylistId,
   assertSearchQuery,
   assertVideoId,
   isRecord,
 } from "@/shared/validation";
-import { normalizeSearchResponse, normalizeVideoResponse } from "@/shared/youtube";
+import {
+  normalizeChannelResponse,
+  normalizeCommentThreadsResponse,
+  normalizePlaylistItemsResponse,
+  normalizeSearchResponse,
+  normalizeVideoResponse,
+} from "@/shared/youtube";
 
 import {
   type Cache,
@@ -97,8 +127,14 @@ const API_BASE_URL = "https://www.googleapis.com/youtube/v3";
 /** Upper bound on `maxResults` accepted by `search.list` and `videos.list`. */
 export const MAX_RESULTS_LIMIT = 50;
 
+/** `commentThreads.list` accepts up to 100 threads per request. */
+export const MAX_COMMENT_RESULTS_LIMIT = 100;
+
 /** Default page size when the caller does not choose one. */
 const DEFAULT_MAX_RESULTS = 25;
+
+/** Comment pages are smaller by default: one page is already a long column. */
+const DEFAULT_COMMENT_MAX_RESULTS = 20;
 
 /** `videos.list` accepts at most 50 ids per request. */
 const IDS_PER_REQUEST = 50;
@@ -112,6 +148,22 @@ const RETRY_DELAY_MS = 200;
 /** Parts required for `VideoSummary` / `VideoDetail` normalization. */
 const VIDEO_PARTS = "snippet,contentDetails,statistics";
 
+/**
+ * Parts required by the watch-page card and the channel page: `snippet` carries
+ * the name, avatar and description, `statistics` the subscriber count, and
+ * `contentDetails` the uploads playlist id used for recent uploads.
+ * `brandingSettings` is deliberately omitted — it is another unit of payload
+ * for fields neither surface renders.
+ */
+const CHANNEL_PARTS = "snippet,statistics,contentDetails";
+
+/**
+ * Parts needed to turn a playlist item into a `VideoSummary`: `snippet` has the
+ * title, channel and thumbnails, `contentDetails.videoId` the actual video id
+ * and `contentDetails.videoPublishedAt` the upload time.
+ */
+const PLAYLIST_ITEM_PARTS = "snippet,contentDetails";
+
 /** Fallback region when the caller does not supply one (ISO 3166-1 alpha-2). */
 const DEFAULT_REGION_CODE = "US";
 
@@ -122,11 +174,32 @@ const REGION_CODE_PATTERN = /^[A-Za-z]{2}$/;
 const SAFE_REASON_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 
 /**
+ * Clock for the process-local request cache.
+ *
+ * TTLs are durations, so any monotonic source is enough. Next.js guards
+ * `Date.now()` (and zero-argument `new Date()`) while prerendering to catch
+ * render-time clock reads, and a cache write in that window would abort the
+ * render. `performance` is explicitly not guarded, so a Next server uses it.
+ * Vitest runs outside a Next runtime (`NEXT_RUNTIME` is unset), where the wall
+ * clock keeps the cache's fake-timer tests working unchanged.
+ */
+function cacheClock(): number {
+  if (process.env.NEXT_RUNTIME === undefined) {
+    return Date.now();
+  }
+
+  return performance.timeOrigin + performance.now();
+}
+
+/**
  * Process-wide request cache. One instance per server process; bounded by
  * `DEFAULT_MAX_ENTRIES` (200) with LRU eviction, so it can never grow without
  * limit. Holds normalized domain values only, for their TTL (60 s to 24 h).
+ *
+ * The cache owns no clock: this caller supplies one that stays safe if a read
+ * happens during a prerender.
  */
-const requestCache: Cache = createTtlCache();
+const requestCache: Cache = createTtlCache({ now: cacheClock });
 
 /**
  * Empties the request cache. Test and debugging helper only: production code
@@ -189,6 +262,21 @@ export interface SearchVideosOptions {
   pageToken?: string | null;
   /** Requested page size; clamped to 1..50. */
   maxResults?: number;
+  /**
+   * Duration bucket, sent as `videoDuration`. Defaults to `any`, which omits the
+   * parameter. Validated with `assertSearchDuration`.
+   */
+  duration?: SearchDuration;
+  /**
+   * Result order, sent as `order`. Defaults to `relevance`, which omits the
+   * parameter. Validated with `assertSearchOrder`.
+   */
+  order?: SearchOrder;
+  /**
+   * Upload-date window, resolved to `publishedAfter`. Defaults to `any`, which
+   * omits the parameter. Validated with `assertSearchUploadDate`.
+   */
+  uploadDate?: SearchUploadDate;
 }
 
 export interface TrendingOptions {
@@ -198,12 +286,20 @@ export interface TrendingOptions {
   maxResults?: number;
 }
 
-/** Minimal category shape used by filters; never the raw API payload. */
-export interface VideoCategory {
-  id: string;
-  title: string;
-  /** Whether videos can be assigned to this category. */
-  assignable: boolean;
+export interface ListCommentsOptions {
+  /** Video whose top-level comment threads should be listed. */
+  videoId: string;
+  /** Continuation token from a previous `CommentPage`, or null for the first page. */
+  pageToken?: string | null;
+  /** Requested page size; clamped to 1..100. Defaults to 20. */
+  maxResults?: number;
+}
+
+export interface ListPlaylistItemsOptions {
+  /** Playlist id, usually a channel's uploads playlist (`UU…`). */
+  playlistId: string;
+  /** Requested page size; clamped to 1..50. Defaults to 25. */
+  maxResults?: number;
 }
 
 /**
@@ -218,6 +314,10 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
   const query = assertSearchQuery(options.query);
   const pageToken = assertPageToken(options.pageToken ?? null);
   const maxResults = clampMaxResults(options.maxResults);
+  // Invalid filter values are rejected here, before any cache lookup or I/O.
+  const filters = resolveSearchFilters(options);
+  const activeFilters = nonDefaultSearchFilters(filters);
+  const publishedAfter = searchPublishedAfter(filters.uploadDate);
 
   const params = {
     part: "snippet",
@@ -225,6 +325,9 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
     q: query,
     maxResults: String(maxResults),
     pageToken: pageToken ?? undefined,
+    order: activeFilters.order,
+    videoDuration: activeFilters.duration,
+    publishedAfter: publishedAfter ?? undefined,
   };
 
   return cachedRequest("search", params, YOUTUBE_CACHE_TTLS_MS.search, async () =>
@@ -253,6 +356,75 @@ export async function getVideo(id: string): Promise<VideoDetail | null> {
     YOUTUBE_CACHE_TTLS_MS.videoDetails,
     async () => normalizeVideoResponse(await fetchJson("videos", params)),
     "videos:detail",
+  );
+}
+
+/**
+ * Fetches one channel's name, avatar, subscriber count, description and uploads
+ * playlist id.
+ * Returns null when YouTube has no usable item for the id (missing or deleted).
+ *
+ * The result is cached for 24 h under the `channels` TTL, so opening many
+ * videos from one channel costs a single `channels.list` unit per day. Callers
+ * that only enrich a page (the watch-page channel card) should treat a failure
+ * as "no channel" rather than an error, which `readWatchChannel` does. The
+ * channel route instead distinguishes a null channel (404) from a thrown
+ * failure (retryable error state), which `readChannel` does.
+ *
+ * @throws {DomainValidationError} when `id` is not a valid channel id.
+ * @throws {YouTubeApiError} for transport, HTTP and payload failures.
+ */
+export async function getChannel(id: string): Promise<ChannelDetail | null> {
+  const channelId = assertChannelId(id);
+
+  const params = {
+    part: CHANNEL_PARTS,
+    id: channelId,
+  };
+
+  return cachedRequest(
+    "channels",
+    params,
+    YOUTUBE_CACHE_TTLS_MS.channels,
+    async () => normalizeChannelResponse(await fetchJson("channels", params)),
+    "channels:detail",
+  );
+}
+
+/**
+ * Lists a playlist's videos, most recent first for an uploads playlist.
+ *
+ * This is the one call the channel page makes for recent uploads: it takes the
+ * uploads playlist id from {@link getChannel} and asks for one page (25 by
+ * default), costing **1 unit** from the shared daily pool. The result is cached
+ * for 10 minutes under the `playlistItems` TTL.
+ *
+ * Each item becomes a `VideoSummary`. `playlistItems.list` carries no duration
+ * or view statistics, so those fields are null and the card omits them; a
+ * request that needs them would have to spend a second `videos.list` unit.
+ * An empty array is a valid "no uploads" result, not an error.
+ *
+ * @throws {DomainValidationError} when `playlistId` is invalid or the payload is malformed.
+ * @throws {YouTubeApiError} for transport, HTTP and quota failures.
+ */
+export async function listPlaylistItems(
+  options: ListPlaylistItemsOptions,
+): Promise<VideoSummary[]> {
+  const playlistId = assertPlaylistId(options.playlistId);
+  const maxResults = clampMaxResults(options.maxResults);
+
+  const params = {
+    part: PLAYLIST_ITEM_PARTS,
+    playlistId,
+    maxResults: String(maxResults),
+  };
+
+  return cachedRequest(
+    "playlistItems",
+    params,
+    YOUTUBE_CACHE_TTLS_MS.playlistItems,
+    async () => normalizePlaylistItemsResponse(await fetchJson("playlistItems", params)),
+    "playlistItems:list",
   );
 }
 
@@ -307,25 +479,6 @@ export async function getVideos(ids: readonly string[]): Promise<VideoSummary[]>
 }
 
 /**
- * Lists assignable video categories for a region, or all categories when none is given.
- *
- * @throws {DomainValidationError} for an invalid region code or a malformed payload.
- * @throws {YouTubeApiError} for transport and HTTP failures.
- */
-export async function listVideoCategories(regionCode?: string): Promise<VideoCategory[]> {
-  const region = regionCode === undefined ? DEFAULT_REGION_CODE : assertRegionCode(regionCode);
-
-  const params = {
-    part: "snippet",
-    regionCode: region,
-  };
-
-  return cachedRequest("videoCategories", params, YOUTUBE_CACHE_TTLS_MS.categories, async () =>
-    normalizeCategoryList(await fetchJson("videoCategories", params)),
-  );
-}
-
-/**
  * Fetches the most popular videos for a region.
  *
  * @throws {DomainValidationError} for an invalid region code or a malformed payload.
@@ -346,6 +499,58 @@ export async function getTrending(options: TrendingOptions = {}): Promise<VideoS
   return cachedRequest("videos", params, YOUTUBE_CACHE_TTLS_MS.trending, async () =>
     normalizeVideoList(await fetchJson("videos", params)),
   );
+}
+
+/**
+ * Lists top-level comment threads for a video, most relevant first.
+ *
+ * Disabled comments are a normal state, not a failure: YouTube answers
+ * `commentThreads.list` with a 403 `commentsDisabled` reason, which becomes an
+ * empty `CommentPage` with `commentsDisabled: true`. That page is cached like
+ * any other result, so a disabled video does not spend quota on every view.
+ * Quota, auth, transport and malformed-payload failures still throw.
+ *
+ * The cached value is the normalized page. Comment text lives only in this
+ * five-minute in-memory entry; it is never persisted or logged.
+ *
+ * @throws {DomainValidationError} for an invalid video id, page token or payload.
+ * @throws {YouTubeApiError} for transport, HTTP and quota failures.
+ */
+export async function listComments(options: ListCommentsOptions): Promise<CommentPage> {
+  const videoId = assertVideoId(options.videoId);
+  const pageToken = assertPageToken(options.pageToken ?? null);
+  const maxResults = clampMaxResults(
+    options.maxResults,
+    MAX_COMMENT_RESULTS_LIMIT,
+    DEFAULT_COMMENT_MAX_RESULTS,
+  );
+
+  const params = {
+    part: "snippet",
+    videoId,
+    order: "relevance",
+    maxResults: String(maxResults),
+    pageToken: pageToken ?? undefined,
+  };
+
+  return cachedRequest("commentThreads", params, YOUTUBE_CACHE_TTLS_MS.comments, async () => {
+    try {
+      return normalizeCommentThreadsResponse(await fetchJson("commentThreads", params));
+    } catch (error) {
+      // The channel turned comments off. `fetchJson` maps the 403 to the shared
+      // bad_request code but keeps YouTube's stable reason, so it is still
+      // distinguishable here without widening the error-code union.
+      if (
+        isYouTubeApiError(error) &&
+        error.code === "bad_request" &&
+        error.reason === "commentsDisabled"
+      ) {
+        return { items: [], nextPageToken: null, commentsDisabled: true };
+      }
+
+      throw error;
+    }
+  });
 }
 
 /**
@@ -582,46 +787,20 @@ function toVideoSummary(detail: VideoDetail): VideoSummary {
 }
 
 /**
- * Normalizes a `videoCategories.list` payload into categories, dropping entries
- * without a usable id, snippet or title.
+ * Clamps a requested page size to 1..`limit`, falling back to `fallback` for
+ * absent or non-finite values. The bounds are per endpoint: search and videos
+ * cap at 50, comment threads at 100.
  */
-function normalizeCategoryList(payload: unknown): VideoCategory[] {
-  if (!isRecord(payload) || !Array.isArray(payload.items)) {
-    throw malformedPayload("Video category response must contain an items array.");
-  }
-
-  const categories: VideoCategory[] = [];
-  for (const item of payload.items) {
-    if (!isRecord(item) || typeof item.id !== "string" || item.id.length === 0) {
-      continue;
-    }
-
-    if (!isRecord(item.snippet)) {
-      continue;
-    }
-
-    const title = typeof item.snippet.title === "string" ? item.snippet.title.trim() : "";
-    if (title.length === 0) {
-      continue;
-    }
-
-    categories.push({
-      id: item.id,
-      title,
-      assignable: item.snippet.assignable === true,
-    });
-  }
-
-  return categories;
-}
-
-/** Clamps a requested page size to 1..50, falling back to the module default. */
-function clampMaxResults(value: number | undefined): number {
+function clampMaxResults(
+  value: number | undefined,
+  limit: number = MAX_RESULTS_LIMIT,
+  fallback: number = DEFAULT_MAX_RESULTS,
+): number {
   if (value === undefined || !Number.isFinite(value)) {
-    return DEFAULT_MAX_RESULTS;
+    return fallback;
   }
 
-  return Math.min(Math.max(Math.trunc(value), 1), MAX_RESULTS_LIMIT);
+  return Math.min(Math.max(Math.trunc(value), 1), limit);
 }
 
 function assertRegionCode(value: string): string {

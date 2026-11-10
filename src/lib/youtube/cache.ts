@@ -58,23 +58,41 @@ export const DEFAULT_MAX_ENTRIES = 200;
  *   cheap freshness.
  * - trending (5 min): `mostPopular` shifts during the day; five minutes keeps
  *   the home page stable under refresh without hiding a genuinely new chart.
- * - categories (24 h): `videoCategories.list` changes only when YouTube adds or
- *   retires a category, and the list is region-scoped. One day matches the
- *   practical churn rate and costs one unit per region per day.
+ * - comments (5 min): `commentThreads.list` moves constantly, and its text is
+ *   display data only. Five minutes absorbs tab switches and pagination hops
+ *   without keeping comment text in memory for longer than necessary.
+ * - channels (24 h): `channels.list` returns a channel's name, avatar,
+ *   subscriber count and uploads playlist id, which change on a scale of days,
+ *   not minutes. One day caps a channel at one unit per day no matter how many
+ *   videos the user opens, and the entry still expires well inside the 30-day
+ *   retention limit for Non-Authorized API Data.
+ * - playlist items (10 min): a channel's recent uploads change at most a few
+ *   times a day, but a new upload should appear while the user is browsing.
+ *   Ten minutes matches video details and costs one unit per distinct uploads
+ *   page per window.
  */
 export const YOUTUBE_CACHE_TTLS_MS = {
   search: 60_000,
   videoDetails: 10 * 60_000,
   trending: 5 * 60_000,
-  categories: 24 * 60 * 60_000,
+  comments: 5 * 60_000,
+  channels: 24 * 60 * 60_000,
+  playlistItems: 10 * 60_000,
 } as const;
 
 /** Options for {@link createTtlCache}. */
 export interface TtlCacheOptions {
   /** Maximum number of live entries; must be a positive integer. */
   maxEntries?: number;
-  /** Clock, injectable for tests. Defaults to `Date.now`. */
-  now?: () => number;
+  /**
+   * Clock, supplied by the caller and read only when the cache is used.
+   *
+   * It is deliberately not defaulted here. A module-level default such as
+   * `() => Date.now()` makes the cache capable of reading a guarded clock while
+   * Next is prerendering, which aborts the render. The server client supplies a
+   * request-safe clock (see `src/lib/youtube/client.ts`); tests pass their own.
+   */
+  now: () => number;
 }
 
 /** A stored value plus the instant after which it must not be served. */
@@ -101,13 +119,13 @@ export interface Cache {
  * back of the insertion-ordered `Map`, and the front is dropped when the bound
  * is reached.
  */
-export function createTtlCache(options: TtlCacheOptions = {}): Cache {
+export function createTtlCache(options: TtlCacheOptions): Cache {
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   if (!Number.isInteger(maxEntries) || maxEntries < 1) {
     throw new RangeError("TtlCache maxEntries must be a positive integer.");
   }
 
-  const now = options.now ?? (() => Date.now());
+  const now = options.now;
   const entries = new Map<string, CacheEntry>();
   const inFlight = new Map<string, Promise<unknown>>();
 
@@ -245,6 +263,9 @@ export function isYouTubeCacheDisabled(
  * - `id` is split, de-duplicated and sorted, so batches sharing the same ids
  *   share an entry regardless of order (the client restores caller order);
  * - `regionCode` is upper-cased, matching the client's validation;
+ * - `publishedAfter` is an exact timestamp that moves with the clock, so it is
+ *   floored to the minute; two filtered searches in the same minute therefore
+ *   share an entry even though their outbound timestamps differ by milliseconds;
  * - every other value is trimmed and whitespace-collapsed only. `pageToken` and
  *   `part` stay case-sensitive.
  */
@@ -275,6 +296,17 @@ function normalizeParam(name: string, value: string): string {
 
   if (name === "regionCode") {
     return collapsed.toUpperCase();
+  }
+
+  if (name === "publishedAfter") {
+    const timestamp = Date.parse(collapsed);
+    if (Number.isNaN(timestamp)) {
+      // The client always sends a valid ISO timestamp; an unparseable value is
+      // kept verbatim so a bug cannot silently collapse two different requests.
+      return collapsed;
+    }
+
+    return new Date(Math.floor(timestamp / 60_000) * 60_000).toISOString();
   }
 
   if (name === "id") {

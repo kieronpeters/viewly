@@ -21,6 +21,16 @@ function countingLoader<T>(value: T): { load: () => Promise<T>; calls: () => num
   };
 }
 
+/**
+ * Builds a cache with the wall clock, which is what most tests need.
+ *
+ * `createTtlCache` deliberately has no default clock, so every construction
+ * must say where time comes from.
+ */
+function createTestCache(options: { maxEntries?: number } = {}) {
+  return createTtlCache({ now: Date.now, ...options });
+}
+
 beforeEach(() => {
   vi.useRealTimers();
 });
@@ -28,6 +38,12 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe("TTL configuration", () => {
+  it("keeps comment text in memory for exactly five minutes", () => {
+    expect(YOUTUBE_CACHE_TTLS_MS.comments).toBe(5 * 60_000);
+  });
 });
 
 describe("buildRequestCacheKey", () => {
@@ -67,11 +83,34 @@ describe("buildRequestCacheKey", () => {
       buildRequestCacheKey("videos", { q: "a" }),
     );
   });
+
+  it("floors publishedAfter to the minute so a moving clock cannot split an entry", () => {
+    const first = buildRequestCacheKey("search", {
+      uploadDate: undefined,
+      publishedAfter: "2025-12-25T12:00:01.000Z",
+    });
+    const second = buildRequestCacheKey("search", {
+      publishedAfter: "2025-12-25T12:00:59.999Z",
+    });
+    const nextMinute = buildRequestCacheKey("search", {
+      publishedAfter: "2025-12-25T12:01:00.000Z",
+    });
+
+    expect(first).toBe(second);
+    expect(first).toBe("search?publishedAfter=2025-12-25T12:00:00.000Z");
+    expect(nextMinute).not.toBe(first);
+  });
+
+  it("keeps duration and order filters in the key", () => {
+    expect(buildRequestCacheKey("search", { videoDuration: "short", order: "viewCount" })).toBe(
+      "search?order=viewCount&videoDuration=short",
+    );
+  });
 });
 
 describe("cache hits", () => {
   it("serves a second identical load from memory", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     const loader = countingLoader({ items: 1 });
 
     const first = await cache.getOrLoad("k", 1_000, loader.load);
@@ -83,7 +122,7 @@ describe("cache hits", () => {
   });
 
   it("keeps different keys separate", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     const loader = countingLoader("value");
 
     await cache.getOrLoad("a", 1_000, loader.load);
@@ -94,7 +133,7 @@ describe("cache hits", () => {
   });
 
   it("does not store entries for a non-positive TTL", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     const loader = countingLoader("value");
 
     await cache.getOrLoad("k", 0, loader.load);
@@ -105,12 +144,41 @@ describe("cache hits", () => {
   });
 });
 
+describe("clock", () => {
+  it("reads time only through the supplied clock", () => {
+    let now = 1_000;
+    const cache = createTtlCache({ now: () => now });
+    const dateNowSpy = vi.spyOn(Date, "now");
+
+    try {
+      cache.set("k", "value", 1_000);
+      expect(cache.get("k")).toBe("value");
+
+      now = 2_000;
+
+      expect(cache.get("k")).toBeUndefined();
+      // The cache never falls back to the guarded global clock.
+      expect(dateNowSpy).not.toHaveBeenCalled();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
+  it("does not read the clock when it is constructed", () => {
+    const now = vi.fn(() => 1_000);
+
+    createTtlCache({ now });
+
+    expect(now).not.toHaveBeenCalled();
+  });
+});
+
 describe("TTL expiry", () => {
   it("refreshes an entry after its TTL, using fake timers", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-    const cache = createTtlCache();
+    const cache = createTestCache();
     const loader = countingLoader("fresh");
 
     await cache.getOrLoad("k", YOUTUBE_CACHE_TTLS_MS.search, loader.load);
@@ -132,7 +200,7 @@ describe("TTL expiry", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-    const cache = createTtlCache();
+    const cache = createTestCache();
     cache.set("k", "value", 1_000);
 
     vi.setSystemTime(Date.now() + 1_001);
@@ -144,7 +212,7 @@ describe("TTL expiry", () => {
 
 describe("request coalescing", () => {
   it("shares one load between concurrent callers", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     let resolveLoad: ((value: string) => void) | undefined;
     const load = vi.fn(
       () =>
@@ -169,7 +237,7 @@ describe("request coalescing", () => {
 
 describe("eviction", () => {
   it("never exceeds maxEntries and evicts the least recently used entry", async () => {
-    const cache = createTtlCache({ maxEntries: 3 });
+    const cache = createTestCache({ maxEntries: 3 });
     const loader = countingLoader("value");
 
     await cache.getOrLoad("a", 60_000, loader.load);
@@ -189,7 +257,7 @@ describe("eviction", () => {
   });
 
   it("defaults to a finite bound", () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
 
     for (let index = 0; index < DEFAULT_MAX_ENTRIES + 10; index += 1) {
       cache.set(`k${index}`, index, 60_000);
@@ -199,13 +267,13 @@ describe("eviction", () => {
   });
 
   it("rejects a non-positive bound", () => {
-    expect(() => createTtlCache({ maxEntries: 0 })).toThrow(RangeError);
+    expect(() => createTestCache({ maxEntries: 0 })).toThrow(RangeError);
   });
 });
 
 describe("errors", () => {
   it("does not cache a rejected load and retries upstream", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     const failure = new Error("upstream failed");
     const load = vi
       .fn<() => Promise<string>>()
@@ -242,7 +310,7 @@ describe("TTL boundary", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-    const cache = createTtlCache();
+    const cache = createTestCache();
     cache.set("k", "value", 1_000);
 
     vi.setSystemTime(Date.now() + 999);
@@ -254,7 +322,7 @@ describe("TTL boundary", () => {
   });
 
   it("does not store entries with a negative TTL", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     const loader = countingLoader("value");
 
     await cache.getOrLoad("k", -1, loader.load);
@@ -267,7 +335,7 @@ describe("TTL boundary", () => {
 
 describe("LRU order", () => {
   it("moves a getOrLoad hit to the most recently used position", async () => {
-    const cache = createTtlCache({ maxEntries: 3 });
+    const cache = createTestCache({ maxEntries: 3 });
     const loader = countingLoader("value");
 
     await cache.getOrLoad("a", 60_000, loader.load);
@@ -286,7 +354,7 @@ describe("LRU order", () => {
   });
 
   it("refreshes recency and value when an existing key is written again", () => {
-    const cache = createTtlCache({ maxEntries: 3 });
+    const cache = createTestCache({ maxEntries: 3 });
 
     cache.set("a", 1, 60_000);
     cache.set("b", 2, 60_000);
@@ -304,7 +372,7 @@ describe("LRU order", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-    const cache = createTtlCache({ maxEntries: 1 });
+    const cache = createTestCache({ maxEntries: 1 });
     cache.set("old", "old", 100);
 
     vi.setSystemTime(Date.now() + 101);
@@ -316,7 +384,7 @@ describe("LRU order", () => {
   });
 
   it("evicts the only entry when the bound is one", () => {
-    const cache = createTtlCache({ maxEntries: 1 });
+    const cache = createTestCache({ maxEntries: 1 });
 
     cache.set("a", 1, 60_000);
     cache.set("b", 2, 60_000);
@@ -327,7 +395,7 @@ describe("LRU order", () => {
   });
 
   it("evicts the oldest entries first under the default bound", () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
 
     for (let index = 0; index < DEFAULT_MAX_ENTRIES; index += 1) {
       cache.set(`k${index}`, index, 60_000);
@@ -343,14 +411,14 @@ describe("LRU order", () => {
 
   it("rejects bounds that are not positive integers", () => {
     for (const maxEntries of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(() => createTtlCache({ maxEntries })).toThrow(RangeError);
+      expect(() => createTestCache({ maxEntries })).toThrow(RangeError);
     }
   });
 });
 
 describe("coalescing failures", () => {
   it("propagates one rejection to every waiter and caches nothing", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     let rejectLoad: ((error: Error) => void) | undefined;
     const load = vi.fn(
       () =>
@@ -377,7 +445,7 @@ describe("coalescing failures", () => {
   });
 
   it("starts a fresh load after a coalesced rejection", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     let rejectLoad: ((error: Error) => void) | undefined;
     const first = cache.getOrLoad(
       "k",
@@ -430,7 +498,7 @@ describe("bypass variants", () => {
 
 describe("housekeeping", () => {
   it("delete removes a live entry and the next load misses", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     const loader = countingLoader("value");
 
     await cache.getOrLoad("k", 60_000, loader.load);
@@ -444,7 +512,7 @@ describe("housekeeping", () => {
   });
 
   it("clear drops entries and in-flight tracking", async () => {
-    const cache = createTtlCache();
+    const cache = createTestCache();
     let resolveLoad: ((value: string) => void) | undefined;
     const pending = cache.getOrLoad(
       "k",

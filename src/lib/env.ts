@@ -75,20 +75,3 @@ export function getYoutubeApiKey(): string {
 
   return value;
 }
-
-/**
- * Health-check helper: whether a usable key is configured. Returns a boolean so
- * it is safe to surface, and never the key or any part of it.
- */
-export function isYoutubeApiKeyConfigured(): boolean {
-  try {
-    getYoutubeApiKey();
-    return true;
-  } catch (error) {
-    if (isEnvConfigurationError(error)) {
-      return false;
-    }
-
-    throw error;
-  }
-}

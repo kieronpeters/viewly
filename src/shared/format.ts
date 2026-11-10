@@ -46,6 +46,27 @@ const COMPACT_UNITS = [
 ] as const;
 
 /**
+ * Formats a non-negative count in compact English units, without a noun.
+ *
+ * - `999` -> `"999"`, `1200` -> `"1.2K"`, `1500000` -> `"1.5M"`, `1` -> `"1"`.
+ * - Fractional counts are floored; negative, `NaN` and infinite values return
+ *   `null` so the caller can omit the number.
+ *
+ * Comment like counts and reply counts reuse this instead of appending a noun
+ * that only fits view counts.
+ */
+export function formatCount(count: number | null): string | null {
+  if (count === null || !Number.isFinite(count) || count < 0) {
+    return null;
+  }
+
+  const value = Math.floor(count);
+  return value < COMPACT_UNITS[COMPACT_UNITS.length - 1].threshold
+    ? String(value)
+    : formatCompact(value);
+}
+
+/**
  * Formats a view count in compact English units.
  *
  * - `999` -> `"999 views"`, `1200` -> `"1.2K views"`, `1500000` -> `"1.5M views"`.
@@ -61,11 +82,24 @@ export function formatViewCount(count: number | null): string | null {
   }
 
   const views = Math.floor(count);
-  if (views < COMPACT_UNITS[COMPACT_UNITS.length - 1].threshold) {
-    return `${views} ${views === 1 ? "view" : "views"}`;
+  return `${formatCount(views)} ${views === 1 ? "view" : "views"}`;
+}
+
+/**
+ * Formats a subscriber count, e.g. `"1.2K subscribers"`.
+ *
+ * Same compact rules as {@link formatViewCount} — floored, at most one decimal
+ * place, no locale — with the singular `"1 subscriber"` and `null` for a count
+ * YouTube did not publish (hidden subscriber counts stay hidden rather than
+ * being rendered as zero).
+ */
+export function formatSubscriberCount(count: number | null): string | null {
+  if (count === null || !Number.isFinite(count) || count < 0) {
+    return null;
   }
 
-  return `${formatCompact(views)} views`;
+  const subscribers = Math.floor(count);
+  return `${formatCount(subscribers)} ${subscribers === 1 ? "subscriber" : "subscribers"}`;
 }
 
 /**

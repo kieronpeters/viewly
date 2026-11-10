@@ -27,6 +27,18 @@ vi.mock("@/features/home", () => ({
   ],
   TrendingSection: () => <p>Trending row content</p>,
   CategorySection: ({ name }: { name: string }) => <p>{name} row content</p>,
+  HOME_RECOMMENDATION_SHELVES: [
+    { kind: "because-you-watched", skeletonTitle: "Because you watched" },
+    { kind: "top-channels", skeletonTitle: "More from your top channels" },
+    { kind: "rediscover-favourites", skeletonTitle: "Rediscover your favourites" },
+  ],
+  RecommendationShelfSection: ({ kind }: { kind: string }) => <p>{kind} shelf content</p>,
+}));
+
+// The local continue-watching shelf is a server component with a SQLite read;
+// its own suite covers the cards. Here it only has to appear in the page.
+vi.mock("@/features/progress", () => ({
+  ContinueWatchingSection: () => <p>Continue watching row content</p>,
 }));
 
 import Home from "@/app/page";
@@ -41,8 +53,12 @@ describe("Home page", () => {
     expect(screen.getByRole("search", { name: "Search videos" })).toBeInTheDocument();
 
     expect(screen.getByText("Trending row content")).toBeInTheDocument();
+    expect(screen.getByText("Continue watching row content")).toBeInTheDocument();
     for (const name of ["Music", "Gaming", "Technology"]) {
       expect(screen.getByText(`${name} row content`)).toBeInTheDocument();
+    }
+    for (const kind of ["because-you-watched", "top-channels", "rediscover-favourites"]) {
+      expect(screen.getByText(`${kind} shelf content`)).toBeInTheDocument();
     }
 
     const browse = screen.getByRole("navigation", { name: "Browse categories" });

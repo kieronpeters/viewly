@@ -58,6 +58,18 @@ describe("ExpandableDescription linkification", () => {
     expect(screen.getByText(/javascript:alert\(1\)/)).toBeInTheDocument();
   });
 
+  it("honours a wider line budget for wider columns", () => {
+    // 300 characters estimate as seven 44-character lines (collapsible) but
+    // only four 90-character lines (fits), which is the watch column's case.
+    const text = "x".repeat(300);
+
+    const { rerender } = render(<ExpandableDescription text={text} />);
+    expect(screen.getByRole("button", { name: "Show more" })).toBeInTheDocument();
+
+    rerender(<ExpandableDescription text={text} charactersPerLine={90} />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("leaves trailing punctuation outside the anchor", () => {
     const { container } = render(
       <ExpandableDescription text={"Docs: https://example.com/docs."} />,

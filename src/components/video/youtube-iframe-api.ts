@@ -78,12 +78,41 @@ export interface YoutubePlayerOptions {
   };
 }
 
-/** The subset of a `YT.Player` instance this app calls. */
+/**
+ * The subset of a `YT.Player` instance this app calls.
+ *
+ * The time methods are optional because the player feature tests use light
+ * doubles that only need `getIframe`/`destroy`; the real API always provides
+ * them. Callers that need a number must handle a missing method (see
+ * `YoutubePlayerHandle` in `youtube-player.tsx`).
+ */
 export interface YoutubeIframePlayer {
   /** The iframe the API created for this player. */
   getIframe(): HTMLIFrameElement | null | undefined;
   /** Removes the iframe and detaches the player. */
   destroy(): void;
+  /** Current playback position in seconds, as a float. */
+  getCurrentTime?(): number;
+  /** Total duration in seconds; `0` while the video metadata is unknown. */
+  getDuration?(): number;
+  /** Seeks to `seconds`; `allowSeekAhead` lets the API load past the buffer. */
+  seekTo?(seconds: number, allowSeekAhead?: boolean): void;
+  /** Starts playback through YouTube's own player. */
+  playVideo?(): void;
+  /** Pauses playback through YouTube's own player. */
+  pauseVideo?(): void;
+  /** Current {@link YOUTUBE_PLAYER_STATE} value. */
+  getPlayerState?(): number;
+  /** Current volume in the API's 0–100 range. */
+  getVolume?(): number;
+  /** Sets volume in the API's 0–100 range. */
+  setVolume?(volume: number): void;
+  /** Whether YouTube's player is currently muted. */
+  isMuted?(): boolean;
+  /** Mutes YouTube's player. */
+  mute?(): void;
+  /** Unmutes YouTube's player. */
+  unMute?(): void;
 }
 
 /** The subset of `window.YT` this app needs. */

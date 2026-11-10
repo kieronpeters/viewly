@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { SearchFilters, SearchFiltersWithQuery } from "@/components/search/search-filters";
 import { SearchForm, SearchFormWithQuery } from "@/components/search/search-form";
 import { SearchResultsSkeleton } from "@/components/search/search-results-skeleton";
+import { DEFAULT_SEARCH_FILTERS } from "@/shared/search-filters";
 
 import { SearchResults, type SearchParams } from "./search-results";
 
@@ -26,7 +28,8 @@ export interface SearchPageProps {
  * the prerendered static shell. The URL-dependent pieces sit behind two
  * `<Suspense>` boundaries required by Cache Components:
  *
- * - the form, which reads the current `?q=` through `useSearchParams`;
+ * - the form and filter controls, which read the current `?q=` and filter
+ *   parameters through `useSearchParams`;
  * - the results, which await `searchParams` and call the YouTube client.
  */
 export default function SearchPage({ searchParams }: SearchPageProps) {
@@ -41,6 +44,9 @@ export default function SearchPage({ searchParams }: SearchPageProps) {
         </h1>
         <Suspense fallback={<SearchForm />}>
           <SearchFormWithQuery />
+        </Suspense>
+        <Suspense fallback={<SearchFilters query="" filters={{ ...DEFAULT_SEARCH_FILTERS }} />}>
+          <SearchFiltersWithQuery />
         </Suspense>
       </section>
 

@@ -1,10 +1,15 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { PlayerControls } from "./player-controls";
+import { useWatchShortcuts } from "./use-watch-shortcuts";
+import { WatchShortcutsOverlay } from "./watch-shortcuts-overlay";
+import type { WatchShortcutPlayer } from "./watch-shortcuts";
 import {
   loadYoutubeIframeApi,
   YOUTUBE_PLAYER_STATE,
@@ -32,6 +37,37 @@ const IFRAME_TITLE_SUFFIX = " — YouTube video player";
  */
 const OBSERVER_ROOT_MARGIN = "200px";
 
+/**
+ * Imperative playback controls exposed once the API has created the player.
+ *
+ * The watch page uses these for progress reporting, the resume prompt and the
+ * listen-mode bar (T86). The methods are safe to call at any time: an
+ * unavailable API or a destroyed player reads as `0` and every command is a
+ * no-op, so a blocked embed never throws into React.
+ */
+export interface YoutubePlayerHandle {
+  /** Current position in whole-ish seconds; `0` when unavailable. */
+  getCurrentTime(): number;
+  /** Total duration in seconds; `0` until the API knows it. */
+  getDuration(): number;
+  /** Seeks to `seconds`, clamped to a non-negative value. */
+  seekTo(seconds: number): void;
+  /** Starts playback through the official player. */
+  play(): void;
+  /** Pauses playback through the official player. */
+  pause(): void;
+  /** Current {@link YOUTUBE_PLAYER_STATE}, or `UNSTARTED` when unavailable. */
+  getPlaybackState(): number;
+  /** Current volume (0–100); `100` when the API is unavailable. */
+  getVolume(): number;
+  /** Sets volume (0–100); ignored when the API is unavailable. */
+  setVolume(volume: number): void;
+  /** Whether the official player is muted. */
+  isMuted(): boolean;
+  /** Mutes or unmutes the official player. */
+  setMuted(muted: boolean): void;
+}
+
 export interface YoutubePlayerProps {
   /** Normalized 11-character YouTube id; never a raw route segment. */
   videoId: string;
@@ -49,6 +85,43 @@ export interface YoutubePlayerProps {
    * never records anything itself.
    */
   onPlaybackStart?: () => void;
+  /**
+   * Called on every `PLAYING` state change, including resuming after a pause.
+   *
+   * {@link onPlaybackStart} is latched so history is recorded once; progress
+   * reporting needs the opposite, a signal for each time playback actually
+   * resumes, so it can restart its timer.
+   */
+  onPlaybackPlay?: () => void;
+  /** Called when the player reports `PAUSED` (never `CUED` on load). */
+  onPlaybackPause?: () => void;
+  /**
+   * Called once the API has created and readied the player, with a handle for
+   * reading the clock and seeking.
+   */
+  onPlayerReady?: (handle: YoutubePlayerHandle) => void;
+  /**
+   * Called each time the player reports `ENDED`.
+   *
+   * The player owns the IFrame API event; the watch page decides what happens
+   * next. Unlike {@link onPlaybackStart} this is not latched, because a viewer
+   * can seek back and finish the same video again.
+   */
+  onPlaybackEnd?: () => void;
+  /**
+   * Toggles theater mode when the viewer presses `T`.
+   *
+   * Theater mode is a layout concern owned by T77; until that wiring exists the
+   * prop is omitted and `T` is a no-op. The player never changes its own width.
+   */
+  onToggleTheater?: () => void;
+  /**
+   * Extra controls rendered at the end of the player's control row.
+   *
+   * The watch page uses this for the listen-mode switch (T86) so the mode
+   * control shares the player's control row instead of adding another one.
+   */
+  modeControl?: ReactNode;
 }
 
 /**
@@ -79,10 +152,35 @@ export interface YoutubePlayerProps {
  * policy). A rejected loader or a throwing constructor is swallowed and the
  * plain "Open on YouTube" link stays visible beside the empty box.
  */
-export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: YoutubePlayerProps) {
+export function YoutubePlayer({
+  videoId,
+  title,
+  className,
+  onPlaybackStart,
+  onPlaybackPlay,
+  onPlaybackPause,
+  onPlayerReady,
+  onPlaybackEnd,
+  onToggleTheater,
+  modeControl,
+}: YoutubePlayerProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef(title);
   const onPlaybackStartRef = useRef(onPlaybackStart);
+  const onPlaybackPlayRef = useRef(onPlaybackPlay);
+  const onPlaybackPauseRef = useRef(onPlaybackPause);
+  const onPlayerReadyRef = useRef(onPlayerReady);
+  const onPlaybackEndRef = useRef(onPlaybackEnd);
+  const playerRef = useRef<WatchShortcutPlayer | null>(null);
+
+  const getPlayer = useCallback(() => playerRef.current, []);
+  const getContainer = useCallback(() => boxRef.current, []);
+
+  const { isHelpOpen, openHelp, closeHelp } = useWatchShortcuts({
+    getPlayer,
+    getContainer,
+    onToggleTheater,
+  });
 
   // Keep the latest title and callback without re-creating the player. Both
   // effects are declared before the player effect so the values are current by
@@ -94,6 +192,22 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
   useEffect(() => {
     onPlaybackStartRef.current = onPlaybackStart;
   }, [onPlaybackStart]);
+
+  useEffect(() => {
+    onPlaybackPlayRef.current = onPlaybackPlay;
+  }, [onPlaybackPlay]);
+
+  useEffect(() => {
+    onPlaybackPauseRef.current = onPlaybackPause;
+  }, [onPlaybackPause]);
+
+  useEffect(() => {
+    onPlayerReadyRef.current = onPlayerReady;
+  }, [onPlayerReady]);
+
+  useEffect(() => {
+    onPlaybackEndRef.current = onPlaybackEnd;
+  }, [onPlaybackEnd]);
 
   useEffect(() => {
     const box = boxRef.current;
@@ -115,6 +229,91 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
 
       hasStarted = true;
       onPlaybackStartRef.current?.();
+    };
+
+    /** Reads a player number without letting a blocked/destroyed API throw. */
+    const readNumber = (read: (() => number) | undefined, fallback: number): number => {
+      try {
+        const value = read?.();
+
+        return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+
+    // One handle per mounted player. Its methods read the live instance, so a
+    // caller can hold it across a pause and still get the current position.
+    const handle: YoutubePlayerHandle = {
+      getCurrentTime: () => readNumber(player?.getCurrentTime?.bind(player), 0),
+      getDuration: () => readNumber(player?.getDuration?.bind(player), 0),
+      seekTo: (seconds) => {
+        if (!Number.isFinite(seconds)) {
+          return;
+        }
+
+        try {
+          player?.seekTo?.(Math.max(seconds, 0), true);
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      play: () => {
+        try {
+          player?.playVideo?.();
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      pause: () => {
+        try {
+          player?.pauseVideo?.();
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      getPlaybackState: () => {
+        try {
+          const value = player?.getPlayerState?.();
+
+          return typeof value === "number" && Number.isFinite(value)
+            ? value
+            : YOUTUBE_PLAYER_STATE.UNSTARTED;
+        } catch {
+          return YOUTUBE_PLAYER_STATE.UNSTARTED;
+        }
+      },
+      getVolume: () => readNumber(player?.getVolume?.bind(player), 100),
+      setVolume: (volume) => {
+        if (!Number.isFinite(volume)) {
+          return;
+        }
+
+        try {
+          player?.setVolume?.(Math.min(Math.max(volume, 0), 100));
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      isMuted: () => {
+        try {
+          return player?.isMuted?.() === true;
+        } catch {
+          return false;
+        }
+      },
+      setMuted: (muted) => {
+        try {
+          if (muted) {
+            player?.mute?.();
+            return;
+          }
+
+          player?.unMute?.();
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
     };
 
     const createPlayer = async () => {
@@ -153,14 +352,32 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
               iframe.style.width = "100%";
               iframe.style.height = "100%";
               iframe.style.border = "0";
+
+              onPlayerReadyRef.current?.(handle);
             },
             onStateChange(event) {
+              if (event.data === YOUTUBE_PLAYER_STATE.ENDED) {
+                onPlaybackEndRef.current?.();
+                return;
+              }
+
               if (event.data === YOUTUBE_PLAYER_STATE.PLAYING) {
                 notifyPlaybackStart();
+                onPlaybackPlayRef.current?.();
+                return;
+              }
+
+              if (event.data === YOUTUBE_PLAYER_STATE.PAUSED) {
+                onPlaybackPauseRef.current?.();
               }
             },
           },
         });
+
+        // Keyboard shortcuts call the same instance through the official API.
+        // The loader's public type only promises the two members this module
+        // used before; the real `YT.Player` has the rest at runtime.
+        playerRef.current = player as unknown as WatchShortcutPlayer;
       } catch {
         // Blocked script, consent wall or an unavailable API: keep the fallback
         // link and leave the reserved box empty rather than crashing the page.
@@ -192,6 +409,7 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
     return () => {
       cancelled = true;
       observer?.disconnect();
+      playerRef.current = null;
 
       if (player !== null) {
         try {
@@ -223,16 +441,44 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
         className="relative aspect-video w-full overflow-hidden rounded-xl border border-border bg-black"
       />
 
-      <a
-        href={watchUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex min-h-11 w-fit items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      >
-        <ExternalLink aria-hidden="true" className="size-4" />
-        Open on YouTube
-        <span className="sr-only"> (opens in a new tab)</span>
-      </a>
+      <div className="flex flex-wrap items-center gap-2">
+        {/*
+          The fullscreen control shares the code path with the keyboard
+          shortcut: the box passed here is the same fullscreen target `F` uses.
+        */}
+        <PlayerControls getContainer={getContainer} />
+
+        <a
+          href={watchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-11 w-fit items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <ExternalLink aria-hidden="true" className="size-4" />
+          Open on YouTube
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={openHelp}
+          className="min-h-11 gap-1.5 text-sm text-muted-foreground"
+        >
+          <kbd
+            aria-hidden="true"
+            className="rounded border border-border bg-muted px-1 font-mono text-[0.7rem]"
+          >
+            ?
+          </kbd>
+          Keyboard shortcuts
+        </Button>
+
+        {modeControl}
+      </div>
+
+      <WatchShortcutsOverlay open={isHelpOpen} onClose={closeHelp} />
     </div>
   );
 }

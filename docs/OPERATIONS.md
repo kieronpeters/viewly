@@ -16,13 +16,12 @@ Source: <https://developers.google.com/youtube/v3/determine_quota_cost> (opened 
 endpoint shares **10,000 units/day**. Daily quotas reset at **midnight Pacific Time**. Every request,
 including an invalid one, costs at least one point.
 
-| Client call           | Endpoint               | Cost per request                    |
-| --------------------- | ---------------------- | ----------------------------------- |
-| `searchVideos`        | `search.list`          | 1 of 100 search calls/day, per page |
-| `getVideo`            | `videos.list`          | 1 of 10,000 units/day               |
-| `getVideos`           | `videos.list`          | 1 unit per batch of up to 50 ids    |
-| `getTrending`         | `videos.list` (chart)  | 1 of 10,000 units/day               |
-| `listVideoCategories` | `videoCategories.list` | 1 of 10,000 units/day, per region   |
+| Client call    | Endpoint              | Cost per request                    |
+| -------------- | --------------------- | ----------------------------------- |
+| `searchVideos` | `search.list`         | 1 of 100 search calls/day, per page |
+| `getVideo`     | `videos.list`         | 1 of 10,000 units/day               |
+| `getVideos`    | `videos.list`         | 1 unit per batch of up to 50 ids    |
+| `getTrending`  | `videos.list` (chart) | 1 of 10,000 units/day               |
 
 Every retry of a 429/5xx response and every extra results page is another billable call. The lazy
 library sweep adds one `videos.list` call per 50 distinct saved videos, at most once every 30 days.
@@ -38,7 +37,6 @@ identical calls share one request. See `src/lib/youtube/cache.ts`.
 | `search.list`       | 60 s | Pagination hops, re-renders, duplicate tabs; search has the tightest budget |
 | `videos.list`       | 10 m | Repeat detail and watch-page loads; titles and counts drift slowly          |
 | `videos.list` chart | 5 m  | Home-page refreshes while the trending chart is still current               |
-| `videoCategories`   | 24 h | Region-scoped category lists that change only when YouTube does             |
 
 A day of ordinary browsing — 20 searches, 200 detail views, 50 trending loads — costs 20 of the 100
 search calls and 250 of the 10,000 shared units, so the search bucket binds first. Without the

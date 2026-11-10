@@ -1,12 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { FavouriteButton } from "@/components/video/favourite-button";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
 import { PlaylistPicker } from "@/features/library/playlist-picker";
 import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
+import {
+  isResumableProgress,
+  progressPercent,
+  type PlaybackPosition,
+} from "@/features/progress/progress";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatViewCount } from "@/shared/format";
 import type { VideoSummary } from "@/shared/types";
@@ -49,6 +55,15 @@ export interface VideoCardProps {
   showPlaylistPicker?: boolean;
   /** Playlists offered by the picker; ignored unless the picker is shown. */
   playlists?: readonly PlaylistOption[];
+  /**
+   * Local playback progress for this video (T68).
+   *
+   * Omit it for a card with no bar. A stored position only renders between 5%
+   * and 95%, so a barely-started or effectively-finished video looks like any
+   * other card. The card never queries the database; the server read happens in
+   * the library page.
+   */
+  progress?: PlaybackPosition | null;
 }
 
 /**
@@ -79,9 +94,16 @@ export function VideoCard({
   isWatchLater,
   showPlaylistPicker,
   playlists,
+  progress,
 }: VideoCardProps) {
   const duration = formatDuration(video.durationSeconds);
   const viewCount = formatViewCount(video.viewCount);
+  const watchedPercent =
+    progress !== null &&
+    progress !== undefined &&
+    isResumableProgress(progress.positionSeconds, progress.durationSeconds)
+      ? progressPercent(progress.positionSeconds, progress.durationSeconds)
+      : null;
   const hasControls =
     isFavourite !== undefined || isWatchLater !== undefined || showPlaylistPicker === true;
 
@@ -96,7 +118,13 @@ export function VideoCard({
       <Link
         href={`/watch/${video.id}`}
         aria-label={video.title}
-        className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl bg-card text-card-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className={cn(
+          // Hover lift is a `translate` on the card, so neighbouring cards do not
+          // move and grid measurement never changes. `motion-reduce` removes the
+          // movement (not just its duration) for viewers who ask for less motion.
+          "group/card flex h-full min-w-0 flex-col overflow-hidden rounded-xl bg-card text-card-foreground transition-[background-color,box-shadow,translate] duration-200 ease-out hover:-translate-y-0.5 hover:bg-surface-elevated hover:shadow-lg hover:shadow-background/60 motion-reduce:transition-none motion-reduce:hover:translate-y-0",
+          FOCUS_RING,
+        )}
       >
         <div className="relative aspect-video w-full overflow-hidden bg-muted">
           <Image
@@ -104,13 +132,33 @@ export function VideoCard({
             alt=""
             fill
             sizes={THUMBNAIL_SIZES}
-            className="object-cover"
+            className="object-cover transition-transform duration-300 ease-out group-hover/card:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover/card:scale-100"
           />
           {duration !== null ? (
             <span className="absolute right-1.5 bottom-1.5 rounded bg-background/85 px-1.5 py-0.5 text-xs font-medium text-foreground tabular-nums">
               <span className="sr-only">Duration </span>
               {duration}
             </span>
+          ) : null}
+
+          {/*
+            Watched bar along the bottom edge, like YouTube's. It lives inside
+            the link so the thumbnail keeps one hit area; the link's explicit
+            aria-label names the destination, so this decorative bar does not
+            lengthen the accessible name.
+          */}
+          {watchedPercent !== null ? (
+            <div
+              data-slot="video-card-progress"
+              role="progressbar"
+              aria-label="Watch progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={watchedPercent}
+              className="absolute inset-x-0 bottom-0 h-1 bg-foreground/25"
+            >
+              <div className="h-full bg-red-600" style={{ width: `${watchedPercent}%` }} />
+            </div>
           ) : null}
         </div>
 

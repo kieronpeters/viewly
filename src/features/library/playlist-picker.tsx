@@ -12,6 +12,8 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
+import { InlineFeedback, useTransientFeedback } from "@/components/ui/inline-feedback";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { MAX_PLAYLIST_NAME_LENGTH } from "@/shared/validation";
@@ -66,9 +68,9 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
   const [options, setOptions] = useState<readonly PlaylistOption[]>(playlists);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const feedback = useTransientFeedback();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -119,7 +121,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
     setCreating(false);
     setName("");
     setError(null);
-    setStatus(null);
+    feedback.dismiss();
   }
 
   function closeAndFocusTrigger() {
@@ -140,7 +142,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
 
   function handleAdd(option: PlaylistOption) {
     setError(null);
-    setStatus(null);
+    feedback.dismiss();
 
     startTransition(async () => {
       try {
@@ -151,7 +153,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
           return;
         }
 
-        setStatus(`Added to ${option.name}.`);
+        feedback.show(`Added to ${option.name}.`);
         closeAndFocusTrigger();
       } catch {
         setError(ADD_ERROR_MESSAGE);
@@ -162,7 +164,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setStatus(null);
+    feedback.dismiss();
 
     const playlistName = name.trim();
 
@@ -188,7 +190,7 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
           return;
         }
 
-        setStatus(`Added to ${created.name}.`);
+        feedback.show(`Added to ${created.name}.`);
         closeAndFocusTrigger();
       } catch {
         setError(CREATE_ERROR_MESSAGE);
@@ -218,8 +220,9 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
         disabled={isPending}
         onClick={handleToggle}
         className={cn(
-          "inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-border bg-background/90 text-muted-foreground shadow-sm backdrop-blur transition-colors outline-none",
-          "hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          "inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-border bg-background/90 text-muted-foreground shadow-sm backdrop-blur transition-[color,background-color,border-color,box-shadow,scale] duration-150 ease-out outline-none",
+          "hover:bg-background hover:text-foreground hover:shadow-md hover:shadow-background/50 active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100",
+          FOCUS_RING,
           "disabled:opacity-60",
           // Open state: an opaque canvas fill keeps the violet icon readable
           // over any thumbnail (the trigger sits on the card image in library
@@ -293,7 +296,10 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
                         type="button"
                         disabled={isPending}
                         onClick={() => handleAdd(option)}
-                        className="flex min-h-11 w-full items-center rounded-md px-2 py-1.5 text-left text-sm break-words text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                        className={cn(
+                          "flex min-h-11 w-full items-center rounded-md px-2 py-1.5 text-left text-sm break-words text-foreground transition-colors duration-150 hover:bg-muted motion-reduce:transition-none disabled:opacity-60",
+                          FOCUS_RING,
+                        )}
                       >
                         {option.name}
                       </button>
@@ -320,14 +326,10 @@ export function PlaylistPicker({ video, playlists, className }: PlaylistPickerPr
         </div>
       ) : null}
 
-      {status === null ? null : (
-        <p
-          role="status"
-          className="max-w-44 rounded bg-background/95 px-1.5 py-0.5 text-right text-xs break-words text-muted-foreground"
-        >
-          {status}
-        </p>
-      )}
+      <InlineFeedback
+        message={feedback.message}
+        className="absolute top-full right-0 z-10 mt-1 w-max max-w-44 text-right"
+      />
 
       {error === null ? null : (
         <p

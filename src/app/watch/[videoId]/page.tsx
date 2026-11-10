@@ -91,23 +91,43 @@ function WatchBreadcrumb() {
 }
 
 /**
- * Streams while the video resolves. The skeleton mirrors the real two-column
- * layout so nothing shifts when the content arrives.
+ * Streams while the video resolves. The skeleton mirrors the real player-led
+ * layout — a wide left column and the sticky "Up next" rail — so nothing shifts
+ * when the content arrives.
  */
 function WatchPageSkeleton() {
   return (
     <div role="status" className="flex flex-col gap-5">
       <span className="sr-only">Loading video…</span>
-      <div aria-hidden="true" className="flex flex-col gap-1.5">
-        <Skeleton className="h-7 w-3/4 max-w-xl sm:h-8" />
-        <Skeleton className="h-4 w-40" />
-      </div>
       <div
         aria-hidden="true"
-        className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]"
+        className="grid min-w-0 grid-cols-1 items-start gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22.5rem]"
       >
-        <Skeleton className="aspect-video w-full rounded-xl" />
-        <Skeleton className="h-48 w-full rounded-xl" />
+        <div className="flex min-w-0 flex-col gap-4">
+          <Skeleton className="aspect-video w-full rounded-xl" />
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-7 w-3/4 max-w-xl sm:h-8" />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+              <Skeleton className="h-10 w-44 rounded-full" />
+              <Skeleton className="h-11 w-52 rounded-full" />
+            </div>
+            <Skeleton className="h-28 w-full rounded-xl" />
+            <Skeleton className="h-40 w-full rounded-xl" />
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-3">
+          <Skeleton className="h-5 w-24" />
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="flex min-w-0 gap-2 p-1.5">
+              <Skeleton className="aspect-video w-40 shrink-0 rounded-md" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

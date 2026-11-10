@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { ViewlyLogo } from "@/components/brand/viewly-logo";
+import { CommandPalette } from "@/components/layout/command-palette";
 import { NavLinks } from "@/components/layout/nav-links";
+import { PlayerProvider } from "@/components/player/player-provider";
+import { PlayerSeekProvider } from "@/components/video/player-seek";
 
-const wordmarkClasses =
-  "inline-flex min-h-11 items-center rounded-sm text-lg font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
+const brandLinkClasses =
+  "inline-flex min-h-11 items-center rounded-sm outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
 
 /**
  * `NavLinks` reads `usePathname()`, which is runtime-only URL data. It is wrapped in
@@ -29,51 +33,69 @@ function NavLinksFallback({ variant }: { variant: "sidebar" | "bottom" }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-background md:flex-row">
-      <a
-        href="#main-content"
-        className="fixed left-4 top-4 z-50 inline-flex min-h-11 -translate-y-20 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground outline-none focus:translate-y-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      >
-        Skip to content
-      </a>
+    /*
+     * One player for the whole session (T75). `PlayerProvider` owns the only
+     * `YT.Player`; it renders the watch stage or the mini player, so a route
+     * change swaps props and placement but never unmounts the embed. The seek
+     * channel (T71) lives beside it, because the description timestamps and the
+     * player must agree on one channel even while the player is off-route.
+     */
+    <PlayerSeekProvider>
+      <PlayerProvider>
+        <div className="flex h-dvh flex-col overflow-hidden bg-background md:flex-row">
+          <a
+            href="#main-content"
+            className="fixed left-4 top-4 z-50 inline-flex min-h-11 -translate-y-20 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground outline-none focus:translate-y-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            Skip to content
+          </a>
 
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:flex">
-        <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
-          <Link href="/" className={wordmarkClasses}>
-            Viewly
-          </Link>
+          <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:flex">
+            <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
+              <Link href="/" aria-label="Viewly home" className={brandLinkClasses}>
+                <ViewlyLogo />
+              </Link>
+            </div>
+            <nav aria-label="Primary" className="flex-1 overflow-y-auto p-3">
+              <Suspense fallback={<NavLinksFallback variant="sidebar" />}>
+                <NavLinks />
+              </Suspense>
+            </nav>
+          </aside>
+
+          <div className="flex min-h-0 flex-1 flex-col">
+            <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface px-4 md:hidden">
+              <Link href="/" aria-label="Viewly home" className={brandLinkClasses}>
+                <ViewlyLogo size="md" />
+              </Link>
+            </header>
+
+            <main
+              id="main-content"
+              data-scroll-root
+              tabIndex={-1}
+              className="flex min-h-0 flex-1 flex-col overflow-y-auto outline-none"
+            >
+              {children}
+            </main>
+
+            <nav
+              aria-label="Primary"
+              className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+            >
+              <Suspense fallback={<NavLinksFallback variant="bottom" />}>
+                <NavLinks variant="bottom" />
+              </Suspense>
+            </nav>
+          </div>
+
+          {/*
+           * One palette for the whole app. It renders no DOM until Ctrl/Cmd+K, so it
+           * adds no height or width to the shell and causes no layout shift.
+           */}
+          <CommandPalette />
         </div>
-        <nav aria-label="Primary" className="flex-1 overflow-y-auto p-3">
-          <Suspense fallback={<NavLinksFallback variant="sidebar" />}>
-            <NavLinks />
-          </Suspense>
-        </nav>
-      </aside>
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface px-4 md:hidden">
-          <Link href="/" className={wordmarkClasses}>
-            Viewly
-          </Link>
-        </header>
-
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto outline-none"
-        >
-          {children}
-        </main>
-
-        <nav
-          aria-label="Primary"
-          className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
-        >
-          <Suspense fallback={<NavLinksFallback variant="bottom" />}>
-            <NavLinks variant="bottom" />
-          </Suspense>
-        </nav>
-      </div>
-    </div>
+      </PlayerProvider>
+    </PlayerSeekProvider>
   );
 }

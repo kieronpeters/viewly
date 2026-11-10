@@ -35,6 +35,25 @@ body {
   }
 }
 
+/*
+ * Skeleton-to-content handoff. Streaming fallbacks are replaced by real content
+ * when a Suspense boundary resolves; the content fades in so the swap reads as a
+ * transition rather than a flash. Opacity only, so nothing reflows, and the
+ * reduced-motion rule at the end of this file collapses the duration.
+ */
+@keyframes viewly-content-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@utility content-in {
+  animation: viewly-content-in 180ms ease-out both;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--font-geist-sans);

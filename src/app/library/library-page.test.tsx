@@ -11,6 +11,8 @@ const {
   sweepLibraryMetadataMock,
   clearHistoryEntryMock,
   clearAllHistoryMock,
+  listVideoProgressMock,
+  listContinueWatchingVideosMock,
 } = vi.hoisted(() => ({
   listFavouriteVideosMock: vi.fn(),
   listWatchLaterVideosMock: vi.fn(),
@@ -20,6 +22,8 @@ const {
   sweepLibraryMetadataMock: vi.fn(),
   clearHistoryEntryMock: vi.fn(),
   clearAllHistoryMock: vi.fn(),
+  listVideoProgressMock: vi.fn(),
+  listContinueWatchingVideosMock: vi.fn(),
 }));
 
 // The content half imports the server-only reads through the feature barrel, so
@@ -41,6 +45,17 @@ vi.mock("@/features/library/history-actions", () => ({
   recordView: vi.fn(),
   clearHistoryEntry: clearHistoryEntryMock,
   clearAllHistory: clearAllHistoryMock,
+}));
+// Playback progress is server-only; the tab renders whatever the map holds, so
+// no test opens the real database file.
+vi.mock("@/features/progress/progress-data", () => ({
+  listVideoProgress: listVideoProgressMock,
+}));
+// The continue-watching shelf reads SQLite through its own module; replace the
+// read so the tab tests never open the real database. It is empty by default,
+// which keeps every existing tab assertion unchanged.
+vi.mock("@/features/progress/continue-watching", () => ({
+  listContinueWatchingVideos: listContinueWatchingVideosMock,
 }));
 vi.mock("@/features/library/actions", () => ({
   toggleFavourite: vi.fn(),
@@ -135,6 +150,10 @@ beforeEach(() => {
   clearHistoryEntryMock.mockResolvedValue(undefined);
   clearAllHistoryMock.mockReset();
   clearAllHistoryMock.mockResolvedValue(undefined);
+  listVideoProgressMock.mockReset();
+  listVideoProgressMock.mockReturnValue(new Map());
+  listContinueWatchingVideosMock.mockReset();
+  listContinueWatchingVideosMock.mockResolvedValue([]);
 });
 
 describe("LibraryPageContent tab bar", () => {
@@ -183,6 +202,19 @@ describe("LibraryPageContent tab bar", () => {
     expect(listFavouriteVideosMock).toHaveBeenCalledTimes(1);
     expect(listWatchLaterVideosMock).not.toHaveBeenCalled();
     expect(listHistoryEntriesMock).not.toHaveBeenCalled();
+  });
+
+  it("links to the watch-stats page beside the tabs", async () => {
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "favourites" }) }));
+
+    expect(screen.getByRole("link", { name: "Watch stats" })).toHaveAttribute(
+      "href",
+      "/library/stats",
+    );
+
+    // It is not a tab: the section nav still exposes exactly the four tabs.
+    const nav = screen.getByRole("navigation", { name: "Library sections" });
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
   });
 
   it("falls back to favourites for an unknown tab", async () => {
@@ -424,5 +456,84 @@ describe("LibraryPageContent history tab", () => {
     await waitFor(() => {
       expect(clearAllHistoryMock).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe("LibraryPageContent continue watching", () => {
+  const items = [
+    {
+      video: savedVideo("continue0001", "Continue newest"),
+      progress: { positionSeconds: 30, durationSeconds: 60 },
+    },
+    {
+      video: savedVideo("continue0002", "Continue older"),
+      progress: { positionSeconds: 12, durationSeconds: 60 },
+    },
+  ];
+
+  it("shows the local shelf above the active tab with progress bars", async () => {
+    listContinueWatchingVideosMock.mockResolvedValue(items);
+
+    render(await LibraryPageContent({ searchParams: Promise.resolve({}) }));
+
+    expect(
+      screen.getByRole("heading", { name: "Continue watching", level: 2 }),
+    ).toBeInTheDocument();
+
+    const region = screen.getByRole("region", { name: "Continue watching" });
+
+    expect(
+      within(region)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/watch/continue0001", "/watch/continue0002"]);
+    expect(within(region).getAllByRole("progressbar", { name: "Watch progress" })).toHaveLength(
+      items.length,
+    );
+
+    // The shelf is not a tab: the tab list still has exactly its four links.
+    expect(
+      within(screen.getByRole("navigation", { name: "Library sections" })).getAllByRole("link"),
+    ).toHaveLength(4);
+  });
+
+  it("hides the shelf when nothing is in progress", async () => {
+    render(await LibraryPageContent({ searchParams: Promise.resolve({}) }));
+
+    expect(screen.queryByRole("heading", { name: "Continue watching" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Continue watching" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Favourites", level: 2 })).toBeInTheDocument();
+  });
+});
+
+describe("LibraryPageContent playback progress", () => {
+  const progress = {
+    videoId: "newest-video",
+    positionSeconds: 30,
+    durationSeconds: 60,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("passes stored progress to favourite cards", async () => {
+    listVideoProgressMock.mockReturnValue(new Map([[progress.videoId, progress]]));
+
+    render(await LibraryPageContent({ searchParams: Promise.resolve({}) }));
+
+    expect(listVideoProgressMock).toHaveBeenCalledWith(VIDEOS.map((video) => video.id));
+    expect(screen.getAllByRole("progressbar", { name: "Watch progress" })).toHaveLength(1);
+  });
+
+  it("passes stored progress to history cards", async () => {
+    listVideoProgressMock.mockReturnValue(new Map([[progress.videoId, progress]]));
+
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "history" }) }));
+
+    expect(screen.getAllByRole("progressbar", { name: "Watch progress" })).toHaveLength(1);
+  });
+
+  it("renders no bars when no video has progress", async () => {
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "history" }) }));
+
+    expect(screen.queryByRole("progressbar", { name: "Watch progress" })).toBeNull();
   });
 });

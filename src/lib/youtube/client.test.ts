@@ -5,14 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  MAX_COMMENT_RESULTS_LIMIT,
   MAX_RESULTS_LIMIT,
   YouTubeApiError,
   clearYouTubeCache,
+  getChannel,
   getTrending,
   getVideo,
   getVideos,
   isYouTubeApiError,
-  listVideoCategories,
+  listComments,
+  listPlaylistItems,
   searchVideos,
 } from "@/lib/youtube/client";
 import { YOUTUBE_CACHE_TTLS_MS } from "@/lib/youtube/cache";
@@ -28,6 +31,9 @@ const FAKE_KEY = "AIzaSyFAKE-client-test-key-000000";
 const ORIGINAL_KEY = process.env.YOUTUBE_API_KEY;
 
 const VIDEO_ID = "dQw4w9WgXcQ";
+const CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw";
+const OTHER_CHANNEL_ID = "UCaaaaaaaaaaaaaaaaaaaaaa";
+const UPLOADS_PLAYLIST_ID = "UUuAXFkgsw1L7xaCfnd5JJOw";
 const SEARCH_QUERY = "never gonna give you up";
 
 /**
@@ -95,6 +101,93 @@ function videoPayload(items: readonly unknown[]): Record<string, unknown> {
     kind: "youtube#videoListResponse",
     pageInfo: { totalResults: items.length, resultsPerPage: items.length },
     items,
+  };
+}
+
+/** Minimal `channels.list` item. */
+function channelItem(id: string): Record<string, unknown> {
+  return {
+    kind: "youtube#channel",
+    id,
+    snippet: {
+      title: "Rick Astley",
+      description: "The official Rick Astley channel.",
+      thumbnails: {
+        high: { url: "https://yt3.ggpht.com/channel-high=s800" },
+      },
+    },
+    statistics: { subscriberCount: "4200000", hiddenSubscriberCount: false },
+    contentDetails: { relatedPlaylists: { uploads: UPLOADS_PLAYLIST_ID } },
+  };
+}
+
+function channelPayload(items: readonly unknown[]): Record<string, unknown> {
+  return {
+    kind: "youtube#channelListResponse",
+    pageInfo: { totalResults: items.length, resultsPerPage: items.length },
+    items,
+  };
+}
+
+/** Minimal `playlistItems.list` item for a channel uploads page. */
+function playlistItem(videoId: string): Record<string, unknown> {
+  return {
+    kind: "youtube#playlistItem",
+    id: `playlist-item-${videoId}`,
+    snippet: {
+      publishedAt: "2026-01-02T03:04:05Z",
+      channelId: CHANNEL_ID,
+      title: "A recent upload",
+      description: "Not rendered by a card.",
+      channelTitle: "Rick Astley",
+      thumbnails: {
+        high: { url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" },
+      },
+      resourceId: { kind: "youtube#video", videoId },
+    },
+    contentDetails: { videoId, videoPublishedAt: "2026-01-02T03:04:05Z" },
+  };
+}
+
+function playlistPayload(items: readonly unknown[]): Record<string, unknown> {
+  return {
+    kind: "youtube#playlistItemListResponse",
+    pageInfo: { totalResults: items.length, resultsPerPage: items.length },
+    items,
+  };
+}
+
+/** Minimal `commentThreads.list` item for a top-level comment. */
+function commentThread(id: string): Record<string, unknown> {
+  return {
+    kind: "youtube#commentThread",
+    id: `thread-${id}`,
+    snippet: {
+      videoId: VIDEO_ID,
+      totalReplyCount: 2,
+      topLevelComment: {
+        kind: "youtube#comment",
+        id,
+        snippet: {
+          authorDisplayName: "Ada Lovelace",
+          textOriginal: "Great video!",
+          likeCount: 12,
+          publishedAt: "2026-01-02T03:04:05Z",
+        },
+      },
+    },
+  };
+}
+
+function commentPayload(
+  items: readonly unknown[],
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    kind: "youtube#commentThreadListResponse",
+    pageInfo: { totalResults: items.length, resultsPerPage: items.length },
+    items,
+    ...extra,
   };
 }
 
@@ -241,6 +334,61 @@ describe("searchVideos", () => {
 
     expect(requestUrl().searchParams.get("pageToken")).toBe("CAoQAA");
   });
+
+  it("maps filters to videoDuration, order and publishedAfter", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    fetchMock.mockResolvedValue(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({
+      query: SEARCH_QUERY,
+      duration: "short",
+      order: "viewCount",
+      uploadDate: "week",
+    });
+
+    const url = requestUrl();
+    expect(url.searchParams.get("videoDuration")).toBe("short");
+    expect(url.searchParams.get("order")).toBe("viewCount");
+    expect(url.searchParams.get("publishedAfter")).toBe("2025-12-25T12:00:00.000Z");
+  });
+
+  it("omits every filter parameter when the values are the defaults", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(searchPayload([])));
+
+    await searchVideos({
+      query: SEARCH_QUERY,
+      duration: "any",
+      order: "relevance",
+      uploadDate: "any",
+    });
+
+    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
+      part: "snippet",
+      type: "video",
+      q: SEARCH_QUERY,
+      maxResults: "25",
+      key: FAKE_KEY,
+    });
+  });
+
+  it("rejects invalid filter values before the network", async () => {
+    const invalid = [
+      { duration: "tiny" },
+      { order: "popular" },
+      { uploadDate: "year" },
+    ] as unknown as Array<
+      Partial<Pick<Parameters<typeof searchVideos>[0], "duration" | "order" | "uploadDate">>
+    >;
+
+    for (const filters of invalid) {
+      await expect(searchVideos({ query: SEARCH_QUERY, ...filters })).rejects.toBeInstanceOf(
+        DomainValidationError,
+      );
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("getVideo", () => {
@@ -280,6 +428,198 @@ describe("getVideo", () => {
     expect(detail).not.toBeNull();
     expect(Object.hasOwn(detail as object, "description")).toBe(true);
     expect(detail?.description).toBe(DESCRIPTION_TEXT);
+  });
+});
+
+describe("getChannel", () => {
+  it("requests snippet, statistics and contentDetails for one channel id", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(channelPayload([channelItem(CHANNEL_ID)])));
+
+    const channel = await getChannel(CHANNEL_ID);
+
+    const url = requestUrl();
+    expect(url.pathname).toBe("/youtube/v3/channels");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      part: "snippet,statistics,contentDetails",
+      id: CHANNEL_ID,
+      key: FAKE_KEY,
+    });
+    expect(channel).toEqual({
+      id: CHANNEL_ID,
+      title: "Rick Astley",
+      avatarUrl: "https://yt3.ggpht.com/channel-high=s800",
+      subscriberCount: 4_200_000,
+      description: "The official Rick Astley channel.",
+      uploadsPlaylistId: UPLOADS_PLAYLIST_ID,
+    });
+    expect(JSON.stringify(channel)).not.toContain(FAKE_KEY);
+  });
+
+  it("returns null for an empty items array", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(channelPayload([])));
+
+    await expect(getChannel(CHANNEL_ID)).resolves.toBeNull();
+  });
+
+  it("rejects an invalid channel id before the network", async () => {
+    for (const id of ["", "short", `UU${CHANNEL_ID.slice(2)}`, ` ${CHANNEL_ID}`]) {
+      await expect(getChannel(id)).rejects.toBeInstanceOf(DomainValidationError);
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("makes one request per uncached channel", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      return jsonResponse(channelPayload([channelItem(url.searchParams.get("id") ?? "")]));
+    });
+
+    await getChannel(CHANNEL_ID);
+    await getChannel(OTHER_CHANNEL_ID);
+    await getChannel(CHANNEL_ID);
+    await getChannel(OTHER_CHANNEL_ID);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestUrl(0).searchParams.get("id")).toBe(CHANNEL_ID);
+    expect(requestUrl(1).searchParams.get("id")).toBe(OTHER_CHANNEL_ID);
+  });
+
+  it("caches the normalized channel for 24 hours", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(channelPayload([channelItem(CHANNEL_ID)])),
+    );
+
+    expect(YOUTUBE_CACHE_TTLS_MS.channels).toBe(24 * 60 * 60_000);
+
+    await getChannel(CHANNEL_ID);
+    await getChannel(CHANNEL_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.channels - 1);
+    await getChannel(CHANNEL_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await getChannel(CHANNEL_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a malformed payload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: "nope" }));
+
+    await expect(getChannel(CHANNEL_ID)).rejects.toBeInstanceOf(DomainValidationError);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(channelPayload([channelItem(CHANNEL_ID)])));
+
+    await expect(getChannel(CHANNEL_ID)).resolves.toMatchObject({ id: CHANNEL_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("listPlaylistItems", () => {
+  it("requests one uploads page with snippet, contentDetails and the default 25 results", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])));
+
+    const videos = await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+
+    const url = requestUrl();
+    expect(url.pathname).toBe("/youtube/v3/playlistItems");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      part: "snippet,contentDetails",
+      playlistId: UPLOADS_PLAYLIST_ID,
+      maxResults: "25",
+      key: FAKE_KEY,
+    });
+    expect(videos).toEqual([
+      {
+        id: VIDEO_ID,
+        title: "A recent upload",
+        channelId: CHANNEL_ID,
+        channelTitle: "Rick Astley",
+        thumbnailUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+        publishedAt: "2026-01-02T03:04:05Z",
+        durationSeconds: null,
+        viewCount: null,
+      },
+    ]);
+    expect(JSON.stringify(videos)).not.toContain(FAKE_KEY);
+  });
+
+  it("clamps maxResults to 1..50", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(playlistPayload([])));
+
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID, maxResults: 0 });
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID, maxResults: 500 });
+
+    expect(requestUrl(0).searchParams.get("maxResults")).toBe("1");
+    expect(requestUrl(1).searchParams.get("maxResults")).toBe("50");
+  });
+
+  it("rejects an invalid playlist id before the network", async () => {
+    for (const playlistId of ["", "short", "has spaces", "PL!not-safe"]) {
+      await expect(listPlaylistItems({ playlistId })).rejects.toBeInstanceOf(DomainValidationError);
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty array for an empty uploads page", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(playlistPayload([])));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).resolves.toEqual([]);
+  });
+
+  it("caches the normalized uploads for ten minutes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])),
+    );
+
+    expect(YOUTUBE_CACHE_TTLS_MS.playlistItems).toBe(10 * 60_000);
+
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.playlistItems - 1);
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a malformed uploads payload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: "nope" }));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).rejects.toBeInstanceOf(
+      DomainValidationError,
+    );
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a quota failure without caching it", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(apiErrorPayload(403, "quotaExceeded"), 403));
+
+    const error = expectApiError(
+      await readThrown(() => listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })),
+      "quota",
+    );
+    expect(error.reason).toBe("quotaExceeded");
+
+    fetchMock.mockResolvedValue(jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -340,7 +680,7 @@ describe("getVideos", () => {
   });
 });
 
-describe("getTrending and listVideoCategories", () => {
+describe("getTrending", () => {
   it("requests the most popular chart for the region", async () => {
     fetchMock.mockImplementation(async () => jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
 
@@ -367,23 +707,110 @@ describe("getTrending and listVideoCategories", () => {
     expect(JSON.stringify(videos)).not.toContain(DESCRIPTION_TEXT);
     expect(summary).toMatchObject({ id: VIDEO_ID, durationSeconds: 213 });
   });
+});
 
-  it("maps categories and drops unusable entries", async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        items: [
-          { id: "10", snippet: { title: " Music ", assignable: true } },
-          { id: "20", snippet: { title: "", assignable: false } },
-          { id: "", snippet: { title: "Broken", assignable: true } },
-        ],
-      }),
+describe("listComments", () => {
+  it("requests relevance-ordered top-level threads with the default page size", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(commentPayload([commentThread("c1")])));
+
+    const page = await listComments({ videoId: VIDEO_ID });
+
+    const url = requestUrl();
+    expect(url.pathname).toBe("/youtube/v3/commentThreads");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      part: "snippet",
+      videoId: VIDEO_ID,
+      order: "relevance",
+      maxResults: "20",
+      key: FAKE_KEY,
+    });
+
+    expect(page.commentsDisabled).toBe(false);
+    expect(page.items).toEqual([
+      {
+        id: "c1",
+        author: "Ada Lovelace",
+        text: "Great video!",
+        likeCount: 12,
+        publishedAt: "2026-01-02T03:04:05Z",
+        replyCount: 2,
+      },
+    ]);
+  });
+
+  it("passes a validated page token and a clamped maxResults", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(commentPayload([])));
+
+    await listComments({ videoId: VIDEO_ID, pageToken: "CAoQAA", maxResults: 500 });
+    expect(requestUrl(0).searchParams.get("pageToken")).toBe("CAoQAA");
+    expect(requestUrl(0).searchParams.get("maxResults")).toBe(String(MAX_COMMENT_RESULTS_LIMIT));
+
+    await listComments({ videoId: VIDEO_ID, maxResults: 0 });
+    expect(requestUrl(1).searchParams.get("maxResults")).toBe("1");
+  });
+
+  it("rejects an invalid video id or page token before the network", async () => {
+    await expect(listComments({ videoId: "short" })).rejects.toBeInstanceOf(DomainValidationError);
+    await expect(
+      listComments({ videoId: VIDEO_ID, pageToken: "not a token" }),
+    ).rejects.toBeInstanceOf(DomainValidationError);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // CONTRACT (T80): disabled comments are a normal page, not a thrown error.
+  it("maps a 403 commentsDisabled response to a disabled page", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(apiErrorPayload(403, "commentsDisabled"), 403));
+
+    const page = await listComments({ videoId: VIDEO_ID });
+
+    expect(page).toEqual({ items: [], nextPageToken: null, commentsDisabled: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still surfaces quota and malformed payload failures", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(apiErrorPayload(403, "quotaExceeded"), 403));
+
+    const quota = expectApiError(
+      await readThrown(() => listComments({ videoId: VIDEO_ID })),
+      "quota",
+    );
+    expect(quota.reason).toBe("quotaExceeded");
+
+    fetchMock.mockResolvedValue(jsonResponse({ items: "nope" }));
+
+    const malformed = await readThrown(() => listComments({ videoId: VIDEO_ID }));
+    expect(malformed).toBeInstanceOf(DomainValidationError);
+  });
+
+  it("caches the normalized page for five minutes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    // A fresh Response per call: a body can only be read once.
+    fetchMock.mockImplementation(async () => jsonResponse(commentPayload([commentThread("c1")])));
+
+    await listComments({ videoId: VIDEO_ID });
+    await listComments({ videoId: VIDEO_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.comments - 1);
+    await listComments({ videoId: VIDEO_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await listComments({ videoId: VIDEO_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches the disabled page so a disabled video does not spend quota per view", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(apiErrorPayload(403, "commentsDisabled"), 403),
     );
 
-    const categories = await listVideoCategories("us");
+    await listComments({ videoId: VIDEO_ID });
+    await listComments({ videoId: VIDEO_ID });
 
-    expect(requestUrl().pathname).toBe("/youtube/v3/videoCategories");
-    expect(requestUrl().searchParams.get("regionCode")).toBe("US");
-    expect(categories).toEqual([{ id: "10", title: "Music", assignable: true }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -501,6 +928,38 @@ describe("caching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("caches each filter combination separately and reuses a repeated one", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    // The same filtered search twice: one upstream request.
+    await searchVideos({ query: "filtered", duration: "short" });
+    await searchVideos({ query: "filtered", duration: "short" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Every other combination is its own entry.
+    await searchVideos({ query: "filtered", duration: "medium" });
+    await searchVideos({ query: "filtered", order: "date" });
+    await searchVideos({ query: "filtered", order: "viewCount" });
+    await searchVideos({ query: "filtered", uploadDate: "day" });
+    await searchVideos({ query: "filtered", uploadDate: "week" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("shares a filtered entry across millisecond differences inside one minute", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({ query: "minute bucket", uploadDate: "day" });
+    vi.setSystemTime(new Date("2026-01-01T12:00:59.000Z"));
+    await searchVideos({ query: "minute bucket", uploadDate: "day" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("refreshes a search after its 60 second TTL using fake timers", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
@@ -537,36 +996,22 @@ describe("caching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps trending for five minutes and categories for a day", async () => {
+  it("keeps trending for five minutes and then refreshes", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    fetchMock.mockImplementation(async (input) => {
-      const url = input instanceof URL ? input : new URL(String(input));
-      return url.pathname.endsWith("/videoCategories")
-        ? jsonResponse({ items: [{ id: "10", snippet: { title: "Music", assignable: true } }] })
-        : jsonResponse(videoPayload([videoItem(VIDEO_ID)]));
-    });
+    fetchMock.mockImplementation(async () => jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
 
     await getTrending();
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await getTrending();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.trending - 1);
     await getTrending();
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(Date.now() + 1);
     await getTrending();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-
-    // Categories survive the trending refresh and expire on their own TTL.
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-
-    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.categories);
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("coalesces concurrent identical requests into one upstream fetch", async () => {
@@ -710,30 +1155,9 @@ describe("request construction", () => {
     });
   });
 
-  it("sends category parameters with the default region", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
-
-    await listVideoCategories();
-
-    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
-      part: "snippet",
-      regionCode: "US",
-      key: FAKE_KEY,
-    });
-  });
-
-  it("upper-cases a lower-case category region", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
-
-    await listVideoCategories("gb");
-
-    expect(requestUrl().searchParams.get("regionCode")).toBe("GB");
-  });
-
   it("rejects invalid region codes before the network", async () => {
     for (const regionCode of ["", "g", "gbr", "12", " gb", "ÜS"]) {
       await expect(getTrending({ regionCode })).rejects.toBeInstanceOf(DomainValidationError);
-      await expect(listVideoCategories(regionCode)).rejects.toBeInstanceOf(DomainValidationError);
     }
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -1014,17 +1438,6 @@ describe("malformed upstream payloads", () => {
     }
   });
 
-  it("surfaces a malformed category payload as a DomainValidationError", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ items: {} }));
-
-    const error = await readThrown(() => listVideoCategories("us"));
-
-    expect(error).toBeInstanceOf(DomainValidationError);
-    if (error instanceof DomainValidationError) {
-      expect(error.code).toBe("malformed_payload");
-    }
-  });
-
   // REGRESSION (T38): guards the "errors are never cached" guarantee. A 200
   // response whose body fails normalization must not be stored in the request
   // cache, or the DomainValidationError would be replayed for the full TTL
@@ -1055,10 +1468,8 @@ describe("key containment", () => {
         return jsonResponse(searchPayload([searchItem(VIDEO_ID)]));
       }
 
-      if (url.pathname.endsWith("/videoCategories")) {
-        return jsonResponse({
-          items: [{ id: "10", snippet: { title: "Music", assignable: true } }],
-        });
+      if (url.pathname.endsWith("/commentThreads")) {
+        return jsonResponse(commentPayload([commentThread("c1")]));
       }
 
       return jsonResponse(videoPayload([videoItem(VIDEO_ID)]));
@@ -1069,7 +1480,8 @@ describe("key containment", () => {
       await getVideo(VIDEO_ID),
       await getVideos([VIDEO_ID]),
       await getTrending(),
-      await listVideoCategories(),
+      await listComments({ videoId: VIDEO_ID }),
+      await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID }),
     ];
     const serialized = JSON.stringify(results);
 

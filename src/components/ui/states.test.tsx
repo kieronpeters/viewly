@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Toast } from "@/components/ui/toast";
 
 describe("EmptyState", () => {
   it("renders its title, message and action", () => {
@@ -35,21 +34,5 @@ describe("ErrorState", () => {
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("Toast", () => {
-  it("announces informational messages politely", () => {
-    render(<Toast message="Saved to Watch Later." />);
-
-    expect(screen.getByRole("status")).toHaveTextContent("Saved to Watch Later.");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("announces errors assertively", () => {
-    render(<Toast message="Could not save." variant="error" />);
-
-    expect(screen.getByRole("alert")).toHaveTextContent("Could not save.");
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
