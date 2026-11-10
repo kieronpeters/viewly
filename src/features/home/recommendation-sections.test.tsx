@@ -26,6 +26,7 @@ const RICK: VideoSummary = {
 const BECAUSE_SHELF: RecommendationShelf = {
   kind: "because-you-watched",
   title: "Because you watched Never Gonna Give You Up",
+  fullTitle: "Because you watched Never Gonna Give You Up",
   reason: "Based on your most recent view",
   videos: [RICK],
 };
@@ -33,6 +34,7 @@ const BECAUSE_SHELF: RecommendationShelf = {
 const TOP_CHANNELS_SHELF: RecommendationShelf = {
   kind: "top-channels",
   title: "More from your top channels",
+  fullTitle: "More from your top channels",
   reason: "Channels you watch most: Rick Astley",
   videos: [RICK],
 };
@@ -72,6 +74,33 @@ describe("RecommendationShelfSection", () => {
       "href",
       "/watch/dQw4w9WgXcQ",
     );
+    // A complete heading needs no duplicate accessible label.
+    expect(
+      screen.getByRole("heading", {
+        name: "Because you watched Never Gonna Give You Up",
+        level: 2,
+      }),
+    ).not.toHaveAttribute("aria-label");
+  });
+
+  it("exposes the full seed title through the heading's accessible name", async () => {
+    const fullTitle =
+      "Because you watched An Extremely Long Video Title That Keeps Going Past The Heading Limit";
+    const visibleTitle = "Because you watched An Extremely Long Video Title That Keeps…";
+
+    getRecommendationShelvesMock.mockResolvedValue([
+      { ...BECAUSE_SHELF, title: visibleTitle, fullTitle },
+    ]);
+
+    render(await RecommendationShelfSection({ kind: "because-you-watched" }));
+
+    const heading = screen.getByRole("heading", { name: fullTitle, level: 2 });
+    expect(heading).toHaveAttribute("aria-label", fullTitle);
+    expect(heading).toHaveTextContent(visibleTitle);
+    // Only the heading is abbreviated; the card keeps its complete title.
+    expect(
+      screen.getByRole("link", { name: /Never Gonna Give You Up \(Official Video\)/ }),
+    ).toBeInTheDocument();
   });
 
   it("renders an apostrophe in the shelf heading as plain text", async () => {
@@ -79,6 +108,7 @@ describe("RecommendationShelfSection", () => {
       {
         ...BECAUSE_SHELF,
         title: "Because you watched Don't Let The Humans Into The Bar",
+        fullTitle: "Because you watched Don't Let The Humans Into The Bar",
       },
     ]);
 
