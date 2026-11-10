@@ -8,34 +8,47 @@ database and no public deployment.
 
 Working today:
 
-- Next.js 16 App Router foundation with a responsive app shell (desktop sidebar, mobile bottom nav).
-- Midnight Purple theme and shared UI primitives: buttons, cards, inputs, skeletons, and empty/error
-  states.
-- YouTube discovery: home page with trending and category rows, paginated search, and category pages,
-  backed by a server-only client with a process-local TTL cache and typed errors.
-- Watch page with the official YouTube embed, video metadata and description, favourite and watch
-  later toggles, an add-to-playlist picker and related suggestions.
+- Next.js 16 App Router foundation with a responsive app shell (desktop sidebar, mobile bottom nav)
+  and the Midnight Purple "Aperture" brand mark.
+- YouTube discovery: home with trending, category rows and local recommendation shelves built from
+  your own history and favourites; paginated search with duration, upload-date and sort filters;
+  category pages and channel pages at `/channel/[id]`.
+- Watch page with the official YouTube embed, a YouTube-style layout (player column plus sticky Up
+  next rail), channel card, expandable description and read-only YouTube comments.
+- Premium watch experience: theater mode with an ambient backdrop, audio-first listen mode,
+  keyboard shortcuts with an accessible overlay, clickable timestamps and a chapters list, resume
+  playback with progress bars, a local queue with reorder/shuffle and a sleep timer, Up next
+  autoplay (default off), and fullscreen.
+- A persistent mini-player that keeps playing while you browse the rest of the app.
+- Local notes and timestamped highlights per video, in tabs next to YouTube comments and distinct
+  from them.
 - Library at `/library` with four URL-backed tabs — Favourites, Watch later, History and Playlists —
-  plus playlist creation and a detail route at `/library/playlists/[playlistId]`.
-- History is written from the player on the first playback of a video, with per-entry remove and
-  clear-all controls on the History tab.
+  a Continue Watching shelf, playlist creation and a detail route at
+  `/library/playlists/[playlistId]`.
 - Watch statistics at `/library/stats`: estimated watch time, top channels, the current streak and a
-  12-week activity heatmap, read from the local history.
+  12-week activity heatmap, read from local history.
+- Versioned JSON backup and restore at `/library/backup` for favourites, watch later, history,
+  playlists, notes/highlights and progress, with a validated preview and merge-without-duplicates.
+- Command palette on `Ctrl/Cmd+K` for search, navigation, library tabs and copy-link.
 - Keyless watch page: when `YOUTUBE_API_KEY` is missing, `/watch/[videoId]` renders an authored
   "YouTube is not configured" setup state that names the variable, instead of the player or the
   error boundary. The tab title stays neutral.
-- SQLite + Drizzle ORM: schema for favourites, watch later, history, playlists and playlist items,
-  plus a `settings` key/value table that holds the sweep marker; generated migrations, Server
-  Actions for the save, history and playlist writes, and a server-only database client.
+- SQLite + Drizzle ORM: schema for favourites, watch later, history, playlists, playlist items,
+  notes/highlights and playback progress, plus a `settings` key/value table; migrations `0000`-`0005`,
+  Server Actions for writes, and a server-only database client. An out-of-date database renders an
+  authored "Database needs updating" state instead of a SQLite error.
 - Server-only environment module that reads the YouTube API key and fails with a named error when it
   is missing.
 - Vitest suite, plus lint, type-check and formatting checks.
 
 Not finished or not verified:
 
-- **Live YouTube calls.** No owner-supplied API key is available in this workspace, so the YouTube
-  client has only run against a stubbed `fetch`. Search, trending, video details and suggestions are
-  unverified against the real API.
+- **Live YouTube calls.** The client has been exercised against a real key locally, but this
+  repository ships no key, so the automated tests still stub `fetch`. Search, trending, video
+  details, comments, channels and playlist items are covered by request-shape tests.
+- **Picture-in-picture.** The official embed is a cross-origin iframe, so the browser PiP API has no
+  video element to take. Viewly ships fullscreen only; YouTube's own PiP control remains available
+  inside the player.
 - **Retention (T46) is lazy.** Saved metadata is refreshed by a 30-day sweep on the `/library`
   request path, not a background job. The first request where `settings.last_sweep_at` is missing or
   older than 30 days re-fetches every distinct saved video in batches of 50 and rewrites its title,
@@ -44,10 +57,14 @@ Not finished or not verified:
   can be older than 30 days while Viewly is closed. An upstream failure leaves every stored snapshot
   untouched, and the sweep is retried on the next request because the marker is only advanced at the
   end. See [`docs/YOUTUBE_DATA_POLICY.md`](docs/YOUTUBE_DATA_POLICY.md).
-- **Real-browser and player checks.** No browser or end-to-end test covers the embed, the save
-  controls or the library tabs; they are exercised only in jsdom. Made-for-Kids handling,
-  identifying the client to the player, card-level YouTube attribution and the Branding Guidelines
-  review are also open; see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+- **Real-browser and player checks.** A manual visual QA pass covers every route at 390, 768 and
+  1280 px, with live playback, client-side navigation and the mini-player verified in Chrome. There is
+  no automated end-to-end suite: jsdom tests still cover the save controls, player wiring and library
+  tabs. Made-for-Kids handling, identifying the client to the player, card-level YouTube attribution
+  and the Branding Guidelines review remain open; see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+- **Playlist item snapshots.** `playlist_items` stores playlist membership only, so item titles are
+  resolved at read time rather than stored (Known Gap #5 in
+  [`docs/YOUTUBE_DATA_POLICY.md`](docs/YOUTUBE_DATA_POLICY.md)).
 
 ## Requirements
 
