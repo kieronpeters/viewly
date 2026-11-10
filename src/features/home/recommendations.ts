@@ -59,6 +59,17 @@ export const MAX_TOP_CHANNELS = 2;
 /** How many of the oldest favourites the rediscovery shelf may search. */
 export const MAX_OLDEST_FAVOURITES = 2;
 
+/**
+ * Longest seed title the "because you watched" heading may show, in characters.
+ *
+ * Stored video titles are often far longer than a heading should be, and the
+ * full title would push the row heading across several lines at both narrow and
+ * wide viewports. Only the displayed heading is shortened: the search query and
+ * the cards keep the complete title, and the complete heading is still exposed
+ * to assistive tech through {@link RecommendationShelf.fullTitle}.
+ */
+export const RECOMMENDATION_SEED_TITLE_LIMIT = 60;
+
 /** Stable shelf identifiers; also used in DOM ids and React keys. */
 export type RecommendationShelfKind =
   "because-you-watched" | "top-channels" | "rediscover-favourites";
@@ -116,7 +127,21 @@ export interface RecommendationQuery {
 /** A shelf before candidate results are attached. */
 export interface RecommendationPlannedShelf {
   kind: RecommendationShelfKind;
+  /**
+   * Heading as displayed.
+   *
+   * For "because you watched", a long seed title is shortened here (and only
+   * here); every other field keeps the full title.
+   */
   title: string;
+  /**
+   * Complete heading text before any display truncation.
+   *
+   * Equal to {@link title} unless a seed title was shortened. The section uses
+   * it as the heading's accessible name, so assistive tech hears the full title
+   * instead of the ellipsis.
+   */
+  fullTitle: string;
   /** Short "why this row" label rendered under the heading. */
   reason: string;
   /** Query keys whose results feed this shelf, in display order. */
@@ -132,7 +157,10 @@ export interface RecommendationPlan {
 /** A rendered shelf: heading, reason label and its capped card list. */
 export interface RecommendationShelf {
   kind: RecommendationShelfKind;
+  /** Heading as displayed; a long "because you watched" seed is shortened. */
   title: string;
+  /** Complete heading text, used as the heading's accessible name. */
+  fullTitle: string;
   reason: string;
   videos: VideoSummary[];
 }
@@ -218,9 +246,14 @@ export function planRecommendationShelves(seeds: RecommendationSeeds): Recommend
     const queryKey = addQuery(seeds.recentView.title) ?? addQuery(seeds.recentView.channelTitle);
 
     if (queryKey !== null) {
+      const fullTitle =
+        title === "" ? "Because you watched a recent video" : `Because you watched ${title}`;
+      const heading = title === "" ? fullTitle : `Because you watched ${truncateSeedTitle(title)}`;
+
       shelves.push({
         kind: "because-you-watched",
-        title: title === "" ? "Because you watched a recent video" : `Because you watched ${title}`,
+        title: heading,
+        fullTitle,
         reason: "Based on your most recent view",
         queryKeys: [queryKey],
       });
@@ -236,9 +269,12 @@ export function planRecommendationShelves(seeds: RecommendationSeeds): Recommend
   }
 
   if (channelQueryKeys.length > 0) {
+    const heading = "More from your top channels";
+
     shelves.push({
       kind: "top-channels",
-      title: "More from your top channels",
+      title: heading,
+      fullTitle: heading,
       reason: `Channels you watch most: ${seeds.topChannels.join(", ")}`,
       queryKeys: channelQueryKeys,
     });
@@ -255,9 +291,12 @@ export function planRecommendationShelves(seeds: RecommendationSeeds): Recommend
     }
 
     if (favouriteQueryKeys.length > 0) {
+      const heading = "Rediscover your favourites";
+
       shelves.push({
         kind: "rediscover-favourites",
-        title: "Rediscover your favourites",
+        title: heading,
+        fullTitle: heading,
         reason:
           seeds.oldestFavourites.length === 1
             ? "Close to your oldest saved favourite"
@@ -347,6 +386,7 @@ export function assembleRecommendationShelves(
       shelves.push({
         kind: planned.kind,
         title: planned.title,
+        fullTitle: planned.fullTitle,
         reason: planned.reason,
         videos,
       });
@@ -519,6 +559,33 @@ function clampSearchQuery(query: string): string {
 /** Trimmed title, or the channel when the title is blank. */
 function displayTitle(title: string, channelTitle: string): string {
   return normalizeQuery(title) || normalizeQuery(channelTitle);
+}
+
+/**
+ * Shortens a seed title for the heading, cutting on a word boundary.
+ *
+ * `limit` is the maximum number of characters kept from the title; the ellipsis
+ * is added on top. A single word longer than the limit is cut at the limit,
+ * because there is no boundary to prefer. The result never splits a surrogate
+ * pair, since the cut is made over code points rather than UTF-16 units.
+ *
+ * This is display-only: the caller still searches with the complete title.
+ */
+export function truncateSeedTitle(
+  title: string,
+  limit: number = RECOMMENDATION_SEED_TITLE_LIMIT,
+): string {
+  const text = normalizeQuery(title);
+  if (text.length <= limit) {
+    return text;
+  }
+
+  const max = Math.max(1, Math.trunc(limit));
+  const head = Array.from(text).slice(0, max).join("");
+  const boundary = head.lastIndexOf(" ");
+  const clipped = (boundary > 0 ? head.slice(0, boundary) : head).trimEnd();
+
+  return `${clipped}…`;
 }
 
 /**

@@ -70,7 +70,12 @@ export async function RecommendationShelfSection({ kind }: RecommendationShelfSe
   const titleId = `home-${kind}-heading`;
 
   return (
-    <VideoRowSection title={shelf.title} titleId={titleId} reason={shelf.reason}>
+    <VideoRowSection
+      title={shelf.title}
+      accessibleTitle={shelf.fullTitle}
+      titleId={titleId}
+      reason={shelf.reason}
+    >
       <VideoRow labelledBy={titleId} videos={shelf.videos} />
     </VideoRowSection>
   );

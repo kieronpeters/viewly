@@ -1,4 +1,17 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+
+/**
+ * Document title for the root 404.
+ *
+ * The root `app/not-found.tsx` supports a `metadata` export in this Next
+ * version, so the title is set on the server rather than with a client-side
+ * `document.title` effect. `absolute` keeps the full string intact if a title
+ * template is ever added to a parent segment.
+ */
+export const metadata: Metadata = {
+  title: { absolute: "Page not found · Viewly" },
+};
 
 /**
  * Root 404 UI. Rendered for `notFound()` calls and unmatched routes inside the

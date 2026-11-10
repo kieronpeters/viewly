@@ -19,11 +19,13 @@ import {
   MAX_OLDEST_FAVOURITES,
   MAX_TOP_CHANNELS,
   RECOMMENDATION_CANDIDATE_LIMIT,
+  RECOMMENDATION_SEED_TITLE_LIMIT,
   RECOMMENDATION_SHELF_LIMIT,
   assembleRecommendationShelves,
   loadRecommendationShelves,
   planRecommendationShelves,
   selectRecommendationSeeds,
+  truncateSeedTitle,
   type RecommendationPlan,
   type RecommendationSave,
   type RecommendationSeeds,
@@ -202,6 +204,7 @@ describe("planRecommendationShelves", () => {
       "rediscover-favourites",
     ]);
     expect(plan.shelves[0]?.title).toBe("Because you watched Recent Video");
+    expect(plan.shelves[0]?.fullTitle).toBe("Because you watched Recent Video");
     expect(plan.shelves[0]?.reason).not.toBe("");
     expect(plan.shelves[1]?.title).toBe("More from your top channels");
     expect(plan.shelves[1]?.queryKeys).toHaveLength(2);
@@ -252,8 +255,9 @@ describe("planRecommendationShelves", () => {
     expect(plan.shelves[0]?.reason).toBe("Close to your oldest saved favourites");
   });
 
-  it("truncates a long title to the client's query limit but keeps the heading", () => {
-    const longTitle = "A".repeat(MAX_SEARCH_QUERY_LENGTH + 20);
+  it("truncates a long seed title in the heading at a word boundary", () => {
+    const longTitle =
+      "A Very Long Video Title That Keeps Going And Going Well Past The Heading Limit For Sure";
 
     const plan = planRecommendationShelves(
       seeds({
@@ -261,8 +265,46 @@ describe("planRecommendationShelves", () => {
       }),
     );
 
+    const heading = plan.shelves[0]?.title ?? "";
+    const seed = heading.replace(/^Because you watched /, "");
+
+    expect(longTitle.length).toBeGreaterThan(RECOMMENDATION_SEED_TITLE_LIMIT);
+    expect(seed).not.toBe(longTitle);
+    expect(seed.endsWith("…")).toBe(true);
+    // The shortened seed is a whole-word prefix of the full title.
+    expect(longTitle.startsWith(seed.slice(0, -1))).toBe(true);
+    expect(longTitle.charAt(seed.length - 1)).toBe(" ");
+    expect(seed.length - 1).toBeLessThanOrEqual(RECOMMENDATION_SEED_TITLE_LIMIT);
+    // Only the heading is shortened: the query and accessible heading are full.
+    expect(plan.queries[0]?.query).toBe(longTitle);
+    expect(plan.shelves[0]?.fullTitle).toBe(`Because you watched ${longTitle}`);
+  });
+
+  it("hard-cuts a single word that has no word boundary, and clamps the query", () => {
+    const longWord = "A".repeat(MAX_SEARCH_QUERY_LENGTH + 20);
+
+    const plan = planRecommendationShelves(
+      seeds({
+        recentView: view("recent00001", "Channel", DAY_MS, { title: longWord }),
+      }),
+    );
+
     expect(plan.queries[0]?.query).toHaveLength(MAX_SEARCH_QUERY_LENGTH);
-    expect(plan.shelves[0]?.title).toContain(longTitle);
+    expect(plan.shelves[0]?.title).toBe(
+      `Because you watched ${"A".repeat(RECOMMENDATION_SEED_TITLE_LIMIT)}…`,
+    );
+  });
+
+  it("leaves a short seed title untouched in the heading", () => {
+    const plan = planRecommendationShelves(
+      seeds({
+        recentView: view("recent00001", "Channel", DAY_MS, { title: "A Short Title" }),
+      }),
+    );
+
+    expect(plan.shelves[0]?.title).toBe("Because you watched A Short Title");
+    expect(plan.shelves[0]?.title).not.toContain("…");
+    expect(plan.shelves[0]?.fullTitle).toBe(plan.shelves[0]?.title);
   });
 
   it("uses the stored title verbatim in the heading and query", () => {
@@ -279,6 +321,7 @@ describe("planRecommendationShelves", () => {
     expect(plan.shelves[0]?.title).toBe(
       "Because you watched Don't Let The Humans Into The Bar &amp; Grill",
     );
+    expect(plan.shelves[0]?.fullTitle).toBe(plan.shelves[0]?.title);
     expect(plan.queries[0]?.query).toBe("Don't Let The Humans Into The Bar &amp; Grill");
   });
 
@@ -291,6 +334,7 @@ describe("planRecommendationShelves", () => {
 
     expect(plan.shelves).toHaveLength(1);
     expect(plan.shelves[0]?.title).toBe("Because you watched Fallback Channel");
+    expect(plan.shelves[0]?.fullTitle).toBe("Because you watched Fallback Channel");
     expect(plan.queries[0]?.query).toBe("Fallback Channel");
   });
 
@@ -308,6 +352,22 @@ describe("planRecommendationShelves", () => {
   });
 });
 
+describe("truncateSeedTitle", () => {
+  it("returns a short title unchanged, without an ellipsis", () => {
+    expect(truncateSeedTitle("A Short Title")).toBe("A Short Title");
+  });
+
+  it("does not split a surrogate pair when hard-cutting", () => {
+    const emojiWord = "😀".repeat(RECOMMENDATION_SEED_TITLE_LIMIT + 5);
+
+    const truncated = truncateSeedTitle(emojiWord);
+
+    expect(Array.from(truncated)).toHaveLength(RECOMMENDATION_SEED_TITLE_LIMIT + 1);
+    expect(truncated.endsWith("…")).toBe(true);
+    expect(truncated).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+});
+
 describe("assembleRecommendationShelves", () => {
   const plan: RecommendationPlan = {
     queries: [
@@ -319,18 +379,21 @@ describe("assembleRecommendationShelves", () => {
       {
         kind: "because-you-watched",
         title: "Because you watched Something",
+        fullTitle: "Because you watched Something",
         reason: "Recent",
         queryKeys: ["a"],
       },
       {
         kind: "top-channels",
         title: "More from your top channels",
+        fullTitle: "More from your top channels",
         reason: "Channels",
         queryKeys: ["b"],
       },
       {
         kind: "rediscover-favourites",
         title: "Rediscover your favourites",
+        fullTitle: "Rediscover your favourites",
         reason: "Oldest",
         queryKeys: ["c"],
       },
@@ -367,6 +430,7 @@ describe("assembleRecommendationShelves", () => {
           {
             kind: "top-channels",
             title: "More from your top channels",
+            fullTitle: "More from your top channels",
             reason: "Channels",
             queryKeys: ["a", "b"],
           },
@@ -398,6 +462,7 @@ describe("assembleRecommendationShelves", () => {
           {
             kind: "because-you-watched",
             title: "Because you watched Something",
+            fullTitle: "Because you watched Something",
             reason: "Recent",
             queryKeys: ["a"],
           },
@@ -449,6 +514,7 @@ describe("assembleRecommendationShelves", () => {
           {
             kind: "because-you-watched",
             title: "Because you watched Something",
+            fullTitle: "Because you watched Something",
             reason: "Recent",
             queryKeys: ["a"],
           },
