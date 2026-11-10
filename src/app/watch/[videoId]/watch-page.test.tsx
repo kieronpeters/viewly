@@ -10,8 +10,8 @@ const {
   isVideoFavouriteMock,
   isInWatchLaterMock,
   listPlaylistsMock,
-  listVideoNotesMock,
-  getVideoProgressMock,
+  readVideoNotesMock,
+  readVideoProgressMock,
 } = vi.hoisted(() => ({
   getVideoMock: vi.fn(),
   getChannelMock: vi.fn(),
@@ -22,8 +22,8 @@ const {
   isVideoFavouriteMock: vi.fn(),
   isInWatchLaterMock: vi.fn(),
   listPlaylistsMock: vi.fn(),
-  listVideoNotesMock: vi.fn(),
-  getVideoProgressMock: vi.fn(),
+  readVideoNotesMock: vi.fn(),
+  readVideoProgressMock: vi.fn(),
 }));
 
 // `server-only` throws outside a Server Component graph; Vitest is not one.
@@ -54,12 +54,12 @@ vi.mock("@/features/library/actions", () => ({
   toggleFavourite: vi.fn(),
   toggleWatchLater: vi.fn(),
 }));
-// The notes panel is seeded from a local database read; stub both halves so no
+// The notes panel is seeded from a guarded local database read; stub it so no
 // file is opened and the actions never run.
-vi.mock("@/features/notes", () => ({ listVideoNotes: listVideoNotesMock }));
+vi.mock("@/features/notes", () => ({ readVideoNotes: readVideoNotesMock }));
 // Progress is a server-only read; stub it so no test opens the database file.
 vi.mock("@/features/progress/progress-data", () => ({
-  getVideoProgress: getVideoProgressMock,
+  readVideoProgress: readVideoProgressMock,
 }));
 vi.mock("@/features/notes/actions", () => ({
   addNote: vi.fn(),
@@ -169,10 +169,10 @@ describe("WatchPageContent", () => {
     listPlaylistsMock.mockReturnValue([
       { id: "playlist-road-trip", name: "Road trip", itemCount: 2 },
     ]);
-    listVideoNotesMock.mockReset();
-    listVideoNotesMock.mockReturnValue([]);
-    getVideoProgressMock.mockReset();
-    getVideoProgressMock.mockReturnValue(null);
+    readVideoNotesMock.mockReset();
+    readVideoNotesMock.mockReturnValue({ status: "ok", value: [] });
+    readVideoProgressMock.mockReset();
+    readVideoProgressMock.mockReturnValue({ status: "ok", value: null });
   });
 
   it("renders the title and channel for a valid video", async () => {
@@ -673,6 +673,63 @@ describe("when YOUTUBE_API_KEY is missing", () => {
   });
 });
 
+describe("WatchPageContent database guard", () => {
+  beforeEach(() => {
+    getVideoMock.mockReset();
+    getVideoMock.mockResolvedValue(VIDEO);
+    getChannelMock.mockReset();
+    getChannelMock.mockResolvedValue(null);
+    isVideoFavouriteMock.mockReset();
+    isVideoFavouriteMock.mockReturnValue(false);
+    isInWatchLaterMock.mockReset();
+    isInWatchLaterMock.mockReturnValue(false);
+    listPlaylistsMock.mockReset();
+    listPlaylistsMock.mockReturnValue([]);
+    readVideoNotesMock.mockReset();
+    readVideoNotesMock.mockReturnValue({ status: "ok", value: [] });
+    readVideoProgressMock.mockReset();
+    readVideoProgressMock.mockReturnValue({ status: "ok", value: null });
+  });
+
+  it("renders the authored update state when the progress table is missing", async () => {
+    readVideoProgressMock.mockReturnValue({ status: "database_needs_update" });
+
+    const { container } = render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Database needs updating" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("npm run db:migrate")).toBeInTheDocument();
+    // The raw SQLite failure never reaches the HTML.
+    expect(container.innerHTML).not.toContain("no such table");
+    expect(container.innerHTML).not.toContain("SQLITE");
+    expect(screen.queryByRole("region", { name: "Video player" })).toBeNull();
+    expect(notFoundMock).not.toHaveBeenCalled();
+  });
+
+  it("renders the same state when the notes table is missing", async () => {
+    readVideoNotesMock.mockReturnValue({ status: "database_needs_update" });
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Database needs updating" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("npm run db:migrate")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Video player" })).toBeNull();
+  });
+
+  it("still throws a failure that is not a missing table", async () => {
+    readVideoProgressMock.mockImplementation(() => {
+      throw new Error("disk I/O error");
+    });
+
+    await expect(WatchPageContent({ params: paramsFor(VIDEO_ID) })).rejects.toThrow(
+      "disk I/O error",
+    );
+  });
+});
+
 describe("WatchPageContent resume prompt", () => {
   beforeEach(() => {
     getVideoMock.mockReset();
@@ -685,27 +742,30 @@ describe("WatchPageContent resume prompt", () => {
     isInWatchLaterMock.mockReturnValue(false);
     listPlaylistsMock.mockReset();
     listPlaylistsMock.mockReturnValue([]);
-    listVideoNotesMock.mockReset();
-    listVideoNotesMock.mockReturnValue([]);
-    getVideoProgressMock.mockReset();
+    readVideoNotesMock.mockReset();
+    readVideoNotesMock.mockReturnValue({ status: "ok", value: [] });
+    readVideoProgressMock.mockReset();
   });
 
   it("shows the resume prompt for a stored position in range", async () => {
-    getVideoProgressMock.mockReturnValue({
-      videoId: VIDEO_ID,
-      positionSeconds: 60,
-      durationSeconds: 200,
-      updatedAt: "2026-01-01T00:00:00.000Z",
+    readVideoProgressMock.mockReturnValue({
+      status: "ok",
+      value: {
+        videoId: VIDEO_ID,
+        positionSeconds: 60,
+        durationSeconds: 200,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
     });
 
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
 
-    expect(getVideoProgressMock).toHaveBeenCalledWith(VIDEO_ID);
+    expect(readVideoProgressMock).toHaveBeenCalledWith(VIDEO_ID);
     expect(screen.getByRole("button", { name: "Resume from 1:00" })).toBeInTheDocument();
   });
 
   it("shows no prompt when the video has no saved progress", async () => {
-    getVideoProgressMock.mockReturnValue(null);
+    readVideoProgressMock.mockReturnValue({ status: "ok", value: null });
 
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
 

@@ -1,11 +1,24 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
+}));
+
+// The real image and link components read the clock for their loader/prefetch
+// internals, which would confuse the render-clock assertion below. The queue
+// only needs a plain anchor and image with the stored values.
+vi.mock("next/image", () => ({
+  default: ({ src }: { src: string }) => <span data-src={src} />,
+}));
+vi.mock("next/link", () => ({
+  default: ({ href, children }: { href: string; children: ReactNode }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 
 import type { VideoSummary } from "@/shared/types";
@@ -82,6 +95,22 @@ afterEach(() => {
 });
 
 describe("WatchQueue rendering", () => {
+  it("does not read the clock during the first render", () => {
+    enqueue(video(1), video(2));
+
+    const nowSpy = vi.spyOn(Date, "now");
+
+    try {
+      renderQueue();
+
+      // Countdown state starts at `null`; the first render must not sample the
+      // clock, because Next rejects that while prerendering the watch route.
+      expect(nowSpy).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("shows an authored empty state with disabled destructive actions", () => {
     renderQueue();
 

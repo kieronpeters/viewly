@@ -12,7 +12,7 @@
  * and highlights in one row shape: a `null` timestamp is a free-text note, a
  * number is a highlight anchored to that playback position.
  */
-export { listVideoHighlights, listVideoNotes } from "./notes-data";
+export { listVideoHighlights, listVideoNotes, readVideoNotes } from "./notes-data";
 export {
   formatNoteTimestamp,
   noteFromRow,

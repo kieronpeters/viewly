@@ -16,8 +16,15 @@ export const SLEEP_TIMER_DEFAULT_MINUTES = 15;
 /** Milliseconds in one minute. */
 const MS_PER_MINUTE = 60_000;
 
-/** Converts a picked duration in minutes to a deadline from `now`. */
-export function sleepTimerDeadline(minutes: number, now: number = Date.now()): number {
+/**
+ * Converts a picked duration in minutes to a deadline from `now`.
+ *
+ * `now` is required rather than defaulted to `Date.now()`: a default parameter
+ * is evaluated on every call, so a caller that reached this during render
+ * would read the clock while Next is prerendering. The caller owns the clock
+ * and passes a value it read in an event handler or an effect.
+ */
+export function sleepTimerDeadline(minutes: number, now: number): number {
   return now + Math.max(0, minutes) * MS_PER_MINUTE;
 }
 
@@ -25,9 +32,11 @@ export function sleepTimerDeadline(minutes: number, now: number = Date.now()): n
  * Whole seconds left until `deadline`.
  *
  * Rounds up so a fresh one-minute timer reads `1:00` rather than `0:59`, and
- * never returns a negative value. An unusable deadline reads as zero.
+ * never returns a negative value. An unusable deadline reads as zero. Like
+ * {@link sleepTimerDeadline}, the clock is supplied by the caller so no
+ * render path can read it implicitly.
  */
-export function sleepTimerRemainingSeconds(deadline: number, now: number = Date.now()): number {
+export function sleepTimerRemainingSeconds(deadline: number, now: number): number {
   if (!Number.isFinite(deadline) || !Number.isFinite(now)) {
     return 0;
   }

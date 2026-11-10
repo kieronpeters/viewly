@@ -443,9 +443,8 @@ export function YoutubePlayer({
 
       <div className="flex flex-wrap items-center gap-2">
         {/*
-          Fullscreen and picture-in-picture share the code path with the
-          keyboard shortcuts: the box passed here is the same fullscreen
-          target `F` uses.
+          The fullscreen control shares the code path with the keyboard
+          shortcut: the box passed here is the same fullscreen target `F` uses.
         */}
         <PlayerControls getContainer={getContainer} />
 

@@ -74,6 +74,25 @@ describe("RecommendationShelfSection", () => {
     );
   });
 
+  it("renders an apostrophe in the shelf heading as plain text", async () => {
+    getRecommendationShelvesMock.mockResolvedValue([
+      {
+        ...BECAUSE_SHELF,
+        title: "Because you watched Don't Let The Humans Into The Bar",
+      },
+    ]);
+
+    render(await RecommendationShelfSection({ kind: "because-you-watched" }));
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Because you watched Don't Let The Humans Into The Bar",
+        level: 2,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/&#39;/)).not.toBeInTheDocument();
+  });
+
   it("renders only its own shelf, never a sibling's", async () => {
     getRecommendationShelvesMock.mockResolvedValue([BECAUSE_SHELF, TOP_CHANNELS_SHELF]);
 

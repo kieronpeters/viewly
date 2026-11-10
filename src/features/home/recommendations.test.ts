@@ -265,6 +265,23 @@ describe("planRecommendationShelves", () => {
     expect(plan.shelves[0]?.title).toContain(longTitle);
   });
 
+  it("uses the stored title verbatim in the heading and query", () => {
+    const plan = planRecommendationShelves(
+      seeds({
+        recentView: view("recent00001", "Channel", DAY_MS, {
+          title: "Don't Let The Humans Into The Bar &amp; Grill",
+        }),
+      }),
+    );
+
+    // The library stores the title after normalization. Planning must not decode
+    // it again, or a source "&amp;amp;" would lose its remaining entity.
+    expect(plan.shelves[0]?.title).toBe(
+      "Because you watched Don't Let The Humans Into The Bar &amp; Grill",
+    );
+    expect(plan.queries[0]?.query).toBe("Don't Let The Humans Into The Bar &amp; Grill");
+  });
+
   it("falls back to the channel when a video title is blank", () => {
     const plan = planRecommendationShelves(
       seeds({

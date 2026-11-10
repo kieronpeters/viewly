@@ -12,6 +12,7 @@ import "server-only";
  * The repository stays the single query layer: nothing here builds SQL by hand.
  */
 import { getDb } from "@/lib/db/client";
+import { readDatabase, type DatabaseRead } from "@/lib/db/read-state";
 import { createProgressRepository } from "@/lib/db/repositories/progress.repository";
 import { isVideoId } from "@/shared/validation";
 
@@ -26,6 +27,17 @@ export function getVideoProgress(videoId: string): VideoProgress | null {
   const row = createProgressRepository(getDb()).get(videoId);
 
   return row === undefined ? null : progressFromRow(row);
+}
+
+/**
+ * Guarded form of {@link getVideoProgress} for the watch page.
+ *
+ * A database that predates the progress migration reports `no such table:
+ * video_progress`; the page renders an authored setup state for that instead of
+ * letting a raw SQLite error become a 500.
+ */
+export function readVideoProgress(videoId: string): DatabaseRead<VideoProgress | null> {
+  return readDatabase(() => getVideoProgress(videoId));
 }
 
 /**

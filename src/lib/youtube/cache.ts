@@ -84,8 +84,15 @@ export const YOUTUBE_CACHE_TTLS_MS = {
 export interface TtlCacheOptions {
   /** Maximum number of live entries; must be a positive integer. */
   maxEntries?: number;
-  /** Clock, injectable for tests. Defaults to `Date.now`. */
-  now?: () => number;
+  /**
+   * Clock, supplied by the caller and read only when the cache is used.
+   *
+   * It is deliberately not defaulted here. A module-level default such as
+   * `() => Date.now()` makes the cache capable of reading a guarded clock while
+   * Next is prerendering, which aborts the render. The server client supplies a
+   * request-safe clock (see `src/lib/youtube/client.ts`); tests pass their own.
+   */
+  now: () => number;
 }
 
 /** A stored value plus the instant after which it must not be served. */
@@ -112,13 +119,13 @@ export interface Cache {
  * back of the insertion-ordered `Map`, and the front is dropped when the bound
  * is reached.
  */
-export function createTtlCache(options: TtlCacheOptions = {}): Cache {
+export function createTtlCache(options: TtlCacheOptions): Cache {
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   if (!Number.isInteger(maxEntries) || maxEntries < 1) {
     throw new RangeError("TtlCache maxEntries must be a positive integer.");
   }
 
-  const now = options.now ?? (() => Date.now());
+  const now = options.now;
   const entries = new Map<string, CacheEntry>();
   const inFlight = new Map<string, Promise<unknown>>();
 

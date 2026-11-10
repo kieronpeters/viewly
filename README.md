@@ -191,6 +191,11 @@ on x64 and arm64; npm may skip install scripts, and that is fine.
 **Port 3000 is already in use.** Use `npm run dev -- --port 3001` and open
 <http://localhost:3001>, or stop the process holding port 3000.
 
+**The watch page says "Database needs updating".** The SQLite file predates the current migrations — for
+example a v0.1.0 file without the `video_progress` and `video_notes` tables. Run
+`npm run db:migrate` in the project root, then reload the page. The update only adds missing tables and
+keeps your saved data. Viewly never runs migrations from a request.
+
 **The database is in a bad state.** Delete `data/viewly.db` (and any `-wal` / `-shm` files), then
 run `npm run db:migrate`. This discards all local data.
 

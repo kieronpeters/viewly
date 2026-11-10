@@ -174,11 +174,32 @@ const REGION_CODE_PATTERN = /^[A-Za-z]{2}$/;
 const SAFE_REASON_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 
 /**
+ * Clock for the process-local request cache.
+ *
+ * TTLs are durations, so any monotonic source is enough. Next.js guards
+ * `Date.now()` (and zero-argument `new Date()`) while prerendering to catch
+ * render-time clock reads, and a cache write in that window would abort the
+ * render. `performance` is explicitly not guarded, so a Next server uses it.
+ * Vitest runs outside a Next runtime (`NEXT_RUNTIME` is unset), where the wall
+ * clock keeps the cache's fake-timer tests working unchanged.
+ */
+function cacheClock(): number {
+  if (process.env.NEXT_RUNTIME === undefined) {
+    return Date.now();
+  }
+
+  return performance.timeOrigin + performance.now();
+}
+
+/**
  * Process-wide request cache. One instance per server process; bounded by
  * `DEFAULT_MAX_ENTRIES` (200) with LRU eviction, so it can never grow without
  * limit. Holds normalized domain values only, for their TTL (60 s to 24 h).
+ *
+ * The cache owns no clock: this caller supplies one that stays safe if a read
+ * happens during a prerender.
  */
-const requestCache: Cache = createTtlCache();
+const requestCache: Cache = createTtlCache({ now: cacheClock });
 
 /**
  * Empties the request cache. Test and debugging helper only: production code

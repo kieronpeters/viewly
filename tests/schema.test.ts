@@ -252,7 +252,7 @@ describe("library schema migration", () => {
           count: number;
         }
       ).count,
-    ).toBe(5);
+    ).toBe(6);
 
     // Existing data survived, so the schema was not recreated.
     expect(

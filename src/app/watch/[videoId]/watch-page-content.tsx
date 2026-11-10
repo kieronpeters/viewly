@@ -10,8 +10,10 @@ import { PlaylistPicker } from "@/features/library/playlist-picker";
 import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
 import { videoSnapshotFromVideo } from "@/features/library/video-snapshot";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
-import { getVideoProgress } from "@/features/progress/progress-data";
+import { readVideoNotes, type VideoNote } from "@/features/notes";
+import { readVideoProgress } from "@/features/progress/progress-data";
 import type { VideoProgress } from "@/features/progress/progress";
+import { readDatabase } from "@/lib/db/read-state";
 import type { ChannelDetail, VideoDetail } from "@/shared/types";
 
 import { CopyLinkButton } from "./copy-link-button";
@@ -20,6 +22,7 @@ import { readWatchChannel } from "./read-watch-channel";
 import { readWatchVideo } from "./read-watch-video";
 import { WatchChannelCard } from "./watch-channel-card";
 import { WatchConfigurationState } from "./watch-configuration-state";
+import { WatchDatabaseState } from "./watch-database-state";
 import { WatchDescription } from "./watch-description";
 import { WatchDiscussion } from "./watch-discussion";
 import { WatchPlayerColumn } from "./watch-player-column";
@@ -67,12 +70,36 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
 
   // Read behind the page's `<Suspense>` boundary, next to `params`, so the
   // static shell can prerender while the saved state resolves per request.
-  const isFavourite = isVideoFavourite(video.id);
-  const inWatchLater = isInWatchLater(video.id);
-  const playlists = listPlaylists();
-  // Local playback position for the resume prompt (T68), read per request
-  // beside the other SQLite reads.
-  const progress = getVideoProgress(video.id);
+  //
+  // Every local read goes through the missing-table guard: an older database
+  // file is an authored setup state, not a raw SQLite 500. The technical error
+  // never leaves `readDatabase`; the component below renders fixed copy.
+  const progressRead = readVideoProgress(video.id);
+
+  if (progressRead.status === "database_needs_update") {
+    return <WatchDatabaseState />;
+  }
+
+  const notesRead = readVideoNotes(video.id);
+
+  if (notesRead.status === "database_needs_update") {
+    return <WatchDatabaseState />;
+  }
+
+  const savedRead = readDatabase(() => ({
+    isFavourite: isVideoFavourite(video.id),
+    inWatchLater: isInWatchLater(video.id),
+    playlists: listPlaylists(),
+  }));
+
+  if (savedRead.status === "database_needs_update") {
+    return <WatchDatabaseState />;
+  }
+
+  const progress = progressRead.value;
+  const notes = notesRead.value;
+  const { isFavourite, inWatchLater, playlists } = savedRead.value;
+
   // Optional enrichment: null on any failure, never thrown (T74).
   const channel = await readWatchChannel(video.channelId);
 
@@ -84,6 +111,7 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
       inWatchLater={inWatchLater}
       playlists={playlists}
       progress={progress}
+      notes={notes}
     />
   );
 }
@@ -104,6 +132,8 @@ export interface WatchVideoDetailProps {
   playlists: readonly PlaylistOption[];
   /** Local playback progress, or null when the video was never started. */
   progress: VideoProgress | null;
+  /** Local notes already read by the page's guarded boundary. */
+  notes: readonly VideoNote[];
 }
 
 /**
@@ -136,6 +166,7 @@ export function WatchVideoDetail({
   inWatchLater,
   playlists,
   progress,
+  notes,
 }: WatchVideoDetailProps) {
   return (
     <WatchTheaterProvider>
@@ -221,7 +252,7 @@ export function WatchVideoDetail({
           >
             <WatchDescription video={video} />
 
-            <WatchDiscussion videoId={video.id} />
+            <WatchDiscussion videoId={video.id} initialNotes={notes} />
           </WatchPlayerColumn>
         </WatchStageLayout>
       </article>

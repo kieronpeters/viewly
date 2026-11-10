@@ -214,6 +214,11 @@ export function WatchQueue({ currentVideoId, className }: WatchQueueProps) {
     router.push(`/watch/${autoplayTarget.id}`);
   }, [autoplayTarget, router]);
 
+  // Both countdowns below start at `null`, and the clock is read only inside
+  // effects and event handlers. That keeps the first render (and therefore the
+  // prerendered HTML) clock-free: Next rejects a `Date.now()` read while it is
+  // prerendering, so the remaining time is derived after mount instead.
+
   // The deadline drives the countdown; each tick recomputes from the clock so
   // background-tab throttling cannot make the timer drift or run backwards.
   useEffect(() => {
@@ -250,10 +255,13 @@ export function WatchQueue({ currentVideoId, className }: WatchQueueProps) {
   }, [sleepDeadline]);
 
   const startSleepTimer = useCallback(() => {
-    const deadline = sleepTimerDeadline(sleepMinutes);
+    // Event handlers are not part of the prerender, so the clock is read here
+    // and passed explicitly to the pure helpers.
+    const now = Date.now();
+    const deadline = sleepTimerDeadline(sleepMinutes, now);
 
     setSleepMessage(null);
-    setSleepRemainingMs(sleepTimerRemainingSeconds(deadline));
+    setSleepRemainingMs(sleepTimerRemainingSeconds(deadline, now));
     setSleepDeadline(deadline);
   }, [sleepMinutes]);
 

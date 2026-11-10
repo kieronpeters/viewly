@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DomainValidationError } from "@/shared/validation";
 import {
+  decodeHtmlEntities,
   normalizeChannelResponse,
   normalizeCommentThreadsResponse,
   normalizePlaylistItemsResponse,
@@ -94,6 +95,59 @@ function expectMalformed(run: () => unknown, field: string | null = null): void 
 function onlySearchItem(item: unknown) {
   return normalizeSearchResponse(searchPage([item])).items[0];
 }
+
+describe("decodeHtmlEntities", () => {
+  it("decodes the named entities YouTube emits", () => {
+    expect(decodeHtmlEntities("&amp; &lt; &gt; &quot; &#39; &#x27; &nbsp;")).toBe("& < > \" ' ' ");
+  });
+
+  it("decodes decimal and hexadecimal numeric references", () => {
+    expect(decodeHtmlEntities("DON&#39;T")).toBe("DON'T");
+    expect(decodeHtmlEntities("DON&#x27;T")).toBe("DON'T");
+    expect(decodeHtmlEntities("&#8217;")).toBe("\u2019");
+    expect(decodeHtmlEntities("&#x1F600;")).toBe("\u{1F600}");
+  });
+
+  it("decodes exactly once, even for pre-escaped source", () => {
+    expect(decodeHtmlEntities("&amp;amp;")).toBe("&amp;");
+    expect(decodeHtmlEntities("&amp;lt;")).toBe("&lt;");
+    expect(decodeHtmlEntities("&amp;#39;")).toBe("&#39;");
+  });
+
+  it("leaves a literal ampersand alone", () => {
+    expect(decodeHtmlEntities("Tom & Jerry")).toBe("Tom & Jerry");
+    expect(decodeHtmlEntities("R&D & something")).toBe("R&D & something");
+  });
+
+  it("leaves unknown or malformed entities untouched", () => {
+    for (const value of [
+      "&apos;",
+      "&copy;",
+      "&AMP;",
+      "&amp",
+      "&amp ;",
+      "&#xZZ;",
+      "&#;",
+      "&#0;",
+      "&#xD800;",
+      "&#99999999;",
+    ]) {
+      expect(decodeHtmlEntities(value)).toBe(value);
+    }
+  });
+
+  it("collapses decoded non-breaking spaces to one normal space", () => {
+    expect(decodeHtmlEntities("A&nbsp;&nbsp;B")).toBe("A B");
+    expect(decodeHtmlEntities("A&#160;&#xa0;B")).toBe("A B");
+    expect(decodeHtmlEntities("A &nbsp; B")).toBe("A B");
+    expect(decodeHtmlEntities("\u00a0\u00a0")).toBe(" ");
+  });
+
+  it("returns blank input unchanged", () => {
+    expect(decodeHtmlEntities("")).toBe("");
+    expect(decodeHtmlEntities("   ")).toBe("   ");
+  });
+});
 
 describe("normalizeSearchResponse", () => {
   it("maps a complete search item and leaves snippet-only fields null", () => {
@@ -204,6 +258,34 @@ describe("normalizeSearchResponse", () => {
 
       expect(onlySearchItem(item)).toBeUndefined();
     }
+  });
+
+  it("decodes HTML entities in the title and channel title exactly once", () => {
+    const summary = onlySearchItem(
+      searchItem({
+        snippet: snippet({
+          title: "DON&#39;T LET THE HUMANS IN &amp;amp; OUT",
+          channelTitle: "Mister &amp; Bbbi",
+        }),
+      }),
+    );
+
+    expect(summary?.title).toBe("DON'T LET THE HUMANS IN &amp; OUT");
+    expect(summary?.channelTitle).toBe("Mister & Bbbi");
+  });
+
+  it("collapses decoded non-breaking spaces and repeated spaces in a title", () => {
+    const summary = onlySearchItem(
+      searchItem({ snippet: snippet({ title: "  A&nbsp;&nbsp;B   C  " }) }),
+    );
+
+    expect(summary?.title).toBe("A B C");
+  });
+
+  it("leaves an unknown entity in a title untouched", () => {
+    expect(
+      onlySearchItem(searchItem({ snippet: snippet({ title: "Fish &copy; Chips" }) }))?.title,
+    ).toBe("Fish &copy; Chips");
   });
 
   it("trims the title and accepts exactly 300 characters", () => {
@@ -575,6 +657,36 @@ describe("normalizeVideoResponse", () => {
     }
   });
 
+  it("decodes entities in the title, channel title and description once", () => {
+    const detail = normalizeVideoResponse(
+      videoPage([
+        videoItem({
+          snippet: snippet({
+            title: "Mister &amp; Bbbi",
+            channelTitle: "Mister &amp;amp; Bbbi",
+            description: "Line &quot;one&quot;&nbsp;&nbsp;line two",
+          }),
+        }),
+      ]),
+    );
+
+    expect(detail?.title).toBe("Mister & Bbbi");
+    expect(detail?.channelTitle).toBe("Mister &amp; Bbbi");
+    expect(detail?.description).toBe('Line "one" line two');
+  });
+
+  it("keeps a literal ampersand and an unknown entity in a description", () => {
+    const detail = normalizeVideoResponse(
+      videoPage([
+        videoItem({
+          snippet: snippet({ description: "Tom & Jerry &copy; 2026" }),
+        }),
+      ]),
+    );
+
+    expect(detail?.description).toBe("Tom & Jerry &copy; 2026");
+  });
+
   it("keeps a description that is present", () => {
     const detail = normalizeVideoResponse(
       videoPage([videoItem({ snippet: snippet({ description: "  line one\nline two  " }) })]),
@@ -779,6 +891,26 @@ describe("normalizeCommentThreadsResponse", () => {
     });
   });
 
+  it("decodes textOriginal exactly once without stripping it as markup", () => {
+    const page = normalizeCommentThreadsResponse({
+      items: [
+        commentThread({
+          snippet: {
+            totalReplyCount: 0,
+            topLevelComment: {
+              id: "UgxComment",
+              snippet: commentSnippet({
+                textOriginal: "Fish &amp;amp; Chips &lt;3",
+              }),
+            },
+          },
+        }),
+      ],
+    });
+
+    expect(page.items[0]?.text).toBe("Fish &amp; Chips <3");
+  });
+
   it("drops threads without an id, author, body or timestamp", () => {
     const page = normalizeCommentThreadsResponse({
       items: [
@@ -869,6 +1001,25 @@ describe("normalizePlaylistItemsResponse", () => {
     ]);
   });
 
+  it("decodes entities in playlist item and channel titles", () => {
+    const video = normalizePlaylistItemsResponse(
+      playlistPage([
+        playlistItem({
+          snippet: {
+            publishedAt: "2026-01-02T03:04:05Z",
+            channelId: CHANNEL_ID,
+            title: "Because you watched Don&#39;t Let The Humans In",
+            channelTitle: "Mister &amp; Bbbi",
+            resourceId: { kind: "youtube#video", videoId: VIDEO_ID },
+          },
+        }),
+      ]),
+    )[0];
+
+    expect(video?.title).toBe("Because you watched Don't Let The Humans In");
+    expect(video?.channelTitle).toBe("Mister & Bbbi");
+  });
+
   it("falls back to snippet.resourceId and snippet.publishedAt", () => {
     const item = playlistItem({
       contentDetails: {},
@@ -957,6 +1108,22 @@ describe("normalizeChannelResponse", () => {
       description: "The official Rick Astley channel.",
       uploadsPlaylistId: "UUuAXFkgsw1L7xaCfnd5JJOw",
     });
+  });
+
+  it("decodes entities in the channel title and description once", () => {
+    const channel = normalizeChannelResponse(
+      channelPage([
+        channelItem({
+          snippet: {
+            title: "Mister &amp; Bbbi",
+            description: "Don&#39;t miss &amp;amp; subscribe",
+          },
+        }),
+      ]),
+    );
+
+    expect(channel?.title).toBe("Mister & Bbbi");
+    expect(channel?.description).toBe("Don't miss &amp; subscribe");
   });
 
   it("defaults a missing description to an empty string", () => {

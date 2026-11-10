@@ -22,6 +22,10 @@ import "server-only";
  * is the sweep; rows can therefore be older than 30 days while the app is
  * closed, which the documentation must state rather than claim otherwise.
  *
+ * The default clock is request-time: `connection()` is awaited before
+ * `new Date()` so Cache Components never sees a clock read while prerendering.
+ * A caller that supplies its own `now` has already crossed that boundary.
+ *
  * ## Failure behaviour
  *
  * A YouTube quota, transport or upstream failure must never break the library
@@ -38,6 +42,8 @@ import "server-only";
  * "Unavailable video" snapshot. Playlist items store ids only and are not
  * swept.
  */
+
+import { connection } from "next/server";
 
 import { getDb } from "@/lib/db/client";
 import {
@@ -93,7 +99,12 @@ export interface SweepDependencies {
   repository?: LibraryRepository;
   /** Batch fetch, defaulting to the real `getVideos`. */
   fetchVideos?: (ids: readonly string[]) => Promise<VideoSummary[]>;
-  /** Clock, defaulting to `new Date()`; lets tests fix the 30-day boundary. */
+  /**
+   * Clock, letting tests fix the 30-day boundary.
+   *
+   * When omitted, the sweep awaits the request boundary before reading
+   * `new Date()`. Supplying it means the caller already crossed that boundary.
+   */
   now?: () => Date;
 }
 
@@ -107,6 +118,14 @@ export interface SweepDependencies {
 export async function sweepLibraryMetadata(
   dependencies: SweepDependencies = {},
 ): Promise<SweepResult> {
+  // Keep the dynamic bailout outside the catch-all below: if this runs during a
+  // prerender, `connection()` must reach Next so the segment becomes
+  // request-time, not turn into a silently "failed" sweep. Existing callers
+  // that pass `now` skip it because they already crossed the boundary.
+  if (dependencies.now === undefined) {
+    await connection();
+  }
+
   let videoCount = 0;
 
   try {

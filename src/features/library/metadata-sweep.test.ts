@@ -9,7 +9,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { connectionMock } = vi.hoisted(() => ({ connectionMock: vi.fn() }));
+
 vi.mock("server-only", () => ({}));
+// The default clock path crosses the request boundary before reading the
+// clock. Tests that pass `now` never call it; the boundary test controls it.
+vi.mock("next/server", () => ({ connection: connectionMock }));
 
 import type { VideoSummary } from "@/shared/types";
 
@@ -28,6 +33,7 @@ const NOW = new Date("2026-11-10T12:00:00.000Z");
 let library: TestLibraryDatabase;
 
 beforeEach(() => {
+  connectionMock.mockReset();
   library = createTestLibraryDatabase();
 });
 
@@ -276,6 +282,53 @@ describe("sweepLibraryMetadata", () => {
     });
     expect(fetchVideos).not.toHaveBeenCalled();
     expect(library.repository.settings.get(LAST_SWEEP_AT_SETTING_KEY)).toBe(NOW.toISOString());
+  });
+});
+
+describe("request-time clock", () => {
+  it("awaits the dynamic boundary before reading the default clock", async () => {
+    const order: string[] = [];
+
+    connectionMock.mockImplementation(async () => {
+      order.push("connection");
+    });
+
+    // Record every `new Date()` without changing what it returns. `Date.now`
+    // is not used by this path, so the constructor is the read to guard.
+    const RealDate = Date;
+    const ClockDate = new Proxy(RealDate, {
+      construct(target, args) {
+        order.push("clock");
+        return Reflect.construct(target, args);
+      },
+    });
+
+    vi.stubGlobal("Date", ClockDate);
+
+    try {
+      const result = await sweepLibraryMetadata({
+        repository: library.repository,
+        fetchVideos: async () => [],
+      });
+
+      expect(result.status).toBe("completed");
+      expect(connectionMock).toHaveBeenCalledTimes(1);
+      expect(order[0]).toBe("connection");
+      expect(order.indexOf("clock")).toBeGreaterThan(0);
+      expect(order.indexOf("connection")).toBeLessThan(order.indexOf("clock"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not cross the boundary when the caller supplies the clock", async () => {
+    await sweepLibraryMetadata({
+      repository: library.repository,
+      fetchVideos: async () => [],
+      now: () => NOW,
+    });
+
+    expect(connectionMock).not.toHaveBeenCalled();
   });
 });
 

@@ -101,6 +101,16 @@ describe("VideoSuggestions up next selection", () => {
     expect(within(links[1]).queryByText("Up next")).toBeNull();
   });
 
+  it("renders the decoded suggestion title as plain text in the rail", () => {
+    const decoded = video(NEXT_ID, { title: "Don't Let The Humans Into The Bar" });
+
+    renderRail([decoded]);
+
+    const link = screen.getByRole("link", { name: `${decoded.title} — up next` });
+    expect(within(link).getByText(decoded.title)).toBeInTheDocument();
+    expect(within(link).queryByText(/&#39;/)).toBeNull();
+  });
+
   it("never offers the current video even if it reaches the rail", () => {
     renderRail([video(CURRENT_ID), NEXT_VIDEO]);
 

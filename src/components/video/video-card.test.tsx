@@ -22,6 +22,7 @@ vi.mock("@/features/library/playlist-actions", () => ({
 }));
 
 import { VideoCard } from "@/components/video/video-card";
+import { normalizeSearchResponse } from "@/shared/youtube";
 import type { VideoSummary } from "@/shared/types";
 
 /**
@@ -56,6 +57,33 @@ describe("VideoCard", () => {
     expect(within(link).getByText(VIDEO_FIXTURE.channelTitle)).toBeInTheDocument();
     expect(within(link).getByText("1.5M views")).toBeInTheDocument();
     expect(within(link).getByText("3:33")).toBeInTheDocument();
+  });
+
+  it("renders a normalized title containing an apostrophe as plain text", () => {
+    const page = normalizeSearchResponse({
+      items: [
+        {
+          id: { videoId: VIDEO_FIXTURE.id },
+          snippet: {
+            title: "DON&#39;T LET THE HUMANS IN",
+            channelId: VIDEO_FIXTURE.channelId,
+            channelTitle: "Mister &amp; Bbbi",
+            publishedAt: VIDEO_FIXTURE.publishedAt,
+            thumbnails: { high: { url: VIDEO_FIXTURE.thumbnailUrl } },
+          },
+        },
+      ],
+    });
+    const video = page.items[0]!;
+
+    render(<VideoCard video={video} />);
+
+    expect(
+      screen.getByRole("heading", { level: 3, name: "DON'T LET THE HUMANS IN" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("DON'T LET THE HUMANS IN")).toBeInTheDocument();
+    expect(screen.getByText("Mister & Bbbi")).toBeInTheDocument();
+    expect(screen.queryByText(/&#39;|&amp;/)).not.toBeInTheDocument();
   });
 
   it("does not nest interactive elements inside the link", () => {

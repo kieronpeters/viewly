@@ -11,6 +11,7 @@ import "server-only";
  * The repository is the only query layer: nothing here builds SQL by hand.
  */
 import { getDb } from "@/lib/db/client";
+import { readDatabase, type DatabaseRead } from "@/lib/db/read-state";
 import { createNotesRepository } from "@/lib/db/repositories/notes.repository";
 import { assertVideoId } from "@/shared/validation";
 
@@ -23,6 +24,17 @@ export function listVideoNotes(videoId: string): VideoNote[] {
   return createNotesRepository(getDb())
     .listForVideo(id)
     .map((row) => noteFromRow(row));
+}
+
+/**
+ * Guarded form of {@link listVideoNotes} for the watch page.
+ *
+ * A v0.1.0 database may not have the `video_notes` table yet. The page turns
+ * that into an authored "database needs updating" state rather than a raw
+ * SQLite 500.
+ */
+export function readVideoNotes(videoId: string): DatabaseRead<VideoNote[]> {
+  return readDatabase(() => listVideoNotes(videoId));
 }
 
 /**

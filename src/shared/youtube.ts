@@ -263,7 +263,7 @@ function toVideoSummary(rawItem: unknown): VideoSummary | null {
     id,
     title,
     channelId: readString(snippet, "channelId") ?? "",
-    channelTitle: readString(snippet, "channelTitle") ?? "",
+    channelTitle: readDecodedString(snippet, "channelTitle") ?? "",
     thumbnailUrl: pickThumbnailUrl(snippet, id),
     publishedAt,
     durationSeconds: readDurationSeconds(rawItem),
@@ -284,7 +284,7 @@ function toVideoDetail(rawItem: unknown): VideoDetail | null {
   const snippet = readRecord(rawItem, "snippet");
   return {
     ...summary,
-    description: readString(snippet, "description") ?? "",
+    description: readDecodedString(snippet, "description") ?? "",
   };
 }
 
@@ -325,7 +325,7 @@ function toPlaylistVideoSummary(rawItem: unknown): VideoSummary | null {
     id,
     title,
     channelId: readString(snippet, "channelId") ?? "",
-    channelTitle: readString(snippet, "channelTitle") ?? "",
+    channelTitle: readDecodedString(snippet, "channelTitle") ?? "",
     thumbnailUrl: pickThumbnailUrl(snippet, id),
     publishedAt,
     durationSeconds: null,
@@ -368,7 +368,7 @@ function toChannelDetail(rawItem: unknown): ChannelDetail | null {
       statistics !== null && statistics.hiddenSubscriberCount !== true
         ? readNonNegativeInteger(statistics, "subscriberCount")
         : null,
-    description: (readString(snippet, "description") ?? "").trim(),
+    description: (readDecodedString(snippet, "description") ?? "").trim(),
     uploadsPlaylistId: readUploadsPlaylistId(rawItem),
   };
 }
@@ -473,17 +473,28 @@ function toVideoComment(rawItem: unknown): VideoComment | null {
 
 /**
  * Prefers the plain-text body. `textDisplay` is HTML, so the fallback strips
- * tags and decodes the handful of entities YouTube emits before it is ever
- * rendered; nothing from the payload reaches the DOM as markup.
+ * tags before decoding the entities YouTube emits; nothing from the payload
+ * reaches the DOM as markup. `textOriginal` is already plain text, so it is
+ * decoded once and never tag-stripped.
  */
 function readCommentText(snippet: Record<string, unknown>): string | null {
   const original = readString(snippet, "textOriginal");
-  const text = original ?? stripHtml(readString(snippet, "textDisplay") ?? "");
+  const text =
+    original !== null
+      ? decodeHtmlEntities(original)
+      : stripHtml(readString(snippet, "textDisplay") ?? "");
   const trimmed = text.trim();
 
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/**
+ * The named entities YouTube actually emits in `snippet` text.
+ *
+ * `&nbsp;` maps to a non-breaking space so that a run of them collapses to one
+ * normal space in {@link decodeHtmlEntities}. Keep this table in sync with the
+ * named alternative in {@link HTML_ENTITY_PATTERN}.
+ */
 const HTML_ENTITIES: Readonly<Record<string, string>> = {
   "&amp;": "&",
   "&lt;": "<",
@@ -491,14 +502,73 @@ const HTML_ENTITIES: Readonly<Record<string, string>> = {
   "&quot;": '"',
   "&#39;": "'",
   "&#x27;": "'",
-  "&nbsp;": " ",
+  "&nbsp;": "\u00a0",
 };
 
-function stripHtml(value: string): string {
+/**
+ * Matches the named entities above plus every decimal and hexadecimal numeric
+ * reference. An unknown named entity (`&apos;`, `&copy;`) does not match, so it
+ * is left untouched rather than guessed at.
+ */
+const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|nbsp|#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6});/g;
+
+/**
+ * Decodes the HTML entities YouTube wraps around plain snippet text.
+ *
+ * This is the single decoding boundary: titles, channel names, descriptions and
+ * comment bodies leave this module as plain text, and no component decodes
+ * again. The replacement is one pass, so pre-escaped source such as
+ * `&amp;amp;` becomes `&amp;` rather than `&`, while a literal `&` in
+ * "Tom & Jerry" is untouched. Unknown named entities and malformed numeric
+ * references are returned verbatim. Runs of `&nbsp;`/`&#160;` collapse to one
+ * normal space.
+ *
+ * @example
+ * decodeHtmlEntities("DON&#39;T &amp; Mister &amp;amp; Bbbi");
+ * // "DON'T & Mister &amp; Bbbi"
+ */
+export function decodeHtmlEntities(value: string): string {
+  if (!value.includes("&") && !value.includes("\u00a0")) {
+    return value;
+  }
+
   return value
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&(?:amp|lt|gt|quot|#39|#x27|nbsp);/g, (entity) => HTML_ENTITIES[entity] ?? entity);
+    .replace(HTML_ENTITY_PATTERN, (entity) => decodeHtmlEntity(entity))
+    .replace(/[^\S\r\n]*\u00a0[^\S\r\n]*/g, " ");
+}
+
+/** Decodes one matched entity, or returns it unchanged when it is not valid. */
+function decodeHtmlEntity(entity: string): string {
+  const named = HTML_ENTITIES[entity];
+  if (named !== undefined) {
+    return named;
+  }
+
+  const numeric = /^&#(?:([0-9]+)|[xX]([0-9a-fA-F]+));$/.exec(entity);
+  if (numeric === null) {
+    return entity;
+  }
+
+  const [, decimal, hexadecimal] = numeric;
+  const codePoint =
+    decimal === undefined ? Number.parseInt(hexadecimal ?? "", 16) : Number(decimal);
+
+  // Reject values that cannot be a Unicode scalar value. Showing the original
+  // reference is better than emitting a replacement character.
+  if (
+    !Number.isInteger(codePoint) ||
+    codePoint <= 0 ||
+    codePoint > 0x10ffff ||
+    (codePoint >= 0xd800 && codePoint <= 0xdfff)
+  ) {
+    return entity;
+  }
+
+  return String.fromCodePoint(codePoint);
+}
+
+function stripHtml(value: string): string {
+  return decodeHtmlEntities(value.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, ""));
 }
 
 /** Video ids arrive as `{ videoId }` from search and as a plain string from videos. */
@@ -515,12 +585,14 @@ function readVideoId(value: unknown): string | null {
 }
 
 function readTitle(snippet: Record<string, unknown>): string | null {
-  const value = readString(snippet, "title");
+  const value = readDecodedString(snippet, "title");
   if (value === null) {
     return null;
   }
 
-  const trimmed = value.trim();
+  // Decode first, then collapse: `&nbsp;` and repeated spaces both become one
+  // space, and trailing entities such as `&nbsp;` no longer survive the trim.
+  const trimmed = value.trim().replace(/\s+/g, " ");
   if (trimmed.length === 0 || trimmed.length > MAX_TITLE_LENGTH) {
     return null;
   }
@@ -583,6 +655,12 @@ function readString(source: Record<string, unknown> | null, key: string): string
 
   const value = source[key];
   return typeof value === "string" ? value : null;
+}
+
+/** Reads a string and decodes YouTube's snippet entities exactly once. */
+function readDecodedString(source: Record<string, unknown> | null, key: string): string | null {
+  const value = readString(source, key);
+  return value === null ? null : decodeHtmlEntities(value);
 }
 
 function readRecord(

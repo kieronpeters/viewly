@@ -572,7 +572,7 @@ describe("YoutubePlayer keyboard shortcuts", () => {
   });
 });
 
-describe("YoutubePlayer fullscreen and picture-in-picture controls", () => {
+describe("YoutubePlayer fullscreen control", () => {
   let fullscreenElement: Element | null = null;
 
   beforeEach(() => {
@@ -586,7 +586,6 @@ describe("YoutubePlayer fullscreen and picture-in-picture controls", () => {
 
   afterEach(() => {
     delete (document as { fullscreenElement?: unknown }).fullscreenElement;
-    delete (document as { pictureInPictureEnabled?: unknown }).pictureInPictureEnabled;
     delete (document as { exitFullscreen?: unknown }).exitFullscreen;
   });
 
@@ -599,16 +598,20 @@ describe("YoutubePlayer fullscreen and picture-in-picture controls", () => {
     });
   }
 
-  it("shows labelled controls for the reserved player box", async () => {
+  it("shows fullscreen and no picture-in-picture control in the control row", async () => {
     const { container } = await renderReadyPlayer();
 
     const frame = container.querySelector('[data-slot="youtube-player-frame"]');
     const fullscreen = screen.getByRole("button", { name: "Fullscreen" });
+    const row = fullscreen.closest('[data-slot="player-controls"]');
 
     expect(frame).not.toBeNull();
-    expect(fullscreen.closest('[data-slot="player-controls"]')).not.toBeNull();
+    expect(row).not.toBeNull();
     expect(fullscreen).toHaveAttribute("aria-pressed", "false");
     expect(fullscreen).toHaveClass("min-h-11", "min-w-11");
+    expect(
+      (row as HTMLElement).querySelector('button[aria-label="Picture in picture"]'),
+    ).toBeNull();
   });
 
   it("enters and exits fullscreen on the box the F shortcut uses", async () => {
@@ -691,18 +694,5 @@ describe("YoutubePlayer fullscreen and picture-in-picture controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Fullscreen" }));
 
     expect(request).toHaveBeenCalledTimes(1);
-  });
-
-  it("hides picture-in-picture for the iframe surface even when the browser supports it", async () => {
-    // The official embed is cross-origin, so the page has no media element to
-    // hand to the PiP API. The control must be absent, not dead.
-    Object.defineProperty(document, "pictureInPictureEnabled", {
-      configurable: true,
-      get: () => true,
-    });
-
-    await renderReadyPlayer();
-
-    expect(screen.queryByRole("button", { name: "Picture in picture" })).toBeNull();
   });
 });

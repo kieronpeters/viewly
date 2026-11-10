@@ -6,7 +6,7 @@
  * the `server-only` guard. Client code imports the pure helpers from
  * `./progress` directly and the actions from `./actions`.
  */
-export { getVideoProgress, listVideoProgress } from "./progress-data";
+export { getVideoProgress, listVideoProgress, readVideoProgress } from "./progress-data";
 export {
   continueWatchingFromRow,
   listContinueWatchingVideos,
