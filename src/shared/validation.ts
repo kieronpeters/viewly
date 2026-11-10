@@ -52,6 +52,7 @@ export type DomainValidationCode =
   | "too_long"
   | "control_characters"
   | "invalid_format"
+  | "out_of_range"
   | "malformed_payload";
 
 export class DomainValidationError extends Error {

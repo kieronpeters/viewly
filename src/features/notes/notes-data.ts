@@ -24,3 +24,18 @@ export function listVideoNotes(videoId: string): VideoNote[] {
     .listForVideo(id)
     .map((row) => noteFromRow(row));
 }
+
+/**
+ * Every timestamped highlight for one video, in playback order (T90).
+ *
+ * The panel normally partitions the single `listVideoNotes` read it already
+ * has, but this read exists for surfaces that only need the ordered highlights
+ * (and for T87, which exports notes and highlights with the same row shape).
+ */
+export function listVideoHighlights(videoId: string): VideoNote[] {
+  const id = assertVideoId(videoId);
+
+  return createNotesRepository(getDb())
+    .listHighlightsForVideo(id)
+    .map((row) => noteFromRow(row));
+}

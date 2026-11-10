@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { VideoCard } from "@/components/video/video-card";
 import {
   countLibraryEntries,
@@ -19,6 +20,7 @@ import {
 } from "@/features/progress/continue-watching-section";
 import { listVideoProgress } from "@/features/progress/progress-data";
 import type { VideoProgress } from "@/features/progress/progress";
+import { cn } from "@/lib/utils";
 import type { PlaylistSummary } from "@/shared/types";
 
 import { HistoryClearAllButton, HistoryClearEntryButton } from "./history-clear-controls";
@@ -94,12 +96,25 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
          * it beside the tabs still makes it discoverable from the page that
          * owns the data, without adding an item to the app shell.
          */}
-        <Link
-          href="/library/stats"
-          className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-surface-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        >
-          Watch stats
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/*
+           * Backup & restore sits beside the stats link rather than in the tab
+           * bar: it is a data-management page, not another slice of the library.
+           * Both links keep the 44px minimum target and the shared focus ring.
+           */}
+          <Link
+            href="/library/backup"
+            className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-surface-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            Backup &amp; restore
+          </Link>
+          <Link
+            href="/library/stats"
+            className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-surface-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            Watch stats
+          </Link>
+        </div>
       </div>
       <LibraryList tab={tab} />
     </div>
@@ -317,7 +332,10 @@ function PlaylistList({ playlists }: PlaylistListProps) {
             <li key={playlist.id}>
               <Link
                 href={`/library/playlists/${playlist.id}`}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-card-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className={cn(
+                  "flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-card-foreground transition-[background-color,box-shadow,translate] duration-200 ease-out hover:-translate-y-0.5 hover:bg-surface-elevated hover:shadow-md hover:shadow-background/60 motion-reduce:transition-none motion-reduce:hover:translate-y-0",
+                  FOCUS_RING,
+                )}
               >
                 <span className="min-w-0 font-medium break-words">{playlist.name}</span>
                 <span className="text-sm text-muted-foreground">

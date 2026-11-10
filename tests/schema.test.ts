@@ -16,7 +16,7 @@
  * instead of importing `src/lib/db/client.ts` (whose module-level cache is
  * process-wide and would leak state between tests).
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,6 +116,53 @@ describe("library schema migration", () => {
     expect(tables).toContain("__drizzle_migrations");
   });
 
+  it("keeps the notes timestamp nullable so existing notes migrate sensibly", () => {
+    const columns = sqlite.prepare("pragma table_info(video_notes)").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+    }>;
+    const startSeconds = columns.find((column) => column.name === "start_seconds");
+
+    expect(startSeconds).toMatchObject({ type: "INTEGER", notnull: 0, dflt_value: null });
+  });
+
+  it("backfills a pre-T90 note with a null timestamp when the migration runs", () => {
+    // Build the 0002 shape only, seed a note, then apply the 0004 migration on
+    // top. This is the upgrade path a real `data/viewly.db` takes, and it is
+    // where a generated INSERT could otherwise reference a column the old
+    // table does not have.
+    const legacy = new Database(":memory:");
+    const runFile = (name: string) => {
+      const sql = readFileSync(join(MIGRATIONS_FOLDER, name), "utf8");
+
+      for (const statement of sql.split("--> statement-breakpoint")) {
+        if (statement.trim().length > 0) {
+          legacy.exec(statement);
+        }
+      }
+    };
+
+    try {
+      runFile("0002_video_notes.sql");
+      legacy
+        .prepare(
+          `insert into video_notes (id, video_id, body, created_at, updated_at)
+           values (?, ?, ?, ?, ?)`,
+        )
+        .run("legacy-note", "video-a", "Old note", 1, 1);
+
+      runFile("0004_misty_warlock.sql");
+
+      expect(
+        legacy.prepare("select start_seconds from video_notes where id = ?").get("legacy-note"),
+      ).toEqual({ start_seconds: null });
+    } finally {
+      legacy.close();
+    }
+  });
+
   it("creates the indexes the library lists order by", () => {
     expect(schemaObjects("index")).toEqual(
       expect.arrayContaining([
@@ -123,6 +170,7 @@ describe("library schema migration", () => {
         "history_last_viewed_at_idx",
         "playlist_items_playlist_id_position_idx",
         "video_notes_video_id_created_at_idx",
+        "video_notes_video_id_start_seconds_idx",
         "video_progress_updated_at_idx",
         "watch_later_saved_at_idx",
       ]),
@@ -204,7 +252,7 @@ describe("library schema migration", () => {
           count: number;
         }
       ).count,
-    ).toBe(4);
+    ).toBe(5);
 
     // Existing data survived, so the schema was not recreated.
     expect(

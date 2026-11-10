@@ -17,9 +17,11 @@ import {
 import { recordView } from "@/features/library/history-actions";
 import type { VideoSnapshot } from "@/features/library/video-snapshot";
 
+import { WatchAmbientBackdrop } from "./watch-ambient-backdrop";
 import { WatchListenBar } from "./watch-listen-bar";
 import { ListenModeToggle } from "./watch-listen-toggle";
 import { WatchResumePrompt } from "./watch-resume-prompt";
+import { useWatchTheater } from "./watch-theater";
 
 /** How often the listen bar samples the official player while it is visible. */
 const LISTEN_STATUS_POLL_MS = 1_000;
@@ -95,12 +97,14 @@ export interface WatchPlayerProps {
  * mutated by merely looking at it. "Start over" seeks to zero and calls
  * `clearProgress`.
  *
- * ## Description timestamps (T71)
+ * ## Description timestamps (T71) and note highlights (T90)
  *
  * The wrapper also registers its seek target on the shared
  * {@link usePlayerSeek} channel, so a click on a timestamp or chapter in
  * the description reuses exactly this path: the same handle, the same
- * "remember it until ready" pending seek. No second player is created.
+ * "remember it until ready" pending seek. No second player is created. The
+ * same registration exposes the current clock, so the notes panel can anchor a
+ * highlight at the position that is actually playing.
  *
  * ## Listen mode (T86)
  *
@@ -130,6 +134,7 @@ export function WatchPlayer({
   const pendingSeekRef = useRef<number | null>(null);
   const [, startTransition] = useTransition();
   const playerSeek = usePlayerSeek();
+  const theater = useWatchTheater();
   const rootRef = useRef<HTMLDivElement | null>(null);
   /** Previous mode, so focus moves only after a real toggle, never on load. */
   const previousListenModeRef = useRef(listenMode);
@@ -251,15 +256,49 @@ export function WatchPlayer({
     handle.seekTo(seconds);
   }, []);
 
-  // Expose this player to description timestamps and chapters. Registering (and
-  // unregistering) never re-renders: the controller lives in a ref.
+  /**
+   * Samples the official player for the shared playhead channel (T90).
+   *
+   * The notes panel calls this when the viewer presses "Save note at current
+   * time". It returns `null` until the IFrame API has handed over a handle, so
+   * the panel can report "start the video" instead of saving a bogus anchor.
+   */
+  const readPlaybackClock = useCallback(() => {
+    const handle = handleRef.current;
+
+    if (handle === null) {
+      return null;
+    }
+
+    const positionSeconds = handle.getCurrentTime();
+    const durationSeconds = handle.getDuration();
+
+    if (!Number.isFinite(positionSeconds)) {
+      return null;
+    }
+
+    return {
+      positionSeconds,
+      durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : 0,
+    };
+  }, []);
+
+  // Expose this player to description timestamps, chapters and the notes
+  // panel. Registering (and unregistering) never re-renders: the controller
+  // lives in a ref.
   useEffect(() => {
     if (playerSeek === null) {
       return;
     }
 
-    return playerSeek.registerSeekTarget(seekToPosition);
-  }, [playerSeek, seekToPosition]);
+    const unregisterSeek = playerSeek.registerSeekTarget(seekToPosition);
+    const unregisterClock = playerSeek.registerClockSource(readPlaybackClock);
+
+    return () => {
+      unregisterSeek();
+      unregisterClock();
+    };
+  }, [playerSeek, seekToPosition, readPlaybackClock]);
 
   // Sleep timer (T82): the queue rail publishes a pause request through the
   // shared channel rather than reaching into the embed itself.
@@ -514,8 +553,10 @@ export function WatchPlayer({
       ref={rootRef}
       data-slot="watch-player"
       data-listen-mode={listenMode ? "true" : "false"}
-      className="flex min-w-0 flex-col gap-2"
+      className="relative isolate flex min-w-0 flex-col gap-2"
     >
+      <WatchAmbientBackdrop snapshot={snapshot} />
+
       {isResumeVisible && resumePosition !== null ? (
         <WatchResumePrompt
           positionSeconds={resumePosition}
@@ -570,6 +611,7 @@ export function WatchPlayer({
           onPlaybackPause={handlePlaybackPause}
           onPlayerReady={handlePlayerReady}
           onPlaybackEnd={handlePlaybackEnd}
+          onToggleTheater={theater.toggleTheater}
           modeControl={<ListenModeToggle enabled={listenMode} onToggle={toggleListenMode} />}
         />
       </div>

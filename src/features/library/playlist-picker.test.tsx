@@ -136,8 +136,50 @@ describe("PlaylistPicker", () => {
     await waitFor(() => {
       expect(addToPlaylistMock).toHaveBeenCalledWith("playlist-road-trip", VIDEO);
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("Added to Road trip.");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Added to Road trip."),
+    );
     expect(screen.queryByRole("group", { name: "Add to playlist" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the confirmation inline, non-blocking and out of the layout", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    const region = screen.getByRole("status");
+
+    // Mounted empty so the live region exists before the message changes, and
+    // absolutely placed so showing it never reflows the card or the action row.
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toBeEmptyDOMElement();
+    expect(region).toHaveClass("absolute", "pointer-events-none", "opacity-0");
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    await user.click(screen.getByRole("button", { name: "Road trip" }));
+
+    await waitFor(() => expect(region).toHaveTextContent("Added to Road trip."));
+    expect(region).toHaveClass("opacity-100");
+
+    // Reopening starts a new attempt, so the previous confirmation is cleared
+    // instead of sitting behind the panel.
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+    expect(region).toBeEmptyDOMElement();
+  });
+
+  it("gives playlist options the shared focus ring", async () => {
+    const user = userEvent.setup();
+
+    render(<PlaylistPicker video={VIDEO} playlists={PLAYLISTS} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to playlist" }));
+
+    expect(screen.getByRole("button", { name: "Road trip" })).toHaveClass(
+      "focus-visible:ring-2",
+      "focus-visible:ring-ring",
+      "focus-visible:ring-offset-2",
+      "focus-visible:ring-offset-background",
+    );
   });
 
   it("creates a playlist and immediately adds the video", async () => {
@@ -156,7 +198,7 @@ describe("PlaylistPicker", () => {
       expect(createPlaylistMock).toHaveBeenCalledWith("Chill");
     });
     expect(addToPlaylistMock).toHaveBeenCalledWith("playlist-new", VIDEO);
-    expect(await screen.findByRole("status")).toHaveTextContent("Added to Chill.");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Added to Chill."));
 
     // The new option is available on the next open without a reload.
     await user.click(screen.getByRole("button", { name: "Add to playlist" }));

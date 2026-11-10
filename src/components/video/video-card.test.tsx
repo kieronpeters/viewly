@@ -282,4 +282,42 @@ describe("VideoCard", () => {
     await user.tab();
     expect(document.body).toHaveFocus();
   });
+
+  it("uses the shared focus ring on the card link", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} />);
+
+    expect(screen.getByRole("link", { name: /Never Gonna Give You Up/ })).toHaveClass(
+      "focus-visible:ring-2",
+      "focus-visible:ring-ring",
+      "focus-visible:ring-offset-2",
+      "focus-visible:ring-offset-background",
+    );
+  });
+
+  it("lifts the card and zooms the thumbnail on hover without moving the grid", () => {
+    const { container } = render(<VideoCard video={VIDEO_FIXTURE} />);
+
+    const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
+    const image = container.querySelector("img");
+
+    // The lift is a translate on the card (no layout change), and the hover
+    // treatment is switched off entirely for reduced-motion viewers.
+    expect(link).toHaveClass("hover:-translate-y-0.5", "hover:bg-surface-elevated");
+    expect(link).toHaveClass("motion-reduce:hover:translate-y-0");
+    expect(link).toHaveClass("motion-reduce:transition-none");
+    expect(image).toHaveClass("group-hover/card:scale-[1.03]");
+    expect(image).toHaveClass("motion-reduce:group-hover/card:scale-100");
+  });
+
+  it("keeps the save confirmations mounted but visually empty", () => {
+    render(<VideoCard video={VIDEO_FIXTURE} isFavourite isWatchLater />);
+
+    const regions = screen.getAllByRole("status");
+
+    expect(regions).toHaveLength(2);
+    for (const region of regions) {
+      expect(region).toBeEmptyDOMElement();
+      expect(region).toHaveClass("pointer-events-none", "absolute", "opacity-0");
+    }
+  });
 });

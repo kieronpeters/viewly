@@ -33,9 +33,22 @@
  * millisecond. Editing a note changes `updated_at`, never `created_at`, so the
  * list does not jump while the reader is editing.
  *
+ * {@link NotesRepository.listHighlightsForVideo} is the timestamped subset in
+ * playback order: `start_seconds` ascending, then `created_at` and id as
+ * deterministic tie-breaks for two highlights on the same second. Free-text
+ * notes (`start_seconds IS NULL`) are excluded by the query, not by the caller.
+ *
+ * ## Notes and highlights
+ *
+ * T90 stores both concepts in `video_notes`: a row with `start_seconds` is a
+ * highlight anchored to a playback position, a row without is a free-text
+ * note. There is no second table, so `update` and `delete` serve both, and
+ * editing a highlight keeps its timestamp (only the body and `updated_at`
+ * change).
+ *
  * ## Validation
  *
- * Body and video-id validation belongs to the domain layer
+ * Body, video-id and timestamp validation belongs to the domain layer
  * (`src/features/notes/notes.ts` and `src/shared/validation.ts`); this module
  * stores what it is given. The single writer is the Server Action, which
  * validates first.
@@ -44,7 +57,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
 
 import { videoNotes } from "@/db/schema";
 import type { ViewlyDatabase } from "@/lib/db/client";
@@ -58,6 +71,11 @@ export interface CreateVideoNoteInput {
   videoId: string;
   /** Plain-text body. */
   body: string;
+  /**
+   * Playback position in whole seconds for a highlight; omit or pass `null`
+   * for a free-text note.
+   */
+  startSeconds?: number | null;
   /** Creation time, UTC milliseconds; also the initial `updatedAt`. */
   createdAt: Date;
   /** Caller-supplied id, for example when restoring a backup (T87). */
@@ -79,6 +97,11 @@ export interface NotesRepository {
   get(id: string): VideoNoteRow | undefined;
   /** One video's notes, newest first (id as a deterministic tie-break). */
   listForVideo(videoId: string): VideoNoteRow[];
+  /**
+   * One video's highlights (`start_seconds IS NOT NULL`) in playback order:
+   * `start_seconds` ascending, then `created_at` and id ascending.
+   */
+  listHighlightsForVideo(videoId: string): VideoNoteRow[];
 }
 
 /** Builds the typed notes query surface over an existing Drizzle client. */
@@ -91,6 +114,7 @@ export function createNotesRepository(db: ViewlyDatabase): NotesRepository {
           id: input.id ?? randomUUID(),
           videoId: input.videoId,
           body: input.body,
+          startSeconds: input.startSeconds ?? null,
           createdAt: input.createdAt,
           updatedAt: input.createdAt,
         })
@@ -127,6 +151,15 @@ export function createNotesRepository(db: ViewlyDatabase): NotesRepository {
         .from(videoNotes)
         .where(eq(videoNotes.videoId, videoId))
         .orderBy(desc(videoNotes.createdAt), desc(videoNotes.id))
+        .all();
+    },
+
+    listHighlightsForVideo(videoId) {
+      return db
+        .select()
+        .from(videoNotes)
+        .where(and(eq(videoNotes.videoId, videoId), isNotNull(videoNotes.startSeconds)))
+        .orderBy(asc(videoNotes.startSeconds), asc(videoNotes.createdAt), asc(videoNotes.id))
         .all();
     },
   };

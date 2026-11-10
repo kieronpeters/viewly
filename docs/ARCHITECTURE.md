@@ -129,19 +129,23 @@ per render.
 
 ## 4. Data model
 
-Six tables, defined once in `src/db/schema.ts` and created by
-`src/db/migrations/0000_mute_slapstick.sql` (the five library tables) and
-`src/db/migrations/0001_solid_betty_ross.sql` (`settings`). “Snapshot” means `title`,
+Eight tables, defined once in `src/db/schema.ts` and created by
+`src/db/migrations/0000_mute_slapstick.sql` (the five library tables),
+`0001_solid_betty_ross.sql` (`settings`), `0002_video_notes.sql`
+(`video_notes`) and `0003_tricky_kylun.sql` (`video_progress`), with
+`0004_misty_warlock.sql` adding the notes timestamp (T90). “Snapshot” means `title`,
 `channel_title`, `thumbnail_url` and nullable `duration_seconds`.
 
-| Table            | Primary key               | Other columns                            | Constraints and indexes                                                                                                                                  |
-| ---------------- | ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `favourites`     | `video_id`                | snapshot, `saved_at`                     | `saved_at` NOT NULL; index `favourites_saved_at_idx` (`saved_at`)                                                                                        |
-| `watch_later`    | `video_id`                | snapshot, `saved_at`                     | `saved_at` NOT NULL; index `watch_later_saved_at_idx` (`saved_at`)                                                                                       |
-| `history`        | `video_id`                | snapshot, `last_viewed_at`, `view_count` | `view_count` defaults to 1 and has CHECK `>= 0`; index `history_last_viewed_at_idx`                                                                      |
-| `playlists`      | `id` (application UUID)   | `name`, `created_at`, `updated_at`       | no additional index                                                                                                                                      |
-| `playlist_items` | `(playlist_id, video_id)` | `position`, `added_at`                   | FK `playlist_id` -> `playlists.id` ON DELETE CASCADE; CHECK `position >= 0`; index `playlist_items_playlist_id_position_idx` (`playlist_id`, `position`) |
-| `settings`       | `key` (text)              | `value`, `updated_at`                    | key/value store; today holds only `last_sweep_at` for the metadata sweep                                                                                 |
+| Table            | Primary key               | Other columns                                                   | Constraints and indexes                                                                                                                                  |
+| ---------------- | ------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `favourites`     | `video_id`                | snapshot, `saved_at`                                            | `saved_at` NOT NULL; index `favourites_saved_at_idx` (`saved_at`)                                                                                        |
+| `watch_later`    | `video_id`                | snapshot, `saved_at`                                            | `saved_at` NOT NULL; index `watch_later_saved_at_idx` (`saved_at`)                                                                                       |
+| `history`        | `video_id`                | snapshot, `last_viewed_at`, `view_count`                        | `view_count` defaults to 1 and has CHECK `>= 0`; index `history_last_viewed_at_idx`                                                                      |
+| `playlists`      | `id` (application UUID)   | `name`, `created_at`, `updated_at`                              | no additional index                                                                                                                                      |
+| `playlist_items` | `(playlist_id, video_id)` | `position`, `added_at`                                          | FK `playlist_id` -> `playlists.id` ON DELETE CASCADE; CHECK `position >= 0`; index `playlist_items_playlist_id_position_idx` (`playlist_id`, `position`) |
+| `settings`       | `key` (text)              | `value`, `updated_at`                                           | key/value store; today holds only `last_sweep_at` for the metadata sweep                                                                                 |
+| `video_notes`    | `id` (application UUID)   | `video_id`, `body`, `start_seconds`, `created_at`, `updated_at` | nullable `start_seconds` with CHECK `IS NULL OR >= 0`; indexes on `(video_id, created_at)` and `(video_id, start_seconds)`                               |
+| `video_progress` | `video_id`                | `position_seconds`, `duration_seconds`, `updated_at`            | CHECK `position_seconds >= 0` and `duration_seconds > 0`; index on `updated_at`                                                                          |
 
 Notes:
 
@@ -159,6 +163,11 @@ Notes:
 - `settings` is application state, not API Data: `key` is a text primary key, `value` is a non-null
   string and `updated_at` is UTC milliseconds. Its only key today is `last_sweep_at`, an ISO-8601
   timestamp written by the metadata sweep.
+- `video_notes` holds both local free-text notes and timestamped highlights (T79, T90). A `null`
+  `start_seconds` is a note; a whole-second position is a highlight, ordered by `start_seconds` in
+  the watch panel and validated as `0 <= start_seconds <= duration` by the Server Action before it
+  writes. There is no second table, so T87's export/import scope is one row shape and carries the
+  nullable timestamp verbatim; existing pre-T90 rows upgrade to `null`.
 
 ## 5. Route surface
 

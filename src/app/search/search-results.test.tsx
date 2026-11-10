@@ -98,6 +98,8 @@ describe("SearchResults", () => {
     const list = within(section).getByRole("list");
 
     expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    // The streamed grid fades in when the results skeleton is replaced.
+    expect(list).toHaveClass("content-in");
     // One tab stop per card: the grid link, and nothing else in discovery.
     expect(within(list).getAllByRole("link")).toHaveLength(2);
     expect(within(list).queryAllByRole("button")).toHaveLength(0);

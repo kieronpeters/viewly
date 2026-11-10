@@ -20,10 +20,17 @@
  * ## Contract
  *
  * - {@link addNote} returns the stored note, with both timestamps set to now.
+ *   Passing a `position` saves a **highlight**: the same row shape with a
+ *   validated `startSeconds`, rendered in the panel's Highlights list. Omitting
+ *   it saves a free-text note with `startSeconds: null`.
  * - {@link editNote} returns the updated note, or `null` when the id no longer
- *   exists (another tab deleted it). It never creates a row.
+ *   exists (another tab deleted it). It never creates a row and never changes a
+ *   highlight's timestamp; only the body and `updatedAt` change.
  * - {@link deleteNote} returns whether a row was removed; repeating it is safe.
- * - Invalid input throws a `DomainValidationError` before any write happens.
+ *   It serves both notes and highlights.
+ * - Invalid input throws a `DomainValidationError` before any write happens,
+ *   including a timestamp that is negative, non-finite or past the duration
+ *   supplied by the player.
  *
  * The returned note carries ISO timestamps rather than `Date`s, so the client
  * stores exactly one serializable shape regardless of how the panel was
@@ -33,17 +40,38 @@ import { revalidatePath } from "next/cache";
 
 import { assertVideoId } from "@/shared/validation";
 
-import { noteFromRow, parseNoteBody, parseNoteId, type VideoNote } from "./notes";
+import {
+  noteFromRow,
+  parseNoteBody,
+  parseNoteId,
+  parseNoteStartSeconds,
+  type NotePosition,
+  type VideoNote,
+} from "./notes";
 
 /** Watch route revalidated after every successful write. */
 function watchPath(videoId: string): string {
   return `/watch/${videoId}`;
 }
 
-/** Creates a note for a video and returns the stored row. */
-export async function addNote(videoId: string, body: string): Promise<VideoNote> {
+/**
+ * Creates a note for a video and returns the stored row.
+ *
+ * A third argument turns the note into a highlight. Its `startSeconds` is
+ * validated against `durationSeconds` before the database module is even
+ * loaded, so a rejected anchor never opens the connection.
+ */
+export async function addNote(
+  videoId: string,
+  body: string,
+  position?: NotePosition | null,
+): Promise<VideoNote> {
   const id = assertVideoId(videoId);
   const noteBody = parseNoteBody(body);
+  const startSeconds = parseNoteStartSeconds(
+    position?.startSeconds ?? null,
+    position?.durationSeconds ?? null,
+  );
 
   const [{ getDb }, { createNotesRepository }] = await Promise.all([
     import("@/lib/db/client"),
@@ -53,6 +81,7 @@ export async function addNote(videoId: string, body: string): Promise<VideoNote>
   const row = createNotesRepository(getDb()).create({
     videoId: id,
     body: noteBody,
+    startSeconds,
     createdAt: new Date(),
   });
 

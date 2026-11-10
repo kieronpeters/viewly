@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { FavouriteButton } from "@/components/video/favourite-button";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
@@ -117,7 +118,13 @@ export function VideoCard({
       <Link
         href={`/watch/${video.id}`}
         aria-label={video.title}
-        className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl bg-card text-card-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className={cn(
+          // Hover lift is a `translate` on the card, so neighbouring cards do not
+          // move and grid measurement never changes. `motion-reduce` removes the
+          // movement (not just its duration) for viewers who ask for less motion.
+          "group/card flex h-full min-w-0 flex-col overflow-hidden rounded-xl bg-card text-card-foreground transition-[background-color,box-shadow,translate] duration-200 ease-out hover:-translate-y-0.5 hover:bg-surface-elevated hover:shadow-lg hover:shadow-background/60 motion-reduce:transition-none motion-reduce:hover:translate-y-0",
+          FOCUS_RING,
+        )}
       >
         <div className="relative aspect-video w-full overflow-hidden bg-muted">
           <Image
@@ -125,7 +132,7 @@ export function VideoCard({
             alt=""
             fill
             sizes={THUMBNAIL_SIZES}
-            className="object-cover"
+            className="object-cover transition-transform duration-300 ease-out group-hover/card:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover/card:scale-100"
           />
           {duration !== null ? (
             <span className="absolute right-1.5 bottom-1.5 rounded bg-background/85 px-1.5 py-0.5 text-xs font-medium text-foreground tabular-nums">

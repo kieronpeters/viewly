@@ -6,6 +6,8 @@ import type { VideoSnapshot } from "@/features/library/video-snapshot";
 import type { VideoProgress } from "@/features/progress/progress";
 
 import { useListenModePreference } from "./listen-mode-preference";
+import { useWatchTheaterControls } from "./watch-theater";
+import { WatchTheaterToggle } from "./watch-theater-toggle";
 import { WatchPlayer } from "./watch-player";
 
 export interface WatchPlayerColumnProps {
@@ -38,6 +40,11 @@ export interface WatchPlayerColumnProps {
  * rather than hidden with CSS: the compact bar renders the same title as the
  * page's only `h1`, so there is no duplicate heading, id or tab stop behind the
  * bar. The preference is persisted in `localStorage` by the hook.
+ *
+ * Theater mode (T70) is a grid-level preference owned by `WatchTheaterProvider`.
+ * Its visible switch sits outside the player stage, so it stays reachable in
+ * both video and listen layouts; `T` goes through the same provider and reaches
+ * the same toggle.
  */
 export function WatchPlayerColumn({
   snapshot,
@@ -49,6 +56,7 @@ export function WatchPlayerColumn({
   const toggleListenMode = useCallback(() => {
     setListenMode(!listenMode);
   }, [listenMode, setListenMode]);
+  const theater = useWatchTheaterControls();
 
   return (
     <div
@@ -56,6 +64,12 @@ export function WatchPlayerColumn({
       data-listen-mode={listenMode ? "true" : "false"}
       className="flex min-w-0 flex-col gap-4"
     >
+      {theater === null ? null : (
+        <div data-slot="watch-theater-toolbar" className="flex justify-end">
+          <WatchTheaterToggle enabled={theater.isTheater} onToggle={theater.toggleTheater} />
+        </div>
+      )}
+
       <section
         data-slot="watch-player-slot"
         aria-labelledby="watch-player-heading"

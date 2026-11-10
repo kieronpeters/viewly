@@ -108,7 +108,7 @@ export async function SearchResults({ searchParams }: SearchResultsProps) {
 
       <ul
         role="list"
-        className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        className="content-in grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
       >
         {page.items.map((video) => (
           <li key={video.id} className="min-w-0">

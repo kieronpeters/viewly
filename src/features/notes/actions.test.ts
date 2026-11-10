@@ -23,7 +23,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => dbHolder.db }));
 
-import { listVideoNotes } from "@/features/notes/notes-data";
+import { listVideoHighlights, listVideoNotes } from "@/features/notes/notes-data";
 import {
   createNotesRepository,
   type NotesRepository,
@@ -126,6 +126,85 @@ describe("addNote", () => {
       body: "Column\tvalue",
     });
   });
+
+  it("saves a highlight with the validated start position", async () => {
+    const result = await addNote(VIDEO_ID, "The example starts here.", {
+      startSeconds: 83,
+      durationSeconds: 213,
+    });
+
+    expect(result).toMatchObject({
+      videoId: VIDEO_ID,
+      body: "The example starts here.",
+      startSeconds: 83,
+    });
+    expect(notes.get(result.id)?.startSeconds).toBe(83);
+    expect(listVideoNotes(VIDEO_ID)[0]?.startSeconds).toBe(83);
+    expect(countRows()).toBe(1);
+    expect(revalidatePathMock.mock.calls).toEqual([[`/watch/${VIDEO_ID}`]]);
+  });
+
+  it("floors a fractional player position to whole seconds", async () => {
+    const result = await addNote(VIDEO_ID, "Fractional.", {
+      startSeconds: 82.9,
+      durationSeconds: 213.9,
+    });
+
+    expect(result.startSeconds).toBe(82);
+    expect(notes.get(result.id)?.startSeconds).toBe(82);
+  });
+
+  it("accepts the start and the exact end of the video", async () => {
+    await expect(
+      addNote(VIDEO_ID, "At the start.", { startSeconds: 0, durationSeconds: 213 }),
+    ).resolves.toMatchObject({ startSeconds: 0 });
+
+    await expect(
+      addNote(VIDEO_ID, "At the end.", { startSeconds: 213, durationSeconds: 213 }),
+    ).resolves.toMatchObject({ startSeconds: 213 });
+  });
+
+  it("allows a position when the duration is not known yet", async () => {
+    await expect(
+      addNote(VIDEO_ID, "Live stream.", { startSeconds: 9_000, durationSeconds: 0 }),
+    ).resolves.toMatchObject({ startSeconds: 9_000 });
+  });
+
+  it("saves a free-text note without a timestamp", async () => {
+    const result = await addNote(VIDEO_ID, "No anchor.");
+
+    expect(result.startSeconds).toBeNull();
+    expect(notes.get(result.id)?.startSeconds).toBeNull();
+  });
+
+  it("rejects a timestamp past the video duration before writing", async () => {
+    await expect(
+      addNote(VIDEO_ID, "Past the end.", { startSeconds: 214, durationSeconds: 213 }),
+    ).rejects.toMatchObject({ code: "out_of_range", field: "startSeconds" });
+
+    expect(countRows()).toBe(0);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a negative, non-finite or non-numeric timestamp before writing", async () => {
+    await expect(
+      addNote(VIDEO_ID, "Negative.", { startSeconds: -1, durationSeconds: 213 }),
+    ).rejects.toMatchObject({ code: "out_of_range", field: "startSeconds" });
+
+    await expect(
+      addNote(VIDEO_ID, "NaN.", { startSeconds: Number.NaN, durationSeconds: 213 }),
+    ).rejects.toMatchObject({ code: "invalid_format", field: "startSeconds" });
+
+    await expect(
+      addNote(VIDEO_ID, "String.", {
+        startSeconds: "83" as unknown as number,
+        durationSeconds: 213,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_type", field: "startSeconds" });
+
+    expect(countRows()).toBe(0);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("editNote", () => {
@@ -185,6 +264,21 @@ describe("editNote", () => {
 
     expect(listVideoNotes(VIDEO_ID).map((note) => note.id)).toEqual([newer.id, older.id]);
     expect(listVideoNotes(VIDEO_ID)[1]?.body).toBe("Older, revised");
+  });
+
+  it("keeps a highlight's timestamp when only its body is edited", async () => {
+    const created = notes.create({
+      videoId: VIDEO_ID,
+      body: "Original highlight",
+      startSeconds: 83,
+      createdAt: new Date("2000-01-01T00:00:00.000Z"),
+    });
+
+    const result = await editNote(created.id, "Revised highlight");
+
+    expect(result).toMatchObject({ id: created.id, startSeconds: 83, body: "Revised highlight" });
+    expect(notes.get(created.id)?.startSeconds).toBe(83);
+    expect(listVideoHighlights(VIDEO_ID).map((note) => note.startSeconds)).toEqual([83]);
   });
 });
 
@@ -261,5 +355,50 @@ describe("listVideoNotes", () => {
 
   it("rejects a malformed video id instead of reading another video's notes", () => {
     expect(() => listVideoNotes("not-a-video-id")).toThrow(DomainValidationError);
+  });
+});
+
+describe("listVideoHighlights", () => {
+  it("returns only timestamped notes, ordered by playback time", () => {
+    const late = notes.create({
+      videoId: VIDEO_ID,
+      body: "Late",
+      startSeconds: 200,
+      createdAt: new Date("2000-01-01T00:00:00.000Z"),
+    });
+    const early = notes.create({
+      videoId: VIDEO_ID,
+      body: "Early",
+      startSeconds: 30,
+      createdAt: new Date("2000-01-02T00:00:00.000Z"),
+    });
+    notes.create({
+      videoId: VIDEO_ID,
+      body: "Free text",
+      createdAt: new Date("2000-01-03T00:00:00.000Z"),
+    });
+    notes.create({
+      videoId: OTHER_VIDEO_ID,
+      body: "Other video",
+      startSeconds: 5,
+      createdAt: new Date("2000-01-04T00:00:00.000Z"),
+    });
+
+    expect(listVideoHighlights(VIDEO_ID).map((note) => note.id)).toEqual([early.id, late.id]);
+    expect(listVideoHighlights(VIDEO_ID).map((note) => note.startSeconds)).toEqual([30, 200]);
+  });
+
+  it("returns an empty list when a video only has free-text notes", () => {
+    notes.create({
+      videoId: VIDEO_ID,
+      body: "No timestamp",
+      createdAt: new Date("2000-01-01T00:00:00.000Z"),
+    });
+
+    expect(listVideoHighlights(VIDEO_ID)).toEqual([]);
+  });
+
+  it("rejects a malformed video id", () => {
+    expect(() => listVideoHighlights("not-a-video-id")).toThrow(DomainValidationError);
   });
 });

@@ -25,7 +25,8 @@ vi.mock("@/components/video/playback-end", () => ({
 }));
 
 import { ExpandableDescription } from "@/components/video/expandable-description";
-import { PlayerSeekProvider } from "@/components/video/player-seek";
+import { PlayerSeekProvider, usePlayerSeek } from "@/components/video/player-seek";
+import type { PlayerClock } from "@/components/video/player-seek";
 import {
   YOUTUBE_PLAYER_STATE,
   type YoutubeIframeApi,
@@ -50,6 +51,8 @@ const DESCRIPTION = "0:00 Intro\n12:34 Demo\n1:02:03 Encore";
 interface FakePlayer extends YoutubeIframePlayer {
   readonly options: YoutubePlayerOptions;
   readonly seekTo: Mock<(seconds: number, allowSeekAhead?: boolean) => void>;
+  readonly getCurrentTime: Mock<() => number>;
+  readonly getDuration: Mock<() => number>;
 }
 
 /** Minimal fake `YT.Player`: records the options and every seek. */
@@ -59,6 +62,8 @@ function createFakeApi() {
   class Player implements FakePlayer {
     readonly options: YoutubePlayerOptions;
     readonly seekTo: Mock<(seconds: number, allowSeekAhead?: boolean) => void> = vi.fn();
+    readonly getCurrentTime: Mock<() => number> = vi.fn(() => 83.5);
+    readonly getDuration: Mock<() => number> = vi.fn(() => 213);
 
     constructor(_element: HTMLElement, options: YoutubePlayerOptions) {
       this.options = options;
@@ -92,6 +97,17 @@ function renderWatchSurface() {
       <ExpandableDescription text={DESCRIPTION} />
       <WatchChapters text={DESCRIPTION} />
     </PlayerSeekProvider>,
+  );
+}
+
+/** A button that samples the shared channel on demand, like the notes panel. */
+function ClockProbe({ onRead }: { readonly onRead: (clock: PlayerClock | null) => void }) {
+  const playerSeek = usePlayerSeek();
+
+  return (
+    <button type="button" onClick={() => onRead(playerSeek?.getPlaybackClock() ?? null)}>
+      Read clock
+    </button>
   );
 }
 
@@ -159,5 +175,32 @@ describe("description timestamps seek the official player", () => {
     expect(publishPlaybackEndedMock).not.toHaveBeenCalled();
     act(() => emitStateChange(player, YOUTUBE_PLAYER_STATE.PAUSED));
     expect(recordViewMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("the shared channel exposes the playhead for highlights", () => {
+  it("reads the current position and duration from the official player", async () => {
+    const user = userEvent.setup();
+    const { api, players } = createFakeApi();
+    loadYoutubeIframeApiMock.mockResolvedValue(api);
+    const clocks: Array<PlayerClock | null> = [];
+
+    render(
+      <PlayerSeekProvider>
+        <WatchPlayer snapshot={SNAPSHOT} />
+        <ClockProbe onRead={(clock) => clocks.push(clock)} />
+      </PlayerSeekProvider>,
+    );
+
+    await waitFor(() => expect(players).toHaveLength(1));
+
+    // Before the embed is ready there is nothing to anchor a highlight to.
+    await user.click(screen.getByRole("button", { name: "Read clock" }));
+    expect(clocks).toEqual([null]);
+
+    act(() => emitReady(players[0]!));
+    await user.click(screen.getByRole("button", { name: "Read clock" }));
+
+    expect(clocks[1]).toEqual({ positionSeconds: 83.5, durationSeconds: 213 });
   });
 });

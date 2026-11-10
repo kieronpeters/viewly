@@ -235,4 +235,37 @@ describe("WatchLaterButton", () => {
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(toggleWatchLaterMock).toHaveBeenCalledTimes(2);
   });
+
+  it("confirms a save in a polite live region instead of a toast", async () => {
+    toggleWatchLaterMock.mockResolvedValue({ inWatchLater: true });
+
+    const user = userEvent.setup();
+    render(<WatchLaterButton video={SNAPSHOT} initialInWatchLater={false} />);
+
+    const region = screen.getByRole("status");
+
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toBeEmptyDOMElement();
+
+    await user.click(screen.getByRole("button", { name: "Add to Watch Later" }));
+
+    await waitFor(() => expect(region).toHaveTextContent("Added to Watch Later."));
+    expect(region).toHaveClass("pointer-events-none");
+    expect(region.parentElement).toHaveClass("relative");
+    expect(region).toHaveClass("absolute");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("confirms removing a queued video", async () => {
+    toggleWatchLaterMock.mockResolvedValue({ inWatchLater: false });
+
+    const user = userEvent.setup();
+    render(<WatchLaterButton video={SNAPSHOT} initialInWatchLater />);
+
+    await user.click(screen.getByRole("button", { name: "Remove from Watch Later" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Removed from Watch Later."),
+    );
+  });
 });

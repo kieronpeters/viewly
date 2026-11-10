@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type * as React from "react";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { cn } from "@/lib/utils";
 
 export interface VideoRowSectionProps {
@@ -53,7 +54,10 @@ export function VideoRowSection({
         {viewAllHref === undefined ? null : (
           <Link
             href={viewAllHref}
-            className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-muted-foreground underline-offset-4 transition-colors outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className={cn(
+              "inline-flex min-h-11 items-center rounded-md text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline motion-reduce:transition-none",
+              FOCUS_RING,
+            )}
           >
             View all<span className="sr-only"> {title}</span>
           </Link>

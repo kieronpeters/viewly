@@ -8,7 +8,17 @@
  *
  * The notes table is part of the local data that T87's export/import will
  * carry, alongside the library tables; nothing here writes outside SQLite.
+ * T90 added the nullable `start_seconds` column, so the export carries notes
+ * and highlights in one row shape: a `null` timestamp is a free-text note, a
+ * number is a highlight anchored to that playback position.
  */
-export { listVideoNotes } from "./notes-data";
-export { formatNoteTimestamp, noteFromRow, parseNoteBody, parseNoteId } from "./notes";
-export type { VideoNote } from "./notes";
+export { listVideoHighlights, listVideoNotes } from "./notes-data";
+export {
+  formatNoteTimestamp,
+  noteFromRow,
+  parseNoteBody,
+  parseNoteId,
+  parseNoteStartSeconds,
+  partitionVideoNotes,
+} from "./notes";
+export type { NotePosition, VideoNote } from "./notes";

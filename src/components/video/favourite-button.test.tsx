@@ -235,4 +235,56 @@ describe("FavouriteButton", () => {
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(toggleFavouriteMock).toHaveBeenCalledTimes(2);
   });
+
+  it("confirms a save in a polite live region instead of a toast", async () => {
+    toggleFavouriteMock.mockResolvedValue({ favourited: true });
+
+    const user = userEvent.setup();
+    render(<FavouriteButton video={SNAPSHOT} initialFavourite={false} />);
+
+    const region = screen.getByRole("status");
+
+    // The region is mounted empty: the save has not happened yet, so there is
+    // nothing to announce and the control has not moved.
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toBeEmptyDOMElement();
+
+    await user.click(screen.getByRole("button", { name: "Add to favourites" }));
+
+    await waitFor(() => expect(region).toHaveTextContent("Added to favourites."));
+    // Non-blocking: the message never captures pointer events, and it is placed
+    // out of flow by the caller so it cannot shift the card grid.
+    expect(region).toHaveClass("pointer-events-none");
+    expect(region.parentElement).toHaveClass("relative");
+    expect(region).toHaveClass("absolute");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("confirms turning a saved favourite off", async () => {
+    toggleFavouriteMock.mockResolvedValue({ favourited: false });
+
+    const user = userEvent.setup();
+    render(<FavouriteButton video={SNAPSHOT} initialFavourite />);
+
+    await user.click(screen.getByRole("button", { name: "Remove from favourites" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Removed from favourites."),
+    );
+  });
+
+  it("uses the action result, not the optimistic guess, in its confirmation", async () => {
+    // Another tab already saved the video, so the server toggles it off.
+    toggleFavouriteMock.mockResolvedValue({ favourited: false });
+
+    const user = userEvent.setup();
+    render(<FavouriteButton video={SNAPSHOT} initialFavourite={false} />);
+
+    await user.click(screen.getByRole("button", { name: "Add to favourites" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Removed from favourites."),
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent("Added to favourites.");
+  });
 });
