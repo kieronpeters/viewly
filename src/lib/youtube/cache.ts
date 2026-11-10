@@ -61,12 +61,16 @@ export const DEFAULT_MAX_ENTRIES = 200;
  * - categories (24 h): `videoCategories.list` changes only when YouTube adds or
  *   retires a category, and the list is region-scoped. One day matches the
  *   practical churn rate and costs one unit per region per day.
+ * - comments (5 min): `commentThreads.list` moves constantly, and its text is
+ *   display data only. Five minutes absorbs tab switches and pagination hops
+ *   without keeping comment text in memory for longer than necessary.
  */
 export const YOUTUBE_CACHE_TTLS_MS = {
   search: 60_000,
   videoDetails: 10 * 60_000,
   trending: 5 * 60_000,
   categories: 24 * 60 * 60_000,
+  comments: 5 * 60_000,
 } as const;
 
 /** Options for {@link createTtlCache}. */
@@ -245,6 +249,9 @@ export function isYouTubeCacheDisabled(
  * - `id` is split, de-duplicated and sorted, so batches sharing the same ids
  *   share an entry regardless of order (the client restores caller order);
  * - `regionCode` is upper-cased, matching the client's validation;
+ * - `publishedAfter` is an exact timestamp that moves with the clock, so it is
+ *   floored to the minute; two filtered searches in the same minute therefore
+ *   share an entry even though their outbound timestamps differ by milliseconds;
  * - every other value is trimmed and whitespace-collapsed only. `pageToken` and
  *   `part` stay case-sensitive.
  */
@@ -275,6 +282,17 @@ function normalizeParam(name: string, value: string): string {
 
   if (name === "regionCode") {
     return collapsed.toUpperCase();
+  }
+
+  if (name === "publishedAfter") {
+    const timestamp = Date.parse(collapsed);
+    if (Number.isNaN(timestamp)) {
+      // The client always sends a valid ISO timestamp; an unparseable value is
+      // kept verbatim so a bug cannot silently collapse two different requests.
+      return collapsed;
+    }
+
+    return new Date(Math.floor(timestamp / 60_000) * 60_000).toISOString();
   }
 
   if (name === "id") {

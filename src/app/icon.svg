@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!--
+    Viewly Aperture mark. Static colours mirror the Midnight Purple tokens
+    primary (#9A7DE3) and primary-foreground (#10101E) because a favicon has no
+    access to CSS custom properties. Keep the geometry in sync with
+    src/components/brand/viewly-logo.tsx.
+  -->
+  <rect x="2" y="2" width="20" height="20" rx="6" fill="#9A7DE3" />
+  <path
+    d="M9.74 8.27c0-.97 1.06-1.58 1.9-1.09l6 3.74c.82.5.82 1.69 0 2.2l-6 3.74a1.27 1.27 0 0 1-1.9-1.09V8.27Z"
+    fill="#10101E"
+  />
+</svg>

@@ -26,8 +26,8 @@
  * public signatures are unchanged, and a cache hit returns before the API key is
  * even read. Entries are keyed by endpoint plus normalized parameters (never by
  * key material), bounded at 200 entries with LRU eviction, and expired by TTL:
- * search 60 s, video details 10 min, trending 5 min, categories 24 h. Concurrent
- * identical calls share one upstream request.
+ * search 60 s, video details 10 min, trending 5 min, categories 24 h, comments
+ * 5 min. Concurrent identical calls share one upstream request.
  *
  * The cached value is the **normalized domain object**, not the raw payload:
  * fetching and normalization both run inside the cached loader, so a 200
@@ -54,6 +54,7 @@
  * | `getVideos`            | `videos.list`         | 1 unit per 50 ids (batch)        |
  * | `getTrending`          | `videos.list` (chart) | 1 of 10,000 units/day            |
  * | `listVideoCategories`  | `videoCategories.list`| 1 of 10,000 units/day            |
+ * | `listComments`         | `commentThreads.list` | 1 of 10,000 units/day            |
  *
  * Every retry of a 429/5xx response and every extra results page is another
  * billable call, which is why the cache exists. Budget picture for one local
@@ -73,7 +74,15 @@
 import "server-only";
 
 import { getYoutubeApiKey } from "@/lib/env";
-import type { SearchPage, VideoDetail, VideoSummary } from "@/shared/types";
+import {
+  type SearchDuration,
+  type SearchOrder,
+  type SearchUploadDate,
+  nonDefaultSearchFilters,
+  resolveSearchFilters,
+  searchPublishedAfter,
+} from "@/shared/search-filters";
+import type { CommentPage, SearchPage, VideoDetail, VideoSummary } from "@/shared/types";
 import {
   DomainValidationError,
   assertPageToken,
@@ -81,7 +90,11 @@ import {
   assertVideoId,
   isRecord,
 } from "@/shared/validation";
-import { normalizeSearchResponse, normalizeVideoResponse } from "@/shared/youtube";
+import {
+  normalizeCommentThreadsResponse,
+  normalizeSearchResponse,
+  normalizeVideoResponse,
+} from "@/shared/youtube";
 
 import {
   type Cache,
@@ -97,8 +110,14 @@ const API_BASE_URL = "https://www.googleapis.com/youtube/v3";
 /** Upper bound on `maxResults` accepted by `search.list` and `videos.list`. */
 export const MAX_RESULTS_LIMIT = 50;
 
+/** `commentThreads.list` accepts up to 100 threads per request. */
+export const MAX_COMMENT_RESULTS_LIMIT = 100;
+
 /** Default page size when the caller does not choose one. */
 const DEFAULT_MAX_RESULTS = 25;
+
+/** Comment pages are smaller by default: one page is already a long column. */
+const DEFAULT_COMMENT_MAX_RESULTS = 20;
 
 /** `videos.list` accepts at most 50 ids per request. */
 const IDS_PER_REQUEST = 50;
@@ -189,12 +208,36 @@ export interface SearchVideosOptions {
   pageToken?: string | null;
   /** Requested page size; clamped to 1..50. */
   maxResults?: number;
+  /**
+   * Duration bucket, sent as `videoDuration`. Defaults to `any`, which omits the
+   * parameter. Validated with `assertSearchDuration`.
+   */
+  duration?: SearchDuration;
+  /**
+   * Result order, sent as `order`. Defaults to `relevance`, which omits the
+   * parameter. Validated with `assertSearchOrder`.
+   */
+  order?: SearchOrder;
+  /**
+   * Upload-date window, resolved to `publishedAfter`. Defaults to `any`, which
+   * omits the parameter. Validated with `assertSearchUploadDate`.
+   */
+  uploadDate?: SearchUploadDate;
 }
 
 export interface TrendingOptions {
   /** ISO 3166-1 alpha-2 region code; defaults to `US`. */
   regionCode?: string;
   /** Requested page size; clamped to 1..50. */
+  maxResults?: number;
+}
+
+export interface ListCommentsOptions {
+  /** Video whose top-level comment threads should be listed. */
+  videoId: string;
+  /** Continuation token from a previous `CommentPage`, or null for the first page. */
+  pageToken?: string | null;
+  /** Requested page size; clamped to 1..100. Defaults to 20. */
   maxResults?: number;
 }
 
@@ -218,6 +261,10 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
   const query = assertSearchQuery(options.query);
   const pageToken = assertPageToken(options.pageToken ?? null);
   const maxResults = clampMaxResults(options.maxResults);
+  // Invalid filter values are rejected here, before any cache lookup or I/O.
+  const filters = resolveSearchFilters(options);
+  const activeFilters = nonDefaultSearchFilters(filters);
+  const publishedAfter = searchPublishedAfter(filters.uploadDate);
 
   const params = {
     part: "snippet",
@@ -225,6 +272,9 @@ export async function searchVideos(options: SearchVideosOptions): Promise<Search
     q: query,
     maxResults: String(maxResults),
     pageToken: pageToken ?? undefined,
+    order: activeFilters.order,
+    videoDuration: activeFilters.duration,
+    publishedAfter: publishedAfter ?? undefined,
   };
 
   return cachedRequest("search", params, YOUTUBE_CACHE_TTLS_MS.search, async () =>
@@ -346,6 +396,58 @@ export async function getTrending(options: TrendingOptions = {}): Promise<VideoS
   return cachedRequest("videos", params, YOUTUBE_CACHE_TTLS_MS.trending, async () =>
     normalizeVideoList(await fetchJson("videos", params)),
   );
+}
+
+/**
+ * Lists top-level comment threads for a video, most relevant first.
+ *
+ * Disabled comments are a normal state, not a failure: YouTube answers
+ * `commentThreads.list` with a 403 `commentsDisabled` reason, which becomes an
+ * empty `CommentPage` with `commentsDisabled: true`. That page is cached like
+ * any other result, so a disabled video does not spend quota on every view.
+ * Quota, auth, transport and malformed-payload failures still throw.
+ *
+ * The cached value is the normalized page. Comment text lives only in this
+ * five-minute in-memory entry; it is never persisted or logged.
+ *
+ * @throws {DomainValidationError} for an invalid video id, page token or payload.
+ * @throws {YouTubeApiError} for transport, HTTP and quota failures.
+ */
+export async function listComments(options: ListCommentsOptions): Promise<CommentPage> {
+  const videoId = assertVideoId(options.videoId);
+  const pageToken = assertPageToken(options.pageToken ?? null);
+  const maxResults = clampMaxResults(
+    options.maxResults,
+    MAX_COMMENT_RESULTS_LIMIT,
+    DEFAULT_COMMENT_MAX_RESULTS,
+  );
+
+  const params = {
+    part: "snippet",
+    videoId,
+    order: "relevance",
+    maxResults: String(maxResults),
+    pageToken: pageToken ?? undefined,
+  };
+
+  return cachedRequest("commentThreads", params, YOUTUBE_CACHE_TTLS_MS.comments, async () => {
+    try {
+      return normalizeCommentThreadsResponse(await fetchJson("commentThreads", params));
+    } catch (error) {
+      // The channel turned comments off. `fetchJson` maps the 403 to the shared
+      // bad_request code but keeps YouTube's stable reason, so it is still
+      // distinguishable here without widening the error-code union.
+      if (
+        isYouTubeApiError(error) &&
+        error.code === "bad_request" &&
+        error.reason === "commentsDisabled"
+      ) {
+        return { items: [], nextPageToken: null, commentsDisabled: true };
+      }
+
+      throw error;
+    }
+  });
 }
 
 /**
@@ -615,13 +717,21 @@ function normalizeCategoryList(payload: unknown): VideoCategory[] {
   return categories;
 }
 
-/** Clamps a requested page size to 1..50, falling back to the module default. */
-function clampMaxResults(value: number | undefined): number {
+/**
+ * Clamps a requested page size to 1..`limit`, falling back to `fallback` for
+ * absent or non-finite values. The bounds are per endpoint: search and videos
+ * cap at 50, comment threads at 100.
+ */
+function clampMaxResults(
+  value: number | undefined,
+  limit: number = MAX_RESULTS_LIMIT,
+  fallback: number = DEFAULT_MAX_RESULTS,
+): number {
   if (value === undefined || !Number.isFinite(value)) {
-    return DEFAULT_MAX_RESULTS;
+    return fallback;
   }
 
-  return Math.min(Math.max(Math.trunc(value), 1), MAX_RESULTS_LIMIT);
+  return Math.min(Math.max(Math.trunc(value), 1), limit);
 }
 
 function assertRegionCode(value: string): string {

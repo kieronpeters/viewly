@@ -11,14 +11,15 @@ export interface WatchSuggestionsProps {
 }
 
 /**
- * Data half of the watch page's suggestions section (T32).
+ * Data half of the watch page's "Up next" rail (T32, restyled by T77).
  *
- * Rendered inside its own `<Suspense>` boundary below the player, so the player
- * and metadata are never held back by this search. Any failure — transport,
- * quota, validation, an unexpected shape — is swallowed here and renders
- * nothing: suggestions are an enhancement, so a broken search must not show an
- * error banner over playback or leak an upstream URL. The same applies to an
- * empty result, which hides the whole section including its heading.
+ * Rendered inside its own `<Suspense>` boundary in the right-hand rail, so the
+ * player, title, description and discussion never wait on this search. Any
+ * failure — transport, quota, validation, an unexpected shape — is swallowed
+ * here and renders nothing: suggestions are an enhancement, so a broken search
+ * must not show an error banner over playback or leak an upstream URL. The same
+ * applies to an empty result, which hides the whole section including its
+ * heading.
  */
 export async function WatchSuggestions({ channelTitle, currentVideoId }: WatchSuggestionsProps) {
   let videos: VideoSummary[];
@@ -36,32 +37,35 @@ export async function WatchSuggestions({ channelTitle, currentVideoId }: WatchSu
   return <VideoSuggestions videos={videos} />;
 }
 
-/** Placeholder cards shown while the suggestions request is in flight. */
-const PLACEHOLDER_COUNT = 2;
+/** Placeholder rows shown while the suggestions request is in flight. */
+const PLACEHOLDER_COUNT = 4;
 
 /**
- * Streaming fallback for the suggestions section.
+ * Streaming fallback for the "Up next" rail.
  *
  * Deliberately quiet: a status line for assistive technology, then `aria-hidden`
- * placeholder geometry at the size the real section will occupy. Nothing here
- * announces a heading, so a section that ends up hidden (empty or failed) never
+ * placeholder geometry at the size the real rail will occupy. Nothing here
+ * announces a heading, so a rail that ends up hidden (empty or failed) never
  * flashes a title that disappears.
  */
 export function WatchSuggestionsSkeleton() {
   return (
     <div role="status" className="flex flex-col gap-3">
-      <span className="sr-only">Loading suggestions…</span>
+      <span className="sr-only">Loading up next…</span>
       <div aria-hidden="true" className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-3 w-64" />
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-3 w-48" />
         </div>
-        <div className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 2xl:grid-cols-3">
+        <div className="flex flex-col gap-1">
           {Array.from({ length: PLACEHOLDER_COUNT }, (_, index) => (
-            <div key={index} className="flex min-w-0 flex-col gap-2">
-              <Skeleton className="aspect-video w-full rounded-xl" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-3 w-2/3" />
+            <div key={index} className="flex min-w-0 gap-2 p-1.5">
+              <Skeleton className="aspect-video w-40 shrink-0 rounded-md" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
             </div>
           ))}
         </div>

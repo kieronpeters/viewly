@@ -185,6 +185,19 @@ describe("LibraryPageContent tab bar", () => {
     expect(listHistoryEntriesMock).not.toHaveBeenCalled();
   });
 
+  it("links to the watch-stats page beside the tabs", async () => {
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "favourites" }) }));
+
+    expect(screen.getByRole("link", { name: "Watch stats" })).toHaveAttribute(
+      "href",
+      "/library/stats",
+    );
+
+    // It is not a tab: the section nav still exposes exactly the four tabs.
+    const nav = screen.getByRole("navigation", { name: "Library sections" });
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+  });
+
   it("falls back to favourites for an unknown tab", async () => {
     render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "music" }) }));
 

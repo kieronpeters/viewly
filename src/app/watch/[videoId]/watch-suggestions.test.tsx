@@ -11,7 +11,8 @@ vi.mock("@/lib/youtube/client", async (importOriginal) => {
   return { ...actual, searchVideos: vi.fn() };
 });
 
-// The cards embed the save controls; their Server Actions stay inert here.
+// The rail rows do not render save controls, but the module graph still reaches
+// the library actions; they stay inert here.
 vi.mock("@/features/library/actions", () => ({
   toggleFavourite: vi.fn(),
   toggleWatchLater: vi.fn(),
@@ -63,12 +64,12 @@ beforeEach(() => {
 });
 
 describe("WatchSuggestions", () => {
-  it("renders candidates as cards that link to the watch page", async () => {
+  it("renders candidates as compact rows that link to the watch page", async () => {
     searchVideosMock.mockResolvedValue(page([summary("aaaaaaaaaaa"), summary("bbbbbbbbbbb")]));
 
     const { container } = await renderSuggestions();
 
-    const section = screen.getByRole("region", { name: "More from this channel" });
+    const section = screen.getByRole("region", { name: "Up next" });
     expect(within(section).getByText(/suggested by viewly/i)).toBeInTheDocument();
 
     const firstLink = within(section).getByRole("link", { name: /Video aaaaaaaaaaa/ });
@@ -76,7 +77,9 @@ describe("WatchSuggestions", () => {
     expect(within(firstLink).getByText("Video aaaaaaaaaaa")).toBeInTheDocument();
 
     expect(within(section).getAllByRole("link")).toHaveLength(2);
-    expect(container.querySelector('[data-slot="video-card"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="up-next-row"]')).not.toBeNull();
+    expect(within(firstLink).getByText("3:33")).toBeInTheDocument();
+    expect(within(firstLink).getByText("1.5M views")).toBeInTheDocument();
   });
 
   it("asks the client for the channel title, capped at eight", async () => {
@@ -99,9 +102,7 @@ describe("WatchSuggestions", () => {
 
     const { container } = await renderSuggestions();
 
-    const links = within(
-      screen.getByRole("region", { name: "More from this channel" }),
-    ).getAllByRole("link");
+    const links = within(screen.getByRole("region", { name: "Up next" })).getAllByRole("link");
 
     expect(links).toHaveLength(2);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
@@ -111,7 +112,7 @@ describe("WatchSuggestions", () => {
     expect(container.querySelector(`a[href="/watch/${CURRENT_ID}"]`)).toBeNull();
   });
 
-  it("caps the rendered cards at eight", async () => {
+  it("caps the rendered rows at eight", async () => {
     searchVideosMock.mockResolvedValue(
       page(
         Array.from({ length: 12 }, (_, index) =>
@@ -122,7 +123,7 @@ describe("WatchSuggestions", () => {
 
     await renderSuggestions();
 
-    const section = screen.getByRole("region", { name: "More from this channel" });
+    const section = screen.getByRole("region", { name: "Up next" });
     expect(within(section).getAllByRole("link")).toHaveLength(8);
   });
 
@@ -132,9 +133,7 @@ describe("WatchSuggestions", () => {
     const { container } = await renderSuggestions();
 
     expect(container).toBeEmptyDOMElement();
-    expect(
-      screen.queryByRole("region", { name: "More from this channel" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Up next" })).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -159,9 +158,7 @@ describe("WatchSuggestions", () => {
     const { container } = await renderSuggestions();
 
     expect(container).toBeEmptyDOMElement();
-    expect(
-      screen.queryByRole("region", { name: "More from this channel" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Up next" })).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain("SECRET_KEY_123");
     expect(document.body.textContent).not.toContain("googleapis.com");

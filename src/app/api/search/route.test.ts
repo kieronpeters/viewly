@@ -110,6 +110,53 @@ describe("GET /api/search", () => {
     expect(searchVideosMock).toHaveBeenCalledWith({ query: "rick", pageToken: null });
   });
 
+  it("forwards validated duration, order and upload-date filters", async () => {
+    searchVideosMock.mockResolvedValue(PAGE);
+
+    await get("?q=rick&duration=short&order=viewCount&uploadDate=week");
+
+    expect(searchVideosMock).toHaveBeenCalledWith({
+      query: "rick",
+      pageToken: null,
+      duration: "short",
+      order: "viewCount",
+      uploadDate: "week",
+    });
+  });
+
+  it("accepts each documented filter value", async () => {
+    searchVideosMock.mockResolvedValue(PAGE);
+
+    for (const duration of ["any", "short", "medium", "long"]) {
+      await get(`?q=rick&duration=${duration}`);
+    }
+    for (const order of ["relevance", "date", "viewCount"]) {
+      await get(`?q=rick&order=${order}`);
+    }
+    for (const uploadDate of ["any", "day", "week", "month"]) {
+      await get(`?q=rick&uploadDate=${uploadDate}`);
+    }
+
+    expect(searchVideosMock).toHaveBeenCalledTimes(11);
+  });
+
+  it.each([
+    ["duration", "tiny", "duration"],
+    ["duration", "SHORT", "duration"],
+    ["order", "popular", "order"],
+    ["order", "viewcount", "order"],
+    ["uploadDate", "year", "uploadDate"],
+  ] as const)("returns 400 VALIDATION_FAILED for %s=%s", async (name, value, field) => {
+    const response = await get(`?q=rick&${name}=${value}`);
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body = await errorBody(response);
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+    expect(body.error.field).toBe(field);
+    expect(searchVideosMock).not.toHaveBeenCalled();
+  });
+
   it("returns 400 VALIDATION_FAILED when q is missing", async () => {
     const response = await get();
 

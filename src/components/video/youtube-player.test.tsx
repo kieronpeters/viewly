@@ -1,5 +1,6 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { beforeEach, afterEach, describe, expect, it, vi, type Mock } from "vitest";
 
 const { loadYoutubeIframeApiMock } = vi.hoisted(() => ({
   loadYoutubeIframeApiMock: vi.fn(),
@@ -19,6 +20,7 @@ import {
   type YoutubeIframePlayer,
   type YoutubePlayerOptions,
 } from "./youtube-iframe-api";
+import type { WatchShortcutPlayer } from "./watch-shortcuts";
 import { YoutubePlayer } from "./youtube-player";
 
 /**
@@ -32,15 +34,30 @@ const VIDEO = {
 
 const WATCH_URL = `https://www.youtube.com/watch?v=${VIDEO.id}`;
 
-interface FakePlayer extends YoutubeIframePlayer {
+interface FakePlayer extends YoutubeIframePlayer, WatchShortcutPlayer {
   readonly options: YoutubePlayerOptions;
   readonly iframe: HTMLIFrameElement;
+  readonly playVideo: Mock;
+  readonly pauseVideo: Mock;
+  readonly seekTo: Mock;
+  readonly getCurrentTime: Mock;
+  readonly getDuration: Mock;
+  readonly getVolume: Mock;
+  readonly setVolume: Mock;
+  readonly isMuted: Mock;
+  readonly mute: Mock;
+  readonly unMute: Mock;
+  readonly getPlayerState: Mock;
 }
 
 /**
  * A fake `YT.Player` that mirrors the two things the component relies on:
  * the constructor replaces the element it is given with an iframe, and the
  * options object exposes the callbacks the test drives by hand.
+ *
+ * The playback controls are spy methods so keyboard shortcuts can be asserted
+ * without the real API. `getPlayerState` defaults to paused, which means a
+ * play-pause shortcut plays.
  */
 function createFakeApi(options: { throwOnCreate?: boolean } = {}) {
   const players: FakePlayer[] = [];
@@ -51,6 +68,17 @@ function createFakeApi(options: { throwOnCreate?: boolean } = {}) {
     readonly destroy = vi.fn(() => {
       this.iframe.remove();
     });
+    readonly playVideo = vi.fn();
+    readonly pauseVideo = vi.fn();
+    readonly seekTo = vi.fn();
+    readonly getCurrentTime = vi.fn(() => 30);
+    readonly getDuration = vi.fn(() => 100);
+    readonly getVolume = vi.fn(() => 50);
+    readonly setVolume = vi.fn();
+    readonly isMuted = vi.fn(() => false);
+    readonly mute = vi.fn();
+    readonly unMute = vi.fn();
+    readonly getPlayerState = vi.fn(() => YOUTUBE_PLAYER_STATE.PAUSED);
 
     constructor(element: HTMLElement, playerOptions: YoutubePlayerOptions) {
       if (options.throwOnCreate === true) {
@@ -71,6 +99,26 @@ function createFakeApi(options: { throwOnCreate?: boolean } = {}) {
   const api: YoutubeIframeApi = { Player: Player as unknown as YoutubeIframeApi["Player"] };
 
   return { api, players };
+}
+
+/** Renders the player and waits until the API has created it. */
+async function renderReadyPlayer(
+  props: Partial<ComponentProps<typeof YoutubePlayer>> = {},
+): Promise<{ players: FakePlayer[]; container: HTMLElement }> {
+  const { api, players } = createFakeApi();
+
+  loadYoutubeIframeApiMock.mockResolvedValue(api);
+
+  const { container } = render(<YoutubePlayer videoId={VIDEO.id} title={VIDEO.title} {...props} />);
+
+  await waitFor(() => expect(players).toHaveLength(1));
+
+  return { players, container };
+}
+
+/** Sends a keydown to the page, as a viewer's keyboard would. */
+function pressKey(key: string, target: Element = document.body) {
+  fireEvent.keyDown(target, { key });
 }
 
 /** Fires one API event inside `act`, as the iframe script would. */
@@ -229,5 +277,387 @@ describe("YoutubePlayer", () => {
 
     expect(player.destroy).toHaveBeenCalledTimes(1);
     expect(document.querySelector("iframe")).toBeNull();
+  });
+});
+
+describe("YoutubePlayer keyboard shortcuts", () => {
+  it("does not change playback on mount", async () => {
+    const { players } = await renderReadyPlayer();
+
+    const player = players[0];
+
+    expect(player.playVideo).not.toHaveBeenCalled();
+    expect(player.pauseVideo).not.toHaveBeenCalled();
+    expect(player.seekTo).not.toHaveBeenCalled();
+    expect(player.setVolume).not.toHaveBeenCalled();
+    expect(player.mute).not.toHaveBeenCalled();
+    expect(player.unMute).not.toHaveBeenCalled();
+  });
+
+  it("plays and pauses with Space and K", async () => {
+    const { players } = await renderReadyPlayer();
+
+    const player = players[0];
+
+    player.getPlayerState.mockReturnValue(YOUTUBE_PLAYER_STATE.PLAYING);
+    pressKey(" ");
+
+    expect(player.pauseVideo).toHaveBeenCalledTimes(1);
+    expect(player.playVideo).not.toHaveBeenCalled();
+
+    player.getPlayerState.mockReturnValue(YOUTUBE_PLAYER_STATE.PAUSED);
+    pressKey("k");
+
+    expect(player.playVideo).toHaveBeenCalledTimes(1);
+  });
+
+  it("seeks with J/L, the arrows and the number row", async () => {
+    const { players } = await renderReadyPlayer();
+
+    const player = players[0];
+
+    player.getCurrentTime.mockReturnValue(30);
+
+    pressKey("j");
+    expect(player.seekTo).toHaveBeenLastCalledWith(20, true);
+
+    pressKey("l");
+    expect(player.seekTo).toHaveBeenLastCalledWith(40, true);
+
+    pressKey("ArrowLeft");
+    expect(player.seekTo).toHaveBeenLastCalledWith(25, true);
+
+    pressKey("ArrowRight");
+    expect(player.seekTo).toHaveBeenLastCalledWith(35, true);
+
+    pressKey("5");
+    expect(player.seekTo).toHaveBeenLastCalledWith(50, true);
+
+    pressKey("0");
+    expect(player.seekTo).toHaveBeenLastCalledWith(0, true);
+  });
+
+  it("changes volume and toggles mute", async () => {
+    const { players } = await renderReadyPlayer();
+
+    const player = players[0];
+
+    player.getVolume.mockReturnValue(50);
+
+    pressKey("ArrowUp");
+    expect(player.setVolume).toHaveBeenLastCalledWith(55);
+
+    pressKey("ArrowDown");
+    expect(player.setVolume).toHaveBeenLastCalledWith(45);
+
+    player.isMuted.mockReturnValue(false);
+    pressKey("m");
+    expect(player.mute).toHaveBeenCalledTimes(1);
+
+    player.isMuted.mockReturnValue(true);
+    pressKey("m");
+    expect(player.unMute).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests fullscreen on the reserved player box", async () => {
+    const { container } = await renderReadyPlayer();
+
+    const frame = container.querySelector<HTMLElement>('[data-slot="youtube-player-frame"]');
+
+    expect(frame).not.toBeNull();
+
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(frame, "requestFullscreen", {
+      configurable: true,
+      writable: true,
+      value: requestFullscreen,
+    });
+
+    pressKey("f");
+
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onToggleTheater for T and does not resize the player", async () => {
+    const onToggleTheater = vi.fn();
+    const { players } = await renderReadyPlayer({ onToggleTheater });
+
+    pressKey("t");
+
+    expect(onToggleTheater).toHaveBeenCalledTimes(1);
+    // Theater is a layout concern: the player itself is never resized or seeked.
+    expect(players[0].seekTo).not.toHaveBeenCalled();
+    expect(players[0].pauseVideo).not.toHaveBeenCalled();
+  });
+
+  it("keeps T a no-op while no theater callback is wired", async () => {
+    await renderReadyPlayer();
+
+    expect(() => pressKey("t")).not.toThrow();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("ignores shortcuts while focus is in an input or contenteditable", async () => {
+    const { api, players } = createFakeApi();
+
+    loadYoutubeIframeApiMock.mockResolvedValue(api);
+
+    render(
+      <div>
+        <YoutubePlayer videoId={VIDEO.id} title={VIDEO.title} />
+        <input aria-label="Search" />
+        <div aria-label="Notes" contentEditable suppressContentEditableWarning />
+      </div>,
+    );
+
+    await waitFor(() => expect(players).toHaveLength(1));
+
+    const player = players[0];
+    const input = screen.getByRole("textbox", { name: "Search" });
+
+    input.focus();
+    expect(input).toHaveFocus();
+
+    pressKey(" ", input);
+    pressKey("k", input);
+    pressKey("ArrowRight", input);
+
+    expect(player.playVideo).not.toHaveBeenCalled();
+    expect(player.pauseVideo).not.toHaveBeenCalled();
+    expect(player.seekTo).not.toHaveBeenCalled();
+
+    const notes = screen.getByLabelText("Notes");
+
+    notes.focus();
+    pressKey("l", notes);
+
+    expect(player.seekTo).not.toHaveBeenCalled();
+
+    // The same keys still work when focus is on the page.
+    pressKey("l", document.body);
+
+    expect(player.seekTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op when the player has not loaded", async () => {
+    loadYoutubeIframeApiMock.mockReturnValue(new Promise(() => {}));
+
+    render(<YoutubePlayer videoId={VIDEO.id} title={VIDEO.title} />);
+
+    await waitFor(() => expect(loadYoutubeIframeApiMock).toHaveBeenCalledTimes(1));
+
+    expect(() => {
+      for (const key of [" ", "k", "j", "l", "ArrowUp", "ArrowDown", "m", "f", "t", "5"]) {
+        pressKey(key);
+      }
+    }).not.toThrow();
+
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(screen.getByRole("link", { name: /open on youtube/i })).toBeVisible();
+  });
+
+  it("is a no-op when the player constructor fails", async () => {
+    const { api } = createFakeApi({ throwOnCreate: true });
+
+    loadYoutubeIframeApiMock.mockResolvedValue(api);
+
+    render(<YoutubePlayer videoId={VIDEO.id} title={VIDEO.title} />);
+
+    await waitFor(() => expect(loadYoutubeIframeApiMock).toHaveBeenCalledTimes(1));
+
+    expect(() => {
+      pressKey(" ");
+      pressKey("j");
+      pressKey("m");
+    }).not.toThrow();
+
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("stops listening after unmount", async () => {
+    const { api, players } = createFakeApi();
+
+    loadYoutubeIframeApiMock.mockResolvedValue(api);
+
+    const { unmount } = render(<YoutubePlayer videoId={VIDEO.id} title={VIDEO.title} />);
+
+    await waitFor(() => expect(players).toHaveLength(1));
+
+    const player = players[0];
+
+    unmount();
+
+    expect(() => pressKey(" ")).not.toThrow();
+    expect(player.playVideo).not.toHaveBeenCalled();
+    expect(player.pauseVideo).not.toHaveBeenCalled();
+  });
+
+  it("opens the shortcut dialog with ? and closes it with ?", async () => {
+    await renderReadyPlayer();
+
+    pressKey("?");
+
+    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+
+    expect(dialog).toHaveFocus();
+    expect(dialog).toHaveTextContent("Play or pause");
+
+    pressKey("?", dialog);
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("returns focus to the shortcuts button after Escape", async () => {
+    await renderReadyPlayer();
+
+    const trigger = screen.getByRole("button", { name: /keyboard shortcuts/i });
+
+    act(() => trigger.focus());
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+
+    expect(dialog).toHaveFocus();
+
+    pressKey("Escape", dialog);
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(trigger).toHaveFocus();
+  });
+});
+
+describe("YoutubePlayer fullscreen and picture-in-picture controls", () => {
+  let fullscreenElement: Element | null = null;
+
+  beforeEach(() => {
+    fullscreenElement = null;
+
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+  });
+
+  afterEach(() => {
+    delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+    delete (document as { pictureInPictureEnabled?: unknown }).pictureInPictureEnabled;
+    delete (document as { exitFullscreen?: unknown }).exitFullscreen;
+  });
+
+  /** Fires `fullscreenchange` after the document reports `element`. */
+  function reportFullscreen(element: Element | null) {
+    fullscreenElement = element;
+
+    act(() => {
+      document.dispatchEvent(new Event("fullscreenchange"));
+    });
+  }
+
+  it("shows labelled controls for the reserved player box", async () => {
+    const { container } = await renderReadyPlayer();
+
+    const frame = container.querySelector('[data-slot="youtube-player-frame"]');
+    const fullscreen = screen.getByRole("button", { name: "Fullscreen" });
+
+    expect(frame).not.toBeNull();
+    expect(fullscreen.closest('[data-slot="player-controls"]')).not.toBeNull();
+    expect(fullscreen).toHaveAttribute("aria-pressed", "false");
+    expect(fullscreen).toHaveClass("min-h-11", "min-w-11");
+  });
+
+  it("enters and exits fullscreen on the box the F shortcut uses", async () => {
+    const { container } = await renderReadyPlayer();
+
+    const frame = container.querySelector<HTMLElement>('[data-slot="youtube-player-frame"]');
+
+    expect(frame).not.toBeNull();
+
+    const request = vi.fn().mockResolvedValue(undefined);
+    const exit = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(frame, "requestFullscreen", {
+      configurable: true,
+      writable: true,
+      value: request,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      writable: true,
+      value: exit,
+    });
+
+    const button = screen.getByRole("button", { name: "Fullscreen" });
+
+    fireEvent.click(button);
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.contexts[0]).toBe(frame);
+
+    reportFullscreen(frame);
+
+    await waitFor(() => expect(button).toHaveAttribute("aria-pressed", "true"));
+
+    fireEvent.click(button);
+
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(1);
+
+    reportFullscreen(null);
+
+    await waitFor(() => expect(button).toHaveAttribute("aria-pressed", "false"));
+  });
+
+  it("reflects fullscreen that the F shortcut entered", async () => {
+    const { container } = await renderReadyPlayer();
+
+    const frame = container.querySelector<HTMLElement>('[data-slot="youtube-player-frame"]');
+    const button = screen.getByRole("button", { name: "Fullscreen" });
+
+    Object.defineProperty(frame, "requestFullscreen", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockResolvedValue(undefined),
+    });
+
+    pressKey("f");
+    reportFullscreen(frame);
+
+    await waitFor(() => expect(button).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("works before the API has loaded", () => {
+    loadYoutubeIframeApiMock.mockReturnValue(new Promise(() => {}));
+
+    const { container } = render(<YoutubePlayer videoId={VIDEO.id} title={VIDEO.title} />);
+
+    const frame = container.querySelector<HTMLElement>('[data-slot="youtube-player-frame"]');
+
+    expect(frame).not.toBeNull();
+
+    const request = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(frame, "requestFullscreen", {
+      configurable: true,
+      writable: true,
+      value: request,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fullscreen" }));
+
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides picture-in-picture for the iframe surface even when the browser supports it", async () => {
+    // The official embed is cross-origin, so the page has no media element to
+    // hand to the PiP API. The control must be absent, not dead.
+    Object.defineProperty(document, "pictureInPictureEnabled", {
+      configurable: true,
+      get: () => true,
+    });
+
+    await renderReadyPlayer();
+
+    expect(screen.queryByRole("button", { name: "Picture in picture" })).toBeNull();
   });
 });

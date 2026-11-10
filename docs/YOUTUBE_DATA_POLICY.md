@@ -86,8 +86,12 @@ Notes on that table, all verifiable in the schema file:
 - **No YouTube statistics.** `viewCount` from the API is fetched as part of `videos.list` and held in
   memory so a card can display it, but it is not persisted. The shared cache holds it in memory for
   at most 10 minutes; the 30-day rule in III.E.4.b applies to anything persisted later.
-- **No channel ids, publish dates, categories, tags, captions or comments.** These are either
-  normalised into memory (`channelId`, `publishedAt`) and discarded, or never requested.
+- **No channel ids, publish dates, categories, tags or captions.** These are either normalised into
+  memory (`channelId`, `publishedAt`) and discarded, or never requested.
+- **No persisted comments.** The watch page's Comments tab reads top-level threads through
+  `commentThreads.list`, normalises only the fields it renders (author, plain-text body, like count,
+  publish time, reply count), and holds them in the process cache for at most 5 minutes. Comment text
+  is never written to SQLite, localStorage, logs or any other durable store.
 - **No search history.** Search queries and page tokens are not persisted.
 - **No credentials.** No passwords, no OAuth tokens, no Google account data. The only secret is the
   owner's API key, which lives in `.env.local` and is never written to the database.
@@ -103,8 +107,8 @@ memory. There is no table for search results and nothing writes one.
 The only place an API payload is retained is the process-local TTL cache in
 `src/lib/youtube/cache.ts`, which wraps every client call:
 
-- TTLs are search 60 s, video details 10 min, trending 5 min and categories 24 h. Entries are
-  bounded at 200 with LRU eviction and are lost on restart; nothing is written to disk.
+- TTLs are search 60 s, video details 10 min, trending 5 min, categories 24 h and comments 5 min.
+  Entries are bounded at 200 with LRU eviction and are lost on restart; nothing is written to disk.
 - Keys contain the endpoint and normalized parameters only. The API key is appended after the cache
   lookup and never stored; errors are never cached, and concurrent identical calls share one request.
 - The longest TTL (24 h) is far inside the 30-day limit for Non-Authorized API Data (III.E.4.d).

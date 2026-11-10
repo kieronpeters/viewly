@@ -1,10 +1,18 @@
 /**
- * GET /api/search?q=<terms>&pageToken=<token>
+ * GET /api/search?q=<terms>&pageToken=<token>&duration=<bucket>&order=<order>&uploadDate=<window>
  *
  * The only public entry point to `searchVideos`. Input is validated before the
  * upstream call, and the normalized `SearchPage` is returned unchanged:
  *
  *   200 { items, nextPageToken, totalResults }
+ *
+ * Filters are optional and default to `any` / `relevance` / `any`:
+ *
+ * | Parameter    | Values                          | Upstream parameter |
+ * | ------------ | ------------------------------- | ------------------ |
+ * | `duration`   | any, short, medium, long        | `videoDuration`    |
+ * | `order`      | relevance, date, viewCount      | `order`            |
+ * | `uploadDate` | any, day, week, month           | `publishedAfter`   |
  *
  * Failures use the shared T07 envelope (`{ error: { code, message, field? } }`):
  *
@@ -34,6 +42,7 @@ import {
 } from "@/lib/errors";
 import { isYouTubeApiError, searchVideos } from "@/lib/youtube/client";
 import type { YouTubeApiError } from "@/lib/youtube/client";
+import { nonDefaultSearchFilters, resolveSearchFilters } from "@/shared/search-filters";
 import type { SearchPage } from "@/shared/types";
 import { assertSearchQuery, isDomainValidationError } from "@/shared/validation";
 
@@ -61,8 +70,15 @@ export async function GET(request: Request): Promise<NextResponse<SearchPage | A
     // Trimmed and rejected (empty, overlong, control characters) before any I/O.
     const query = assertSearchQuery(searchParams.get("q"));
     const pageToken = searchParams.get("pageToken");
+    // All three filters are validated together, so one bad value names its own
+    // field and nothing reaches the upstream client.
+    const filters = resolveSearchFilters({
+      duration: searchParams.get("duration"),
+      order: searchParams.get("order"),
+      uploadDate: searchParams.get("uploadDate"),
+    });
 
-    const page = await searchVideos({ query, pageToken });
+    const page = await searchVideos({ query, pageToken, ...nonDefaultSearchFilters(filters) });
     return NextResponse.json(page, {
       status: 200,
       headers: { "Cache-Control": CACHE_CONTROL },

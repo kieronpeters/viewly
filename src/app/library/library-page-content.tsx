@@ -54,7 +54,21 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
 
   return (
     <div className="flex flex-col gap-6">
-      <LibraryTabs activeTab={tab} counts={counts} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <LibraryTabs activeTab={tab} counts={counts} />
+        {/*
+         * The stats page is a separate route rather than a `?tab=` value: it is
+         * a report over every list, not another slice of the library. Keeping
+         * it beside the tabs still makes it discoverable from the page that
+         * owns the data, without adding an item to the app shell.
+         */}
+        <Link
+          href="/library/stats"
+          className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-surface-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          Watch stats
+        </Link>
+      </div>
       <LibraryList tab={tab} />
     </div>
   );

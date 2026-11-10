@@ -44,6 +44,42 @@ export interface SearchPage {
 }
 
 /**
+ * One top-level YouTube comment, read-only.
+ *
+ * This is display data only: it is held in the process cache for at most five
+ * minutes and is never written to the database, localStorage or a log. `text`
+ * is plain text (never upstream HTML) and is rendered through React text nodes.
+ */
+export interface VideoComment {
+  /** Comment id, used as the list key. Never empty. */
+  id: string;
+  /** Display name of the comment author. Never empty. */
+  author: string;
+  /** Plain-text body. Never interpreted as HTML. */
+  text: string;
+  /** Null when the source did not provide a like count. */
+  likeCount: number | null;
+  publishedAt: IsoDateTime;
+  /** Number of replies reported by YouTube; 0 when absent. */
+  replyCount: number;
+}
+
+/**
+ * One page of top-level comments for a video.
+ *
+ * `commentsDisabled` is a normal outcome, not an error: YouTube refuses
+ * `commentThreads.list` for videos whose owner turned comments off, so the
+ * client models it as an empty page the UI can explain instead of a failure.
+ */
+export interface CommentPage {
+  items: VideoComment[];
+  /** Token for the next page, or null when this is the last page. */
+  nextPageToken: string | null;
+  /** True when the video's comments are disabled or otherwise unavailable. */
+  commentsDisabled: boolean;
+}
+
+/**
  * A video saved to the local library.
  * Snapshot of the video identity plus when it was saved; timestamps are ISO-8601.
  */

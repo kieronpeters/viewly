@@ -7,7 +7,7 @@
  * broken payloads throw `DomainValidationError` instead of leaking into the UI.
  */
 
-import type { SearchPage, VideoDetail, VideoSummary } from "./types";
+import type { CommentPage, SearchPage, VideoComment, VideoDetail, VideoSummary } from "./types";
 import { DomainValidationError, assertPageToken, isRecord, isVideoId } from "./validation";
 
 /** Largest title we are willing to render; real YouTube titles are far shorter. */
@@ -49,7 +49,7 @@ export function normalizeSearchResponse(payload: unknown): SearchPage {
 
   return {
     items,
-    nextPageToken: readNextPageToken(payload),
+    nextPageToken: readNextPageToken(payload, "Search response"),
     totalResults: readNonNegativeInteger(readRecord(payload, "pageInfo"), "totalResults"),
   };
 }
@@ -80,6 +80,46 @@ export function normalizeVideoResponse(payload: unknown): VideoDetail | null {
   }
 
   return null;
+}
+
+/**
+ * Normalizes a `commentThreads.list` response into top-level comments.
+ *
+ * Only the fields the watch page renders survive: author, plain-text body, like
+ * count, publish time and reply count. Equally important, only `textOriginal`
+ * (or a tag-stripped `textDisplay` fallback) is read, so no upstream HTML is
+ * carried into the UI. Threads without a usable id, author, body or timestamp
+ * are dropped rather than rendered half-formed.
+ *
+ * The returned `commentsDisabled` is always false here: YouTube reports disabled
+ * comments as a `commentsDisabled` error, which the client maps to an empty
+ * disabled page before this normalizer is reached.
+ *
+ * @throws {DomainValidationError} when the payload itself is not a comment response.
+ */
+export function normalizeCommentThreadsResponse(payload: unknown): CommentPage {
+  if (!isRecord(payload)) {
+    throw malformedPayload("Comment response must be an object.");
+  }
+
+  const rawItems = payload.items;
+  if (!Array.isArray(rawItems)) {
+    throw malformedPayload("Comment response must contain an items array.");
+  }
+
+  const items: VideoComment[] = [];
+  for (const rawItem of rawItems) {
+    const comment = toVideoComment(rawItem);
+    if (comment !== null) {
+      items.push(comment);
+    }
+  }
+
+  return {
+    items,
+    nextPageToken: readNextPageToken(payload, "Comment response"),
+    commentsDisabled: false,
+  };
 }
 
 /**
@@ -166,6 +206,75 @@ function toVideoDetail(rawItem: unknown): VideoDetail | null {
   };
 }
 
+/**
+ * Maps one `commentThread` item to a `VideoComment`, or null when it lacks the
+ * fields the UI needs. `snippet.totalReplyCount` lives on the thread, while the
+ * author, body and like count live on `snippet.topLevelComment.snippet`.
+ */
+function toVideoComment(rawItem: unknown): VideoComment | null {
+  if (!isRecord(rawItem) || !isRecord(rawItem.snippet)) {
+    return null;
+  }
+
+  const topLevel = readRecord(rawItem.snippet, "topLevelComment");
+  const commentSnippet = readRecord(topLevel, "snippet");
+  if (topLevel === null || commentSnippet === null) {
+    return null;
+  }
+
+  const id = readString(topLevel, "id") ?? readString(rawItem, "id");
+  if (id === null || id.trim().length === 0) {
+    return null;
+  }
+
+  const author = (readString(commentSnippet, "authorDisplayName") ?? "").trim();
+  const text = readCommentText(commentSnippet);
+  const publishedAt = readIsoDate(commentSnippet, "publishedAt");
+
+  if (author.length === 0 || text === null || publishedAt === null) {
+    return null;
+  }
+
+  return {
+    id,
+    author,
+    text,
+    likeCount: readNonNegativeInteger(commentSnippet, "likeCount"),
+    publishedAt,
+    replyCount: readNonNegativeInteger(rawItem.snippet, "totalReplyCount") ?? 0,
+  };
+}
+
+/**
+ * Prefers the plain-text body. `textDisplay` is HTML, so the fallback strips
+ * tags and decodes the handful of entities YouTube emits before it is ever
+ * rendered; nothing from the payload reaches the DOM as markup.
+ */
+function readCommentText(snippet: Record<string, unknown>): string | null {
+  const original = readString(snippet, "textOriginal");
+  const text = original ?? stripHtml(readString(snippet, "textDisplay") ?? "");
+  const trimmed = text.trim();
+
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+const HTML_ENTITIES: Readonly<Record<string, string>> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&#x27;": "'",
+  "&nbsp;": " ",
+};
+
+function stripHtml(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(?:amp|lt|gt|quot|#39|#x27|nbsp);/g, (entity) => HTML_ENTITIES[entity] ?? entity);
+}
+
 /** Video ids arrive as `{ videoId }` from search and as a plain string from videos. */
 function readVideoId(value: unknown): string | null {
   if (typeof value === "string") {
@@ -217,14 +326,14 @@ function readDurationSeconds(item: Record<string, unknown>): number | null {
   return duration === null ? null : parseIsoDuration(duration);
 }
 
-function readNextPageToken(payload: Record<string, unknown>): string | null {
+function readNextPageToken(payload: Record<string, unknown>, label: string): string | null {
   const value = payload.nextPageToken;
   if (value === undefined || value === null) {
     return null;
   }
 
   if (typeof value !== "string") {
-    throw malformedPayload("Search response has a non-string nextPageToken.", "nextPageToken");
+    throw malformedPayload(`${label} has a non-string nextPageToken.`, "nextPageToken");
   }
 
   // Reuses the shared token rules: absent/empty tokens become null, hostile ones throw.

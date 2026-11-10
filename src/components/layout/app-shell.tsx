@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { ViewlyLogo } from "@/components/brand/viewly-logo";
 import { NavLinks } from "@/components/layout/nav-links";
 
-const wordmarkClasses =
-  "inline-flex min-h-11 items-center rounded-sm text-lg font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
+const brandLinkClasses =
+  "inline-flex min-h-11 items-center rounded-sm outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
 
 /**
  * `NavLinks` reads `usePathname()`, which is runtime-only URL data. It is wrapped in
@@ -39,8 +40,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:flex">
         <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
-          <Link href="/" className={wordmarkClasses}>
-            Viewly
+          <Link href="/" aria-label="Viewly home" className={brandLinkClasses}>
+            <ViewlyLogo />
           </Link>
         </div>
         <nav aria-label="Primary" className="flex-1 overflow-y-auto p-3">
@@ -52,8 +53,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface px-4 md:hidden">
-          <Link href="/" className={wordmarkClasses}>
-            Viewly
+          <Link href="/" aria-label="Viewly home" className={brandLinkClasses}>
+            <ViewlyLogo size="md" />
           </Link>
         </header>
 

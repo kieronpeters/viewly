@@ -1,10 +1,15 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { PlayerControls } from "./player-controls";
+import { useWatchShortcuts } from "./use-watch-shortcuts";
+import { WatchShortcutsOverlay } from "./watch-shortcuts-overlay";
+import type { WatchShortcutPlayer } from "./watch-shortcuts";
 import {
   loadYoutubeIframeApi,
   YOUTUBE_PLAYER_STATE,
@@ -49,6 +54,13 @@ export interface YoutubePlayerProps {
    * never records anything itself.
    */
   onPlaybackStart?: () => void;
+  /**
+   * Toggles theater mode when the viewer presses `T`.
+   *
+   * Theater mode is a layout concern owned by T77; until that wiring exists the
+   * prop is omitted and `T` is a no-op. The player never changes its own width.
+   */
+  onToggleTheater?: () => void;
 }
 
 /**
@@ -79,10 +91,26 @@ export interface YoutubePlayerProps {
  * policy). A rejected loader or a throwing constructor is swallowed and the
  * plain "Open on YouTube" link stays visible beside the empty box.
  */
-export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: YoutubePlayerProps) {
+export function YoutubePlayer({
+  videoId,
+  title,
+  className,
+  onPlaybackStart,
+  onToggleTheater,
+}: YoutubePlayerProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef(title);
   const onPlaybackStartRef = useRef(onPlaybackStart);
+  const playerRef = useRef<WatchShortcutPlayer | null>(null);
+
+  const getPlayer = useCallback(() => playerRef.current, []);
+  const getContainer = useCallback(() => boxRef.current, []);
+
+  const { isHelpOpen, openHelp, closeHelp } = useWatchShortcuts({
+    getPlayer,
+    getContainer,
+    onToggleTheater,
+  });
 
   // Keep the latest title and callback without re-creating the player. Both
   // effects are declared before the player effect so the values are current by
@@ -161,6 +189,11 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
             },
           },
         });
+
+        // Keyboard shortcuts call the same instance through the official API.
+        // The loader's public type only promises the two members this module
+        // used before; the real `YT.Player` has the rest at runtime.
+        playerRef.current = player as unknown as WatchShortcutPlayer;
       } catch {
         // Blocked script, consent wall or an unavailable API: keep the fallback
         // link and leave the reserved box empty rather than crashing the page.
@@ -192,6 +225,7 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
     return () => {
       cancelled = true;
       observer?.disconnect();
+      playerRef.current = null;
 
       if (player !== null) {
         try {
@@ -223,16 +257,43 @@ export function YoutubePlayer({ videoId, title, className, onPlaybackStart }: Yo
         className="relative aspect-video w-full overflow-hidden rounded-xl border border-border bg-black"
       />
 
-      <a
-        href={watchUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex min-h-11 w-fit items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      >
-        <ExternalLink aria-hidden="true" className="size-4" />
-        Open on YouTube
-        <span className="sr-only"> (opens in a new tab)</span>
-      </a>
+      <div className="flex flex-wrap items-center gap-2">
+        {/*
+          Fullscreen and picture-in-picture share the code path with the
+          keyboard shortcuts: the box passed here is the same fullscreen
+          target `F` uses.
+        */}
+        <PlayerControls getContainer={getContainer} />
+
+        <a
+          href={watchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-11 w-fit items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <ExternalLink aria-hidden="true" className="size-4" />
+          Open on YouTube
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={openHelp}
+          className="min-h-11 gap-1.5 text-sm text-muted-foreground"
+        >
+          <kbd
+            aria-hidden="true"
+            className="rounded border border-border bg-muted px-1 font-mono text-[0.7rem]"
+          >
+            ?
+          </kbd>
+          Keyboard shortcuts
+        </Button>
+      </div>
+
+      <WatchShortcutsOverlay open={isHelpOpen} onClose={closeHelp} />
     </div>
   );
 }

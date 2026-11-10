@@ -144,3 +144,25 @@ standard relative-luminance formula. Every value below is measured from the toke
 
 This is the base palette for later components: new UI should consume these tokens rather than
 introducing one-off colours, and any palette change must re-run the contrast table above.
+
+## Brand mark
+
+The Viewly lockup lives in `src/components/brand/viewly-logo.tsx` and the matching favicon is
+`src/app/icon.svg`.
+
+- **Concept.** "Aperture": a rounded-square viewport in `--primary` with a play triangle knocked
+  into it in `--primary-foreground`. The tile is the screen and the triangle is the act of watching;
+  the 6-unit corner radius matches the app's rounded surfaces.
+- **Construction.** A 24 × 24 viewBox; the tile spans 2–22 with `rx="6"`. The play glyph spans
+  roughly 9.7–18.5 × 7.2–16.9, optically centred about 2 units right of the geometric centre.
+- **Colour.** Two tokens only: `text-primary` for the tile (the SVG fill is `currentColor`) and
+  `fill-primary-foreground` for the glyph. The favicon repeats the same hex values because it cannot
+  read CSS custom properties.
+- **Sizes.** The lockup renders the mark at 24, 32 or 40px (`size="sm" | "md" | "lg"`) with a fixed
+  square box, so headers do not shift and the mark stays crisp at every supported size. Below 24px
+  the play glyph fills in; that is the minimum size.
+- **Clear space.** Keep at least half the mark height free on every side (12px at 24px, 16px at
+  32px, 20px at 40px). Do not tighten the mark-to-wordmark gap (8/10/12px) or place the mark on a
+  `primary` fill, where the play glyph would lose contrast.
+- **Accessibility.** The logo is decorative: the surrounding home link carries
+  `aria-label="Viewly home"` and both the SVG and the wordmark are `aria-hidden`.

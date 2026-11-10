@@ -10,6 +10,12 @@ export interface VideoRowSectionProps {
   titleId: string;
   /** Optional "View all" destination, e.g. the category page for this row. */
   viewAllHref?: string;
+  /**
+   * Optional short explanation of why the row exists, e.g. the local signal a
+   * recommendation shelf was built from. Rendered under the heading so the
+   * reason is announced before the cards, but never as a second heading.
+   */
+  reason?: string;
   /** Row body: a `VideoRow`, or an empty/error state from `@/components/ui`. */
   children: React.ReactNode;
   className?: string;
@@ -27,6 +33,7 @@ export function VideoRowSection({
   title,
   titleId,
   viewAllHref,
+  reason,
   children,
   className,
 }: VideoRowSectionProps) {
@@ -52,6 +59,9 @@ export function VideoRowSection({
           </Link>
         )}
       </div>
+      {reason === undefined ? null : (
+        <p className="-mt-1 text-sm text-muted-foreground">{reason}</p>
+      )}
       {children}
     </section>
   );

@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { ViewlyLogo } from "@/components/brand/viewly-logo";
 import { CategoryChips } from "@/components/home/category-chips";
 import { VideoRowSkeleton } from "@/components/home/video-row-skeleton";
 import { SearchForm } from "@/components/search/search-form";
 import {
   CategorySection,
+  HOME_RECOMMENDATION_SHELVES,
+  RecommendationShelfSection,
+  TrendingSection,
   getAllCategories,
   getHomeCategories,
-  TrendingSection,
 } from "@/features/home";
 
 export const metadata: Metadata = {
@@ -20,10 +23,13 @@ export const metadata: Metadata = {
  * `/` home discovery page.
  *
  * The whole page is a static shell: the hero, the browse chips, the search form
- * and one `<Suspense>` boundary per row. Each row component fetches behind its
- * own boundary, so rows stream independently and a slow or failing section can
- * never block the hero or the other rows. No request data is read here, and the
- * page never imports the YouTube client directly — only `@/features/home`.
+ * and one `<Suspense>` boundary per row. The three upper rows are local
+ * recommendation shelves computed from history and favourites; each streams and
+ * hides independently when it has nothing to show. Every row component fetches
+ * behind its own boundary, so rows stream independently and a slow or failing
+ * section can never block the hero or the other rows. No request data is read
+ * here, and the page never imports the YouTube client directly — only
+ * `@/features/home`.
  */
 export default function Home() {
   // Static lists from the shared categories module: safe outside Suspense.
@@ -33,9 +39,13 @@ export default function Home() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-4 py-8 sm:gap-10 sm:px-6 sm:py-10 lg:px-8">
       <section aria-labelledby="home-heading" className="flex flex-col gap-3">
-        <p className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
-          Discover
-        </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <ViewlyLogo size="sm" />
+          <span aria-hidden="true" className="h-4 w-px bg-border" />
+          <p className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+            Discover
+          </p>
+        </div>
         <h1
           id="home-heading"
           className="text-3xl font-semibold tracking-tight text-balance text-foreground sm:text-4xl"
@@ -49,6 +59,12 @@ export default function Home() {
       </section>
 
       <CategoryChips categories={allCategories} />
+
+      {HOME_RECOMMENDATION_SHELVES.map((shelf) => (
+        <Suspense key={shelf.kind} fallback={<VideoRowSkeleton title={shelf.skeletonTitle} />}>
+          <RecommendationShelfSection kind={shelf.kind} />
+        </Suspense>
+      ))}
 
       <Suspense fallback={<VideoRowSkeleton title="Trending" />}>
         <TrendingSection />

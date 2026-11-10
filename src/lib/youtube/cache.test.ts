@@ -30,6 +30,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("TTL configuration", () => {
+  it("keeps comment text in memory for exactly five minutes", () => {
+    expect(YOUTUBE_CACHE_TTLS_MS.comments).toBe(5 * 60_000);
+  });
+});
+
 describe("buildRequestCacheKey", () => {
   it("sorts parameters and normalizes the query without the API key", () => {
     const key = buildRequestCacheKey("search", {
@@ -65,6 +71,29 @@ describe("buildRequestCacheKey", () => {
     );
     expect(buildRequestCacheKey("search", { q: "a" })).not.toBe(
       buildRequestCacheKey("videos", { q: "a" }),
+    );
+  });
+
+  it("floors publishedAfter to the minute so a moving clock cannot split an entry", () => {
+    const first = buildRequestCacheKey("search", {
+      uploadDate: undefined,
+      publishedAfter: "2025-12-25T12:00:01.000Z",
+    });
+    const second = buildRequestCacheKey("search", {
+      publishedAfter: "2025-12-25T12:00:59.999Z",
+    });
+    const nextMinute = buildRequestCacheKey("search", {
+      publishedAfter: "2025-12-25T12:01:00.000Z",
+    });
+
+    expect(first).toBe(second);
+    expect(first).toBe("search?publishedAfter=2025-12-25T12:00:00.000Z");
+    expect(nextMinute).not.toBe(first);
+  });
+
+  it("keeps duration and order filters in the key", () => {
+    expect(buildRequestCacheKey("search", { videoDuration: "short", order: "viewCount" })).toBe(
+      "search?order=viewCount&videoDuration=short",
     );
   });
 });

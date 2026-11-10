@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 import { splitDescriptionLinks } from "./description-links";
 
-/** Rough character budget of one rendered line in the 20rem sidebar. */
+/** Default rough character budget of one rendered line in the 20rem sidebar. */
 const APPROXIMATE_CHARACTERS_PER_LINE = 44;
 
 /** Lines visible before the description is clipped. Matches `max-h-40`. */
@@ -20,9 +20,12 @@ const COLLAPSED_MAX_LINES = 6;
  * visibility depended on `scrollHeight` would flash or shift. A description
  * that renders within the collapsed height never gets a pointless control.
  */
-export function shouldCollapseDescription(text: string): boolean {
+export function shouldCollapseDescription(
+  text: string,
+  charactersPerLine: number = APPROXIMATE_CHARACTERS_PER_LINE,
+): boolean {
   const estimatedLines = text.split(/\r\n|\r|\n/).reduce((total, line) => {
-    return total + Math.max(1, Math.ceil(line.length / APPROXIMATE_CHARACTERS_PER_LINE));
+    return total + Math.max(1, Math.ceil(line.length / charactersPerLine));
   }, 0);
 
   return estimatedLines > COLLAPSED_MAX_LINES;
@@ -31,6 +34,14 @@ export function shouldCollapseDescription(text: string): boolean {
 export interface ExpandableDescriptionProps {
   /** Plain-text description, rendered as text; line breaks are preserved. */
   text: string;
+  /**
+   * Rough characters that fit on one rendered line. The component cannot
+   * measure the DOM during server rendering, so the caller supplies the width
+   * of its own column: the 20rem sidebar uses the default, while the wide watch
+   * column passes a larger value so it does not show "Show more" for text that
+   * already fits.
+   */
+  charactersPerLine?: number;
   className?: string;
 }
 
@@ -42,12 +53,16 @@ export interface ExpandableDescriptionProps {
  * through `dangerouslySetInnerHTML`, and only absolute `http`/`https` URLs are
  * turned into links (see `description-links.ts`).
  */
-export function ExpandableDescription({ text, className }: ExpandableDescriptionProps) {
+export function ExpandableDescription({
+  text,
+  charactersPerLine,
+  className,
+}: ExpandableDescriptionProps) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const segments = useMemo(() => splitDescriptionLinks(text), [text]);
 
-  const collapsible = shouldCollapseDescription(text);
+  const collapsible = shouldCollapseDescription(text, charactersPerLine);
   const collapsed = collapsible && !expanded;
 
   return (

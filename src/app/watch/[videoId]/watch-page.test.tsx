@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   getVideoMock,
@@ -76,6 +77,31 @@ import { WatchPageContent } from "./watch-page-content";
 
 const VIDEO_ID = "dQw4w9WgXcQ";
 
+/**
+ * The comments panel fetches its own route after mount. By default it stays
+ * pending, so unrelated layout tests never see a late state update; the tab
+ * test resolves it explicitly.
+ */
+const commentsFetchMock =
+  vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+
+function emptyCommentsResponse(): Response {
+  return new Response(JSON.stringify({ items: [], nextPageToken: null, commentsDisabled: false }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+beforeEach(() => {
+  commentsFetchMock.mockReset();
+  commentsFetchMock.mockImplementation(() => new Promise<Response>(() => {}));
+  vi.stubGlobal("fetch", commentsFetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 /** Hand-written fixture, shaped like a normalized `videos.list` item. */
 const VIDEO: VideoDetail = {
   id: VIDEO_ID,
@@ -113,62 +139,159 @@ describe("WatchPageContent", () => {
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
 
     expect(screen.getByRole("heading", { level: 1, name: VIDEO.title })).toBeInTheDocument();
-    // The channel appears under the title and again in the details panel.
+    // The channel name lives in the channel row under the title.
     expect(screen.getAllByText(VIDEO.channelTitle).length).toBeGreaterThan(0);
     expect(getVideoMock).toHaveBeenCalledWith(VIDEO_ID);
     expect(notFoundMock).not.toHaveBeenCalled();
   });
 
-  it("stacks the save controls under the title on small screens", async () => {
-    // The 360px header cannot hold a wrapping title and three 44px controls in
-    // one row, so the header reflows to a column below `sm` and returns to a
-    // row from `sm` up. jsdom has no layout, so the strategy is the assertion.
-    getVideoMock.mockResolvedValue(VIDEO);
-
-    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
-
-    const header = screen.getByRole("heading", { level: 1 }).closest("header");
-
-    expect(header).not.toBeNull();
-    expect(header).toHaveClass("flex-col", "sm:flex-row");
-  });
-
-  it("mounts the player and the metadata panel in their labelled slots", async () => {
+  it("describes the player-led grid and stacks it on small screens", async () => {
+    // Desktop is a two-column grid: the player column plus a 360px rail. Below
+    // `lg` the grid collapses to one column, so the DOM order is the mobile
+    // reading order: player, title, actions, description, discussion, related.
+    // jsdom has no layout, so the strategy is the assertion.
     getVideoMock.mockResolvedValue(VIDEO);
 
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
 
     const playerSlot = screen.getByRole("region", { name: "Video player" });
-    const detailsSlot = screen.getByRole("complementary", { name: "Video details" });
+    const title = screen.getByRole("heading", { level: 1, name: VIDEO.title });
+    const channelRow = screen
+      .getByText(VIDEO.channelTitle)
+      .closest('[data-slot="watch-channel-row"]');
+    const actionRow = screen.getByRole("group", { name: "Video actions" });
+    const description = screen.getByRole("region", { name: "Description" });
+    const discussion = screen.getByRole("region", { name: "Comments and notes" });
+    const rail = screen.getByRole("complementary", { name: "Suggested videos" });
+
+    expect(
+      playerSlot.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      title.compareDocumentPosition(actionRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      actionRow.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      description.compareDocumentPosition(discussion) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      discussion.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    expect(channelRow).not.toBeNull();
+    expect(channelRow).toHaveClass("flex-col", "sm:flex-row");
+    expect(rail.parentElement).toHaveClass(
+      "grid-cols-1",
+      "lg:grid-cols-[minmax(0,1fr)_20rem]",
+      "xl:grid-cols-[minmax(0,1fr)_22.5rem]",
+    );
+    expect(rail).toHaveClass("lg:sticky", "lg:top-4");
+  });
+
+  it("mounts the player and the description in their labelled slots", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const playerSlot = screen.getByRole("region", { name: "Video player" });
+    const description = screen.getByRole("region", { name: "Description" });
 
     expect(playerSlot).toHaveAttribute("data-slot", "watch-player-slot");
-    expect(detailsSlot).toHaveAttribute("data-slot", "watch-details-slot");
+    expect(description).toHaveAttribute("data-slot", "watch-description");
     // T35 moved the embed behind the IFrame API client component; the reserved
     // box and the fallback link are the server-rendered, always-present parts.
     expect(playerSlot.querySelector('[data-slot="youtube-player"]')).not.toBeNull();
     expect(within(playerSlot).getByRole("link", { name: /open on youtube/i })).toBeInTheDocument();
-    // T31 replaced the placeholder: the slot now renders real metadata.
-    expect(within(detailsSlot).getByText("1.5B")).toBeInTheDocument();
-    expect(within(detailsSlot).getByText("3:33")).toBeInTheDocument();
-    expect(within(detailsSlot).queryByText(/T31 mounts/)).not.toBeInTheDocument();
+    // The old sidebar metadata moved under the title, keeping the same
+    // deterministic views/duration/date formatting and safe description.
+    expect(within(description).getByText("1.5B views")).toBeInTheDocument();
+    expect(within(description).getByText("3:33")).toBeInTheDocument();
+    expect(within(description).getByText("Published 25 Oct 2009")).toBeInTheDocument();
+    expect(within(description).getByText(VIDEO.description)).toBeInTheDocument();
   });
 
-  it("mounts the suggestions section below the player, wired to this video", async () => {
+  it("mounts the Up next rail beside the player, wired to this video", async () => {
     getVideoMock.mockResolvedValue(VIDEO);
 
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
 
     const playerSlot = screen.getByRole("region", { name: "Video player" });
-    const suggestions = screen.getByRole("region", { name: "More from this channel" });
+    const rail = screen.getByRole("complementary", { name: "Suggested videos" });
 
-    // Below the player in the left column, not above the metadata panel.
+    expect(rail).toHaveAttribute("data-slot", "watch-up-next-slot");
+    // It occupies the right column on desktop and follows the discussion in DOM
+    // order, which is where it lands in the single-column mobile stack.
     expect(
-      playerSlot.compareDocumentPosition(suggestions) & Node.DOCUMENT_POSITION_FOLLOWING,
+      playerSlot.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(watchSuggestionsPropsMock).toHaveBeenCalledWith({
       channelTitle: VIDEO.channelTitle,
       currentVideoId: VIDEO_ID,
     });
+  });
+
+  it("offers a copy-link action beside the save controls", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const actions = screen.getByRole("group", { name: "Video actions" });
+
+    expect(within(actions).getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+    expect(within(actions).getByRole("button", { name: "Add to playlist" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view on youtube/i })).toBeInTheDocument();
+  });
+
+  it("shows comments and notes tabs with authored empty states", async () => {
+    const user = userEvent.setup();
+    getVideoMock.mockResolvedValue(VIDEO);
+    commentsFetchMock.mockResolvedValueOnce(emptyCommentsResponse());
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const commentsTab = screen.getByRole("tab", { name: "Comments" });
+    const notesTab = screen.getByRole("tab", { name: "Your notes" });
+
+    expect(commentsTab).toHaveAttribute("aria-selected", "true");
+    expect(notesTab).toHaveAttribute("aria-selected", "false");
+
+    const commentsPanel = screen.getByRole("tabpanel", { name: "Comments" });
+    expect(await within(commentsPanel).findByText("No comments yet")).toBeInTheDocument();
+    // The comments panel owns its data; the video id is passed to its route.
+    expect(commentsFetchMock).toHaveBeenCalledTimes(1);
+    expect(String(commentsFetchMock.mock.calls[0]?.[0])).toContain(
+      `/api/videos/${VIDEO_ID}/comments`,
+    );
+
+    await user.click(notesTab);
+
+    expect(notesTab).toHaveAttribute("aria-selected", "true");
+    expect(commentsTab).toHaveAttribute("aria-selected", "false");
+
+    const notesPanel = screen.getByRole("tabpanel", { name: "Your notes" });
+    expect(within(notesPanel).getByText("No notes yet")).toBeInTheDocument();
+    expect(within(notesPanel).getByText(/notes stay on this device/i)).toBeInTheDocument();
+  });
+
+  it("moves between the discussion tabs with the arrow keys", async () => {
+    const user = userEvent.setup();
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    screen.getByRole("tab", { name: "Comments" }).focus();
+    await user.keyboard("{ArrowRight}");
+
+    expect(screen.getByRole("tab", { name: "Your notes" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await user.keyboard("{ArrowRight}");
+
+    expect(screen.getByRole("tab", { name: "Comments" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("hydrates the favourite control from the stored state", async () => {

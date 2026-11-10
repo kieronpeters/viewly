@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DomainValidationError } from "@/shared/validation";
 import {
+  normalizeCommentThreadsResponse,
   normalizeSearchResponse,
   normalizeVideoResponse,
   parseIsoDuration,
@@ -688,5 +689,135 @@ describe("parseIsoDuration", () => {
   it("returns null instead of an unsafe integer for overflowing durations", () => {
     expect(parseIsoDuration("P99999999999999999999D")).toBeNull();
     expect(parseIsoDuration("PT99999999999999999999H")).toBeNull();
+  });
+});
+
+/** A snippet shaped like a real `commentThreads.list` top-level comment. */
+function commentSnippet(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    authorDisplayName: "Ada Lovelace",
+    textOriginal: "First! Great video.",
+    likeCount: 12,
+    publishedAt: "2026-01-02T03:04:05Z",
+    ...overrides,
+  };
+}
+
+/** One `commentThread` item, shaped like the real API. */
+function commentThread(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: "youtube#commentThread",
+    id: "UgxThread",
+    snippet: {
+      videoId: VIDEO_ID,
+      totalReplyCount: 3,
+      topLevelComment: {
+        kind: "youtube#comment",
+        id: "UgxComment",
+        snippet: commentSnippet(),
+      },
+    },
+    ...overrides,
+  };
+}
+
+describe("normalizeCommentThreadsResponse", () => {
+  it("maps the top-level comment fields the watch page renders", () => {
+    const page = normalizeCommentThreadsResponse({
+      kind: "youtube#commentThreadListResponse",
+      nextPageToken: "CAoQAA",
+      items: [commentThread()],
+    });
+
+    expect(page.commentsDisabled).toBe(false);
+    expect(page.nextPageToken).toBe("CAoQAA");
+    expect(page.items).toEqual([
+      {
+        id: "UgxComment",
+        author: "Ada Lovelace",
+        text: "First! Great video.",
+        likeCount: 12,
+        publishedAt: "2026-01-02T03:04:05Z",
+        replyCount: 3,
+      },
+    ]);
+  });
+
+  it("returns an empty page for no comments", () => {
+    expect(normalizeCommentThreadsResponse({ items: [] })).toEqual({
+      items: [],
+      nextPageToken: null,
+      commentsDisabled: false,
+    });
+  });
+
+  it("defaults missing counts and keeps comment text free of markup", () => {
+    const page = normalizeCommentThreadsResponse({
+      items: [
+        commentThread({
+          snippet: {
+            totalReplyCount: 0,
+            topLevelComment: {
+              id: "UgxComment",
+              snippet: commentSnippet({
+                likeCount: undefined,
+                textOriginal: undefined,
+                textDisplay: '<b>Hello</b> &amp; <a href="https://example.com">welcome</a>',
+              }),
+            },
+          },
+        }),
+      ],
+    });
+
+    expect(page.items[0]).toMatchObject({
+      text: "Hello & welcome",
+      likeCount: null,
+      replyCount: 0,
+    });
+  });
+
+  it("drops threads without an id, author, body or timestamp", () => {
+    const page = normalizeCommentThreadsResponse({
+      items: [
+        commentThread({ id: undefined, snippet: { totalReplyCount: 0, topLevelComment: {} } }),
+        commentThread({ snippet: undefined }),
+        commentThread({
+          snippet: {
+            totalReplyCount: 0,
+            topLevelComment: {
+              id: "a",
+              snippet: commentSnippet({ authorDisplayName: "   " }),
+            },
+          },
+        }),
+        commentThread({
+          snippet: {
+            totalReplyCount: 0,
+            topLevelComment: { id: "b", snippet: commentSnippet({ textOriginal: "  " }) },
+          },
+        }),
+        commentThread({
+          snippet: {
+            totalReplyCount: 0,
+            topLevelComment: {
+              id: "c",
+              snippet: commentSnippet({ publishedAt: "not-a-date" }),
+            },
+          },
+        }),
+      ],
+    });
+
+    expect(page.items).toEqual([]);
+  });
+
+  it("rejects a malformed payload or next page token", () => {
+    expectMalformed(() => normalizeCommentThreadsResponse(null));
+    expectMalformed(() => normalizeCommentThreadsResponse({ items: "nope" }));
+    expectMalformed(
+      () => normalizeCommentThreadsResponse({ items: [], nextPageToken: 7 }),
+      "nextPageToken",
+    );
   });
 });

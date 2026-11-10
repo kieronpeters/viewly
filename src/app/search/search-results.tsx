@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { VideoCard } from "@/components/video/video-card";
 import { isYouTubeApiError, searchVideos } from "@/lib/youtube/client";
+import {
+  type SearchFilters,
+  nonDefaultSearchFilters,
+  resolveSearchFilters,
+} from "@/shared/search-filters";
 import type { SearchPage } from "@/shared/types";
 import { assertPageToken, assertSearchQuery, isDomainValidationError } from "@/shared/validation";
 
@@ -60,9 +65,25 @@ export async function SearchResults({ searchParams }: SearchResultsProps) {
     );
   }
 
+  let filters: SearchFilters;
+  try {
+    filters = resolveSearchFilters({
+      duration: firstParam(params.duration),
+      order: firstParam(params.order),
+      uploadDate: firstParam(params.uploadDate),
+    });
+  } catch {
+    return (
+      <EmptyState
+        title="Those filters are not valid"
+        message="Choose one of the filters above, or start a new search."
+      />
+    );
+  }
+
   let page: SearchPage;
   try {
-    page = await searchVideos({ query, pageToken });
+    page = await searchVideos({ query, pageToken, ...nonDefaultSearchFilters(filters) });
   } catch (error) {
     return <SearchError message={describeSearchError(error)} />;
   }
@@ -99,7 +120,7 @@ export async function SearchResults({ searchParams }: SearchResultsProps) {
       {page.nextPageToken === null ? null : (
         <div className="flex justify-center pt-2">
           <Button asChild variant="outline" size="lg" className="min-h-11">
-            <Link href={buildSearchHref(query, page.nextPageToken)} prefetch={false}>
+            <Link href={buildSearchHref(query, page.nextPageToken, filters)} prefetch={false}>
               Load more results
             </Link>
           </Button>

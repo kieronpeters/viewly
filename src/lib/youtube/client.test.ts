@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  MAX_COMMENT_RESULTS_LIMIT,
   MAX_RESULTS_LIMIT,
   YouTubeApiError,
   clearYouTubeCache,
@@ -12,6 +13,7 @@ import {
   getVideo,
   getVideos,
   isYouTubeApiError,
+  listComments,
   listVideoCategories,
   searchVideos,
 } from "@/lib/youtube/client";
@@ -95,6 +97,40 @@ function videoPayload(items: readonly unknown[]): Record<string, unknown> {
     kind: "youtube#videoListResponse",
     pageInfo: { totalResults: items.length, resultsPerPage: items.length },
     items,
+  };
+}
+
+/** Minimal `commentThreads.list` item for a top-level comment. */
+function commentThread(id: string): Record<string, unknown> {
+  return {
+    kind: "youtube#commentThread",
+    id: `thread-${id}`,
+    snippet: {
+      videoId: VIDEO_ID,
+      totalReplyCount: 2,
+      topLevelComment: {
+        kind: "youtube#comment",
+        id,
+        snippet: {
+          authorDisplayName: "Ada Lovelace",
+          textOriginal: "Great video!",
+          likeCount: 12,
+          publishedAt: "2026-01-02T03:04:05Z",
+        },
+      },
+    },
+  };
+}
+
+function commentPayload(
+  items: readonly unknown[],
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    kind: "youtube#commentThreadListResponse",
+    pageInfo: { totalResults: items.length, resultsPerPage: items.length },
+    items,
+    ...extra,
   };
 }
 
@@ -240,6 +276,61 @@ describe("searchVideos", () => {
     await searchVideos({ query: SEARCH_QUERY, pageToken: "CAoQAA" });
 
     expect(requestUrl().searchParams.get("pageToken")).toBe("CAoQAA");
+  });
+
+  it("maps filters to videoDuration, order and publishedAfter", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    fetchMock.mockResolvedValue(jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({
+      query: SEARCH_QUERY,
+      duration: "short",
+      order: "viewCount",
+      uploadDate: "week",
+    });
+
+    const url = requestUrl();
+    expect(url.searchParams.get("videoDuration")).toBe("short");
+    expect(url.searchParams.get("order")).toBe("viewCount");
+    expect(url.searchParams.get("publishedAfter")).toBe("2025-12-25T12:00:00.000Z");
+  });
+
+  it("omits every filter parameter when the values are the defaults", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(searchPayload([])));
+
+    await searchVideos({
+      query: SEARCH_QUERY,
+      duration: "any",
+      order: "relevance",
+      uploadDate: "any",
+    });
+
+    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
+      part: "snippet",
+      type: "video",
+      q: SEARCH_QUERY,
+      maxResults: "25",
+      key: FAKE_KEY,
+    });
+  });
+
+  it("rejects invalid filter values before the network", async () => {
+    const invalid = [
+      { duration: "tiny" },
+      { order: "popular" },
+      { uploadDate: "year" },
+    ] as unknown as Array<
+      Partial<Pick<Parameters<typeof searchVideos>[0], "duration" | "order" | "uploadDate">>
+    >;
+
+    for (const filters of invalid) {
+      await expect(searchVideos({ query: SEARCH_QUERY, ...filters })).rejects.toBeInstanceOf(
+        DomainValidationError,
+      );
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -387,6 +478,111 @@ describe("getTrending and listVideoCategories", () => {
   });
 });
 
+describe("listComments", () => {
+  it("requests relevance-ordered top-level threads with the default page size", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(commentPayload([commentThread("c1")])));
+
+    const page = await listComments({ videoId: VIDEO_ID });
+
+    const url = requestUrl();
+    expect(url.pathname).toBe("/youtube/v3/commentThreads");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      part: "snippet",
+      videoId: VIDEO_ID,
+      order: "relevance",
+      maxResults: "20",
+      key: FAKE_KEY,
+    });
+
+    expect(page.commentsDisabled).toBe(false);
+    expect(page.items).toEqual([
+      {
+        id: "c1",
+        author: "Ada Lovelace",
+        text: "Great video!",
+        likeCount: 12,
+        publishedAt: "2026-01-02T03:04:05Z",
+        replyCount: 2,
+      },
+    ]);
+  });
+
+  it("passes a validated page token and a clamped maxResults", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(commentPayload([])));
+
+    await listComments({ videoId: VIDEO_ID, pageToken: "CAoQAA", maxResults: 500 });
+    expect(requestUrl(0).searchParams.get("pageToken")).toBe("CAoQAA");
+    expect(requestUrl(0).searchParams.get("maxResults")).toBe(String(MAX_COMMENT_RESULTS_LIMIT));
+
+    await listComments({ videoId: VIDEO_ID, maxResults: 0 });
+    expect(requestUrl(1).searchParams.get("maxResults")).toBe("1");
+  });
+
+  it("rejects an invalid video id or page token before the network", async () => {
+    await expect(listComments({ videoId: "short" })).rejects.toBeInstanceOf(DomainValidationError);
+    await expect(
+      listComments({ videoId: VIDEO_ID, pageToken: "not a token" }),
+    ).rejects.toBeInstanceOf(DomainValidationError);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // CONTRACT (T80): disabled comments are a normal page, not a thrown error.
+  it("maps a 403 commentsDisabled response to a disabled page", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(apiErrorPayload(403, "commentsDisabled"), 403));
+
+    const page = await listComments({ videoId: VIDEO_ID });
+
+    expect(page).toEqual({ items: [], nextPageToken: null, commentsDisabled: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still surfaces quota and malformed payload failures", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(apiErrorPayload(403, "quotaExceeded"), 403));
+
+    const quota = expectApiError(
+      await readThrown(() => listComments({ videoId: VIDEO_ID })),
+      "quota",
+    );
+    expect(quota.reason).toBe("quotaExceeded");
+
+    fetchMock.mockResolvedValue(jsonResponse({ items: "nope" }));
+
+    const malformed = await readThrown(() => listComments({ videoId: VIDEO_ID }));
+    expect(malformed).toBeInstanceOf(DomainValidationError);
+  });
+
+  it("caches the normalized page for five minutes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    // A fresh Response per call: a body can only be read once.
+    fetchMock.mockImplementation(async () => jsonResponse(commentPayload([commentThread("c1")])));
+
+    await listComments({ videoId: VIDEO_ID });
+    await listComments({ videoId: VIDEO_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.comments - 1);
+    await listComments({ videoId: VIDEO_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await listComments({ videoId: VIDEO_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches the disabled page so a disabled video does not spend quota per view", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(apiErrorPayload(403, "commentsDisabled"), 403),
+    );
+
+    await listComments({ videoId: VIDEO_ID });
+    await listComments({ videoId: VIDEO_ID });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("error mapping", () => {
   it("maps 403 quotaExceeded to quota without leaking the key", async () => {
     fetchMock.mockImplementation(async () =>
@@ -499,6 +695,38 @@ describe("caching", () => {
     await searchVideos({ query: "different terms", maxResults: 10 });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("caches each filter combination separately and reuses a repeated one", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    // The same filtered search twice: one upstream request.
+    await searchVideos({ query: "filtered", duration: "short" });
+    await searchVideos({ query: "filtered", duration: "short" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Every other combination is its own entry.
+    await searchVideos({ query: "filtered", duration: "medium" });
+    await searchVideos({ query: "filtered", order: "date" });
+    await searchVideos({ query: "filtered", order: "viewCount" });
+    await searchVideos({ query: "filtered", uploadDate: "day" });
+    await searchVideos({ query: "filtered", uploadDate: "week" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("shares a filtered entry across millisecond differences inside one minute", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    fetchMock.mockImplementation(async () => jsonResponse(searchPayload([searchItem(VIDEO_ID)])));
+
+    await searchVideos({ query: "minute bucket", uploadDate: "day" });
+    vi.setSystemTime(new Date("2026-01-01T12:00:59.000Z"));
+    await searchVideos({ query: "minute bucket", uploadDate: "day" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("refreshes a search after its 60 second TTL using fake timers", async () => {
@@ -1061,6 +1289,10 @@ describe("key containment", () => {
         });
       }
 
+      if (url.pathname.endsWith("/commentThreads")) {
+        return jsonResponse(commentPayload([commentThread("c1")]));
+      }
+
       return jsonResponse(videoPayload([videoItem(VIDEO_ID)]));
     });
 
@@ -1070,6 +1302,7 @@ describe("key containment", () => {
       await getVideos([VIDEO_ID]),
       await getTrending(),
       await listVideoCategories(),
+      await listComments({ videoId: VIDEO_ID }),
     ];
     const serialized = JSON.stringify(results);
 
