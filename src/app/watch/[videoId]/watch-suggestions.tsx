@@ -34,7 +34,7 @@ export async function WatchSuggestions({ channelTitle, currentVideoId }: WatchSu
     return null;
   }
 
-  return <VideoSuggestions videos={videos} />;
+  return <VideoSuggestions key={currentVideoId} videos={videos} currentVideoId={currentVideoId} />;
 }
 
 /** Placeholder rows shown while the suggestions request is in flight. */

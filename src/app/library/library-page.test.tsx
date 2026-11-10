@@ -11,6 +11,7 @@ const {
   sweepLibraryMetadataMock,
   clearHistoryEntryMock,
   clearAllHistoryMock,
+  listVideoProgressMock,
 } = vi.hoisted(() => ({
   listFavouriteVideosMock: vi.fn(),
   listWatchLaterVideosMock: vi.fn(),
@@ -20,6 +21,7 @@ const {
   sweepLibraryMetadataMock: vi.fn(),
   clearHistoryEntryMock: vi.fn(),
   clearAllHistoryMock: vi.fn(),
+  listVideoProgressMock: vi.fn(),
 }));
 
 // The content half imports the server-only reads through the feature barrel, so
@@ -41,6 +43,11 @@ vi.mock("@/features/library/history-actions", () => ({
   recordView: vi.fn(),
   clearHistoryEntry: clearHistoryEntryMock,
   clearAllHistory: clearAllHistoryMock,
+}));
+// Playback progress is server-only; the tab renders whatever the map holds, so
+// no test opens the real database file.
+vi.mock("@/features/progress/progress-data", () => ({
+  listVideoProgress: listVideoProgressMock,
 }));
 vi.mock("@/features/library/actions", () => ({
   toggleFavourite: vi.fn(),
@@ -135,6 +142,8 @@ beforeEach(() => {
   clearHistoryEntryMock.mockResolvedValue(undefined);
   clearAllHistoryMock.mockReset();
   clearAllHistoryMock.mockResolvedValue(undefined);
+  listVideoProgressMock.mockReset();
+  listVideoProgressMock.mockReturnValue(new Map());
 });
 
 describe("LibraryPageContent tab bar", () => {
@@ -437,5 +446,37 @@ describe("LibraryPageContent history tab", () => {
     await waitFor(() => {
       expect(clearAllHistoryMock).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe("LibraryPageContent playback progress", () => {
+  const progress = {
+    videoId: "newest-video",
+    positionSeconds: 30,
+    durationSeconds: 60,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("passes stored progress to favourite cards", async () => {
+    listVideoProgressMock.mockReturnValue(new Map([[progress.videoId, progress]]));
+
+    render(await LibraryPageContent({ searchParams: Promise.resolve({}) }));
+
+    expect(listVideoProgressMock).toHaveBeenCalledWith(VIDEOS.map((video) => video.id));
+    expect(screen.getAllByRole("progressbar", { name: "Watch progress" })).toHaveLength(1);
+  });
+
+  it("passes stored progress to history cards", async () => {
+    listVideoProgressMock.mockReturnValue(new Map([[progress.videoId, progress]]));
+
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "history" }) }));
+
+    expect(screen.getAllByRole("progressbar", { name: "Watch progress" })).toHaveLength(1);
+  });
+
+  it("renders no bars when no video has progress", async () => {
+    render(await LibraryPageContent({ searchParams: Promise.resolve({ tab: "history" }) }));
+
+    expect(screen.queryByRole("progressbar", { name: "Watch progress" })).toBeNull();
   });
 });

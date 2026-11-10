@@ -81,8 +81,10 @@ Notes on that table, all verifiable in the schema file:
 - **No video or audio media.** No downloads, no stream URLs, no DASH/HLS manifests, no signed media
   URLs, no offline copies, no re-hosting. Developer Policies III.E.1 prohibits all of these without
   YouTube's prior written approval.
-- **No descriptions.** `VideoDetail.description` exists only in memory: it is returned to the caller
-  and may sit in the TTL cache for up to 10 minutes, but it is never written to the database.
+- **No video or channel descriptions.** `VideoDetail.description` and
+  `ChannelDetail.description` exist only in memory: they are returned to the caller and may sit in the
+  TTL cache for up to 10 minutes (video details or uploads) or 24 hours (channel identity), but they
+  are never written to the database.
 - **No YouTube statistics.** `viewCount` from the API is fetched as part of `videos.list` and held in
   memory so a card can display it, but it is not persisted. The shared cache holds it in memory for
   at most 10 minutes; the 30-day rule in III.E.4.b applies to anything persisted later.
@@ -107,8 +109,9 @@ memory. There is no table for search results and nothing writes one.
 The only place an API payload is retained is the process-local TTL cache in
 `src/lib/youtube/cache.ts`, which wraps every client call:
 
-- TTLs are search 60 s, video details 10 min, trending 5 min, categories 24 h and comments 5 min.
-  Entries are bounded at 200 with LRU eviction and are lost on restart; nothing is written to disk.
+- TTLs are search 60 s, video details 10 min, trending 5 min, categories 24 h, comments 5 min,
+  channels 24 h and playlist items (channel uploads) 10 min. Entries are bounded at 200 with LRU
+  eviction and are lost on restart; nothing is written to disk.
 - Keys contain the endpoint and normalized parameters only. The API key is appended after the cache
   lookup and never stored; errors are never cached, and concurrent identical calls share one request.
 - The longest TTL (24 h) is far inside the 30-day limit for Non-Authorized API Data (III.E.4.d).

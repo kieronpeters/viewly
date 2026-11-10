@@ -2,15 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   DomainValidationError,
+  CHANNEL_ID_LENGTH,
   MAX_PAGE_TOKEN_LENGTH,
   MAX_PLAYLIST_NAME_LENGTH,
   MAX_SEARCH_QUERY_LENGTH,
+  PLAYLIST_ID_MAX_LENGTH,
+  PLAYLIST_ID_MIN_LENGTH,
   VIDEO_ID_LENGTH,
+  assertChannelId,
   assertPageToken,
+  assertPlaylistId,
   assertPlaylistName,
   assertSearchQuery,
   assertVideoId,
+  isChannelId,
   isDomainValidationError,
+  isPlaylistId,
   isRecord,
   isVideoId,
 } from "@/shared/validation";
@@ -231,6 +238,89 @@ describe("assertVideoId", () => {
 
     for (const value of [null, undefined, 42, "", "short", "dQw4w9WgXcQQ", "dQw4w9WgXc!"]) {
       expect(isVideoId(value)).toBe(false);
+    }
+  });
+});
+
+describe("assertChannelId", () => {
+  const VALID_CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw";
+
+  it("accepts UC plus 22 URL-safe characters", () => {
+    for (const id of [VALID_CHANNEL_ID, `UC${"-".repeat(22)}`, `UC${"_".repeat(22)}`]) {
+      expect(assertChannelId(id)).toBe(id);
+      expect(isChannelId(id)).toBe(true);
+    }
+
+    expect(CHANNEL_ID_LENGTH).toBe(24);
+  });
+
+  it("rejects the wrong prefix, length or alphabet", () => {
+    for (const id of [
+      "",
+      "UCuAXFkgsw1L7xaCfnd5JJO", // 23
+      "UCuAXFkgsw1L7xaCfnd5JJOww", // 25
+      "UUuAXFkgsw1L7xaCfnd5JJOw", // not UC
+      "ucuAXFkgsw1L7xaCfnd5JJOw", // lower-case prefix
+      "UCuAXFkgsw1L7xaCfnd5JJO!",
+      ` ${VALID_CHANNEL_ID}`,
+    ]) {
+      const error = caught(() => assertChannelId(id));
+
+      expect(error.code).toBe("invalid_format");
+      expect(error.field).toBe("channelId");
+    }
+  });
+
+  it("rejects non-string input instead of coercing it", () => {
+    for (const value of [undefined, null, 24, { id: VALID_CHANNEL_ID }]) {
+      expect(caught(() => assertChannelId(value)).code).toBe("invalid_type");
+      expect(isChannelId(value)).toBe(false);
+    }
+  });
+
+  it("never throws from the non-throwing guard", () => {
+    expect(isChannelId(VALID_CHANNEL_ID)).toBe(true);
+    expect(isChannelId("short")).toBe(false);
+    expect(isChannelId(undefined)).toBe(false);
+  });
+});
+
+describe("assertPlaylistId", () => {
+  const VALID_PLAYLIST_ID = "UUuAXFkgsw1L7xaCfnd5JJOw";
+
+  it("accepts 10 to 64 URL-safe characters", () => {
+    for (const id of [
+      VALID_PLAYLIST_ID,
+      "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+      "a".repeat(PLAYLIST_ID_MIN_LENGTH),
+      "a".repeat(PLAYLIST_ID_MAX_LENGTH),
+    ]) {
+      expect(assertPlaylistId(id)).toBe(id);
+      expect(isPlaylistId(id)).toBe(true);
+    }
+  });
+
+  it("rejects ids that are too short, too long or not URL-safe", () => {
+    for (const id of [
+      "",
+      "short",
+      "a".repeat(PLAYLIST_ID_MIN_LENGTH - 1),
+      "a".repeat(PLAYLIST_ID_MAX_LENGTH + 1),
+      "has spaces",
+      "PL!not-safe",
+      ` ${VALID_PLAYLIST_ID}`,
+    ]) {
+      const error = caught(() => assertPlaylistId(id));
+
+      expect(error.code).toBe("invalid_format");
+      expect(error.field).toBe("playlistId");
+    }
+  });
+
+  it("rejects non-string input instead of coercing it", () => {
+    for (const value of [undefined, null, 42, { id: VALID_PLAYLIST_ID }]) {
+      expect(caught(() => assertPlaylistId(value)).code).toBe("invalid_type");
+      expect(isPlaylistId(value)).toBe(false);
     }
   });
 });

@@ -37,6 +37,23 @@ const IFRAME_TITLE_SUFFIX = " — YouTube video player";
  */
 const OBSERVER_ROOT_MARGIN = "200px";
 
+/**
+ * Imperative playback controls exposed once the API has created the player.
+ *
+ * The watch page uses these for progress reporting and the resume prompt. The
+ * methods are safe to call at any time: an unavailable API or a destroyed
+ * player reads as `0` and seeking is a no-op, so a blocked embed never throws
+ * into React.
+ */
+export interface YoutubePlayerHandle {
+  /** Current position in whole-ish seconds; `0` when unavailable. */
+  getCurrentTime(): number;
+  /** Total duration in seconds; `0` until the API knows it. */
+  getDuration(): number;
+  /** Seeks to `seconds`, clamped to a non-negative value. */
+  seekTo(seconds: number): void;
+}
+
 export interface YoutubePlayerProps {
   /** Normalized 11-character YouTube id; never a raw route segment. */
   videoId: string;
@@ -54,6 +71,29 @@ export interface YoutubePlayerProps {
    * never records anything itself.
    */
   onPlaybackStart?: () => void;
+  /**
+   * Called on every `PLAYING` state change, including resuming after a pause.
+   *
+   * {@link onPlaybackStart} is latched so history is recorded once; progress
+   * reporting needs the opposite, a signal for each time playback actually
+   * resumes, so it can restart its timer.
+   */
+  onPlaybackPlay?: () => void;
+  /** Called when the player reports `PAUSED` (never `CUED` on load). */
+  onPlaybackPause?: () => void;
+  /**
+   * Called once the API has created and readied the player, with a handle for
+   * reading the clock and seeking.
+   */
+  onPlayerReady?: (handle: YoutubePlayerHandle) => void;
+  /**
+   * Called each time the player reports `ENDED`.
+   *
+   * The player owns the IFrame API event; the watch page decides what happens
+   * next. Unlike {@link onPlaybackStart} this is not latched, because a viewer
+   * can seek back and finish the same video again.
+   */
+  onPlaybackEnd?: () => void;
   /**
    * Toggles theater mode when the viewer presses `T`.
    *
@@ -96,11 +136,19 @@ export function YoutubePlayer({
   title,
   className,
   onPlaybackStart,
+  onPlaybackPlay,
+  onPlaybackPause,
+  onPlayerReady,
+  onPlaybackEnd,
   onToggleTheater,
 }: YoutubePlayerProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef(title);
   const onPlaybackStartRef = useRef(onPlaybackStart);
+  const onPlaybackPlayRef = useRef(onPlaybackPlay);
+  const onPlaybackPauseRef = useRef(onPlaybackPause);
+  const onPlayerReadyRef = useRef(onPlayerReady);
+  const onPlaybackEndRef = useRef(onPlaybackEnd);
   const playerRef = useRef<WatchShortcutPlayer | null>(null);
 
   const getPlayer = useCallback(() => playerRef.current, []);
@@ -124,6 +172,22 @@ export function YoutubePlayer({
   }, [onPlaybackStart]);
 
   useEffect(() => {
+    onPlaybackPlayRef.current = onPlaybackPlay;
+  }, [onPlaybackPlay]);
+
+  useEffect(() => {
+    onPlaybackPauseRef.current = onPlaybackPause;
+  }, [onPlaybackPause]);
+
+  useEffect(() => {
+    onPlayerReadyRef.current = onPlayerReady;
+  }, [onPlayerReady]);
+
+  useEffect(() => {
+    onPlaybackEndRef.current = onPlaybackEnd;
+  }, [onPlaybackEnd]);
+
+  useEffect(() => {
     const box = boxRef.current;
 
     if (box === null) {
@@ -143,6 +207,35 @@ export function YoutubePlayer({
 
       hasStarted = true;
       onPlaybackStartRef.current?.();
+    };
+
+    /** Reads a player number without letting a blocked/destroyed API throw. */
+    const readSeconds = (read: (() => number) | undefined): number => {
+      try {
+        const value = read?.();
+
+        return typeof value === "number" && Number.isFinite(value) ? value : 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    // One handle per mounted player. Its methods read the live instance, so a
+    // caller can hold it across a pause and still get the current position.
+    const handle: YoutubePlayerHandle = {
+      getCurrentTime: () => readSeconds(player?.getCurrentTime?.bind(player)),
+      getDuration: () => readSeconds(player?.getDuration?.bind(player)),
+      seekTo: (seconds) => {
+        if (!Number.isFinite(seconds)) {
+          return;
+        }
+
+        try {
+          player?.seekTo?.(Math.max(seconds, 0), true);
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
     };
 
     const createPlayer = async () => {
@@ -181,10 +274,23 @@ export function YoutubePlayer({
               iframe.style.width = "100%";
               iframe.style.height = "100%";
               iframe.style.border = "0";
+
+              onPlayerReadyRef.current?.(handle);
             },
             onStateChange(event) {
+              if (event.data === YOUTUBE_PLAYER_STATE.ENDED) {
+                onPlaybackEndRef.current?.();
+                return;
+              }
+
               if (event.data === YOUTUBE_PLAYER_STATE.PLAYING) {
                 notifyPlaybackStart();
+                onPlaybackPlayRef.current?.();
+                return;
+              }
+
+              if (event.data === YOUTUBE_PLAYER_STATE.PAUSED) {
+                onPlaybackPauseRef.current?.();
               }
             },
           },

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { DomainValidationError } from "@/shared/validation";
 import {
+  normalizeChannelResponse,
   normalizeCommentThreadsResponse,
+  normalizePlaylistItemsResponse,
   normalizeSearchResponse,
   normalizeVideoResponse,
   parseIsoDuration,
@@ -819,5 +821,254 @@ describe("normalizeCommentThreadsResponse", () => {
       () => normalizeCommentThreadsResponse({ items: [], nextPageToken: 7 }),
       "nextPageToken",
     );
+  });
+});
+
+/** A `playlistItems.list` item. The item id is not the video id. */
+function playlistItem(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: "youtube#playlistItem",
+    id: "PLitem-not-a-video-id",
+    snippet: {
+      publishedAt: "2026-01-02T03:04:05Z",
+      channelId: CHANNEL_ID,
+      title: "A recent upload",
+      description: "Video description that a card never renders.",
+      thumbnails: {
+        high: { url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" },
+      },
+      channelTitle: "Rick Astley",
+      resourceId: { kind: "youtube#video", videoId: VIDEO_ID },
+    },
+    contentDetails: {
+      videoId: VIDEO_ID,
+      videoPublishedAt: "2026-01-02T03:04:05Z",
+    },
+    ...overrides,
+  };
+}
+
+function playlistPage(items: readonly unknown[]): Record<string, unknown> {
+  return { kind: "youtube#playlistItemListResponse", items };
+}
+
+describe("normalizePlaylistItemsResponse", () => {
+  it("maps nested video ids, snippet fields and the upload date", () => {
+    expect(normalizePlaylistItemsResponse(playlistPage([playlistItem()]))).toEqual([
+      {
+        id: VIDEO_ID,
+        title: "A recent upload",
+        channelId: CHANNEL_ID,
+        channelTitle: "Rick Astley",
+        thumbnailUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+        publishedAt: "2026-01-02T03:04:05Z",
+        // playlistItems.list reports neither duration nor view statistics.
+        durationSeconds: null,
+        viewCount: null,
+      },
+    ]);
+  });
+
+  it("falls back to snippet.resourceId and snippet.publishedAt", () => {
+    const item = playlistItem({
+      contentDetails: {},
+      snippet: {
+        publishedAt: "2025-12-31T23:59:59Z",
+        channelId: CHANNEL_ID,
+        title: "Fallback item",
+        channelTitle: "Rick Astley",
+        resourceId: { kind: "youtube#video", videoId: OTHER_VIDEO_ID },
+      },
+    });
+
+    expect(normalizePlaylistItemsResponse(playlistPage([item]))).toMatchObject([
+      { id: OTHER_VIDEO_ID, publishedAt: "2025-12-31T23:59:59Z", title: "Fallback item" },
+    ]);
+  });
+
+  it("returns an empty array for an empty uploads page", () => {
+    expect(normalizePlaylistItemsResponse(playlistPage([]))).toEqual([]);
+  });
+
+  it("drops items without a usable video id, title or publish date", () => {
+    const usable = playlistItem();
+    const unusable = [
+      null,
+      { snippet: null },
+      playlistItem({
+        contentDetails: {},
+        snippet: { title: "No id", publishedAt: "2026-01-01T00:00:00Z" },
+      }),
+      playlistItem({
+        contentDetails: { videoId: "short" },
+        snippet: { title: "Short id", publishedAt: "2026-01-01T00:00:00Z" },
+      }),
+      playlistItem({ snippet: { title: "   ", resourceId: { videoId: VIDEO_ID } } }),
+      playlistItem({ contentDetails: { videoId: VIDEO_ID }, snippet: { title: "No date" } }),
+    ];
+
+    expect(normalizePlaylistItemsResponse(playlistPage([...unusable, usable]))).toHaveLength(1);
+    expect(normalizePlaylistItemsResponse(playlistPage(unusable))).toEqual([]);
+  });
+
+  it("throws for payloads that are not playlist responses", () => {
+    for (const payload of [undefined, null, 42, "response", [{ items: [] }]]) {
+      expectMalformed(() => normalizePlaylistItemsResponse(payload));
+    }
+
+    expectMalformed(() => normalizePlaylistItemsResponse({}));
+    expectMalformed(() => normalizePlaylistItemsResponse({ items: null }));
+  });
+});
+
+/** A `channels.list` item shaped like the real API (`part=snippet,statistics,contentDetails`). */
+function channelItem(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: "youtube#channel",
+    id: CHANNEL_ID,
+    snippet: {
+      title: "Rick Astley",
+      description: "The official Rick Astley channel.",
+      customUrl: "@rickastley",
+      publishedAt: "2009-10-25T06:57:33Z",
+      thumbnails: {
+        default: { url: "https://yt3.ggpht.com/channel-default=s88" },
+        medium: { url: "https://yt3.ggpht.com/channel-medium=s240" },
+        high: { url: "https://yt3.ggpht.com/channel-high=s800" },
+      },
+    },
+    statistics: { viewCount: "1000000", subscriberCount: "4200000", hiddenSubscriberCount: false },
+    contentDetails: { relatedPlaylists: { uploads: "UUuAXFkgsw1L7xaCfnd5JJOw" } },
+    ...overrides,
+  };
+}
+
+function channelPage(items: readonly unknown[]): Record<string, unknown> {
+  return { kind: "youtube#channelListResponse", items };
+}
+
+describe("normalizeChannelResponse", () => {
+  it("maps the id, name, largest avatar, subscriber count, description and uploads playlist", () => {
+    expect(normalizeChannelResponse(channelPage([channelItem()]))).toEqual({
+      id: CHANNEL_ID,
+      title: "Rick Astley",
+      avatarUrl: "https://yt3.ggpht.com/channel-high=s800",
+      subscriberCount: 4_200_000,
+      description: "The official Rick Astley channel.",
+      uploadsPlaylistId: "UUuAXFkgsw1L7xaCfnd5JJOw",
+    });
+  });
+
+  it("defaults a missing description to an empty string", () => {
+    const channel = normalizeChannelResponse(
+      channelPage([channelItem({ snippet: { title: "Rick Astley" } })]),
+    );
+
+    expect(channel?.description).toBe("");
+  });
+
+  it("keeps only a plausible uploads playlist id", () => {
+    for (const uploads of [undefined, "", "short", "UU with spaces", `UU${"x".repeat(100)}`]) {
+      const channel = normalizeChannelResponse(
+        channelPage([channelItem({ contentDetails: { relatedPlaylists: { uploads } } })]),
+      );
+
+      expect(channel?.uploadsPlaylistId).toBeNull();
+    }
+
+    const missing = normalizeChannelResponse(channelPage([channelItem({ contentDetails: null })]));
+    expect(missing?.uploadsPlaylistId).toBeNull();
+  });
+
+  it("returns null for an empty items array", () => {
+    expect(normalizeChannelResponse(channelPage([]))).toBeNull();
+  });
+
+  it("keeps a hidden subscriber count out instead of reporting zero", () => {
+    const channel = normalizeChannelResponse(
+      channelPage([
+        channelItem({
+          statistics: { subscriberCount: "4200000", hiddenSubscriberCount: true },
+        }),
+      ]),
+    );
+
+    expect(channel?.subscriberCount).toBeNull();
+  });
+
+  it("leaves the count null when the statistics part is missing or unusable", () => {
+    for (const statistics of [
+      undefined,
+      {},
+      { subscriberCount: "lots" },
+      { subscriberCount: -1 },
+    ]) {
+      const channel = normalizeChannelResponse(channelPage([channelItem({ statistics })]));
+
+      expect(channel?.subscriberCount).toBeNull();
+    }
+  });
+
+  it("drops avatars from hosts the image loader cannot serve", () => {
+    const channel = normalizeChannelResponse(
+      channelPage([
+        channelItem({
+          snippet: {
+            title: "Rick Astley",
+            thumbnails: { high: { url: "https://example.com/avatar.jpg" } },
+          },
+        }),
+      ]),
+    );
+
+    expect(channel).not.toBeNull();
+    expect(channel?.avatarUrl).toBeNull();
+  });
+
+  it("drops non-https or malformed avatar URLs", () => {
+    for (const url of [
+      "http://yt3.ggpht.com/avatar.jpg",
+      "not a url",
+      "",
+      undefined,
+      { url: "https://yt3.ggpht.com/avatar.jpg" },
+    ]) {
+      const channel = normalizeChannelResponse(
+        channelPage([
+          channelItem({ snippet: { title: "Rick Astley", thumbnails: { high: { url } } } }),
+        ]),
+      );
+
+      expect(channel?.avatarUrl).toBeNull();
+    }
+  });
+
+  it("throws for payloads that are not channel responses", () => {
+    for (const payload of [undefined, null, 42, "response", [{ items: [] }]]) {
+      expectMalformed(() => normalizeChannelResponse(payload));
+    }
+
+    expectMalformed(() => normalizeChannelResponse({}));
+    expectMalformed(() => normalizeChannelResponse({ items: null }));
+  });
+
+  it("skips items without a usable id, snippet or title", () => {
+    const usable = channelItem();
+    const unusable = [
+      null,
+      { snippet: usable.snippet },
+      channelItem({ id: "short" }),
+      channelItem({ id: `UU${CHANNEL_ID.slice(2)}` }),
+      channelItem({ snippet: null }),
+      channelItem({ snippet: { title: "   " } }),
+      channelItem({ snippet: { title: "x".repeat(301) } }),
+    ];
+
+    // A broken first item must not hide the next usable one.
+    expect(normalizeChannelResponse(channelPage([...unusable, usable]))).toMatchObject({
+      id: CHANNEL_ID,
+      title: "Rick Astley",
+    });
+    expect(normalizeChannelResponse(channelPage(unusable))).toBeNull();
   });
 });

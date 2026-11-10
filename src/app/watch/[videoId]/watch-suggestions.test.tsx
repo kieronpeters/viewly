@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // `server-only` throws outside a Server Component graph; Vitest is not one.
 vi.mock("server-only", () => ({}));
 
+// The rail is a Client Component with the App Router's navigation hook; this
+// suite only exercises its server-side fetch/filter output.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 // No network: only `searchVideos` is replaced, so the real error class and its
 // stable codes are exercised for real.
 vi.mock("@/lib/youtube/client", async (importOriginal) => {

@@ -9,11 +9,13 @@ import {
   MAX_RESULTS_LIMIT,
   YouTubeApiError,
   clearYouTubeCache,
+  getChannel,
   getTrending,
   getVideo,
   getVideos,
   isYouTubeApiError,
   listComments,
+  listPlaylistItems,
   listVideoCategories,
   searchVideos,
 } from "@/lib/youtube/client";
@@ -30,6 +32,9 @@ const FAKE_KEY = "AIzaSyFAKE-client-test-key-000000";
 const ORIGINAL_KEY = process.env.YOUTUBE_API_KEY;
 
 const VIDEO_ID = "dQw4w9WgXcQ";
+const CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw";
+const OTHER_CHANNEL_ID = "UCaaaaaaaaaaaaaaaaaaaaaa";
+const UPLOADS_PLAYLIST_ID = "UUuAXFkgsw1L7xaCfnd5JJOw";
 const SEARCH_QUERY = "never gonna give you up";
 
 /**
@@ -95,6 +100,59 @@ function searchPayload(items: readonly unknown[]): Record<string, unknown> {
 function videoPayload(items: readonly unknown[]): Record<string, unknown> {
   return {
     kind: "youtube#videoListResponse",
+    pageInfo: { totalResults: items.length, resultsPerPage: items.length },
+    items,
+  };
+}
+
+/** Minimal `channels.list` item. */
+function channelItem(id: string): Record<string, unknown> {
+  return {
+    kind: "youtube#channel",
+    id,
+    snippet: {
+      title: "Rick Astley",
+      description: "The official Rick Astley channel.",
+      thumbnails: {
+        high: { url: "https://yt3.ggpht.com/channel-high=s800" },
+      },
+    },
+    statistics: { subscriberCount: "4200000", hiddenSubscriberCount: false },
+    contentDetails: { relatedPlaylists: { uploads: UPLOADS_PLAYLIST_ID } },
+  };
+}
+
+function channelPayload(items: readonly unknown[]): Record<string, unknown> {
+  return {
+    kind: "youtube#channelListResponse",
+    pageInfo: { totalResults: items.length, resultsPerPage: items.length },
+    items,
+  };
+}
+
+/** Minimal `playlistItems.list` item for a channel uploads page. */
+function playlistItem(videoId: string): Record<string, unknown> {
+  return {
+    kind: "youtube#playlistItem",
+    id: `playlist-item-${videoId}`,
+    snippet: {
+      publishedAt: "2026-01-02T03:04:05Z",
+      channelId: CHANNEL_ID,
+      title: "A recent upload",
+      description: "Not rendered by a card.",
+      channelTitle: "Rick Astley",
+      thumbnails: {
+        high: { url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" },
+      },
+      resourceId: { kind: "youtube#video", videoId },
+    },
+    contentDetails: { videoId, videoPublishedAt: "2026-01-02T03:04:05Z" },
+  };
+}
+
+function playlistPayload(items: readonly unknown[]): Record<string, unknown> {
+  return {
+    kind: "youtube#playlistItemListResponse",
     pageInfo: { totalResults: items.length, resultsPerPage: items.length },
     items,
   };
@@ -371,6 +429,198 @@ describe("getVideo", () => {
     expect(detail).not.toBeNull();
     expect(Object.hasOwn(detail as object, "description")).toBe(true);
     expect(detail?.description).toBe(DESCRIPTION_TEXT);
+  });
+});
+
+describe("getChannel", () => {
+  it("requests snippet, statistics and contentDetails for one channel id", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(channelPayload([channelItem(CHANNEL_ID)])));
+
+    const channel = await getChannel(CHANNEL_ID);
+
+    const url = requestUrl();
+    expect(url.pathname).toBe("/youtube/v3/channels");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      part: "snippet,statistics,contentDetails",
+      id: CHANNEL_ID,
+      key: FAKE_KEY,
+    });
+    expect(channel).toEqual({
+      id: CHANNEL_ID,
+      title: "Rick Astley",
+      avatarUrl: "https://yt3.ggpht.com/channel-high=s800",
+      subscriberCount: 4_200_000,
+      description: "The official Rick Astley channel.",
+      uploadsPlaylistId: UPLOADS_PLAYLIST_ID,
+    });
+    expect(JSON.stringify(channel)).not.toContain(FAKE_KEY);
+  });
+
+  it("returns null for an empty items array", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(channelPayload([])));
+
+    await expect(getChannel(CHANNEL_ID)).resolves.toBeNull();
+  });
+
+  it("rejects an invalid channel id before the network", async () => {
+    for (const id of ["", "short", `UU${CHANNEL_ID.slice(2)}`, ` ${CHANNEL_ID}`]) {
+      await expect(getChannel(id)).rejects.toBeInstanceOf(DomainValidationError);
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("makes one request per uncached channel", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      return jsonResponse(channelPayload([channelItem(url.searchParams.get("id") ?? "")]));
+    });
+
+    await getChannel(CHANNEL_ID);
+    await getChannel(OTHER_CHANNEL_ID);
+    await getChannel(CHANNEL_ID);
+    await getChannel(OTHER_CHANNEL_ID);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestUrl(0).searchParams.get("id")).toBe(CHANNEL_ID);
+    expect(requestUrl(1).searchParams.get("id")).toBe(OTHER_CHANNEL_ID);
+  });
+
+  it("caches the normalized channel for 24 hours", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(channelPayload([channelItem(CHANNEL_ID)])),
+    );
+
+    expect(YOUTUBE_CACHE_TTLS_MS.channels).toBe(24 * 60 * 60_000);
+
+    await getChannel(CHANNEL_ID);
+    await getChannel(CHANNEL_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.channels - 1);
+    await getChannel(CHANNEL_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await getChannel(CHANNEL_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a malformed payload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: "nope" }));
+
+    await expect(getChannel(CHANNEL_ID)).rejects.toBeInstanceOf(DomainValidationError);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(channelPayload([channelItem(CHANNEL_ID)])));
+
+    await expect(getChannel(CHANNEL_ID)).resolves.toMatchObject({ id: CHANNEL_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("listPlaylistItems", () => {
+  it("requests one uploads page with snippet, contentDetails and the default 25 results", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])));
+
+    const videos = await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+
+    const url = requestUrl();
+    expect(url.pathname).toBe("/youtube/v3/playlistItems");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      part: "snippet,contentDetails",
+      playlistId: UPLOADS_PLAYLIST_ID,
+      maxResults: "25",
+      key: FAKE_KEY,
+    });
+    expect(videos).toEqual([
+      {
+        id: VIDEO_ID,
+        title: "A recent upload",
+        channelId: CHANNEL_ID,
+        channelTitle: "Rick Astley",
+        thumbnailUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+        publishedAt: "2026-01-02T03:04:05Z",
+        durationSeconds: null,
+        viewCount: null,
+      },
+    ]);
+    expect(JSON.stringify(videos)).not.toContain(FAKE_KEY);
+  });
+
+  it("clamps maxResults to 1..50", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(playlistPayload([])));
+
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID, maxResults: 0 });
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID, maxResults: 500 });
+
+    expect(requestUrl(0).searchParams.get("maxResults")).toBe("1");
+    expect(requestUrl(1).searchParams.get("maxResults")).toBe("50");
+  });
+
+  it("rejects an invalid playlist id before the network", async () => {
+    for (const playlistId of ["", "short", "has spaces", "PL!not-safe"]) {
+      await expect(listPlaylistItems({ playlistId })).rejects.toBeInstanceOf(DomainValidationError);
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty array for an empty uploads page", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(playlistPayload([])));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).resolves.toEqual([]);
+  });
+
+  it("caches the normalized uploads for ten minutes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])),
+    );
+
+    expect(YOUTUBE_CACHE_TTLS_MS.playlistItems).toBe(10 * 60_000);
+
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.playlistItems - 1);
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 1);
+    await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a malformed uploads payload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: "nope" }));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).rejects.toBeInstanceOf(
+      DomainValidationError,
+    );
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a quota failure without caching it", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(apiErrorPayload(403, "quotaExceeded"), 403));
+
+    const error = expectApiError(
+      await readThrown(() => listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })),
+      "quota",
+    );
+    expect(error.reason).toBe("quotaExceeded");
+
+    fetchMock.mockResolvedValue(jsonResponse(playlistPayload([playlistItem(VIDEO_ID)])));
+
+    await expect(listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID })).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1303,6 +1553,7 @@ describe("key containment", () => {
       await getTrending(),
       await listVideoCategories(),
       await listComments({ videoId: VIDEO_ID }),
+      await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID }),
     ];
     const serialized = JSON.stringify(results);
 

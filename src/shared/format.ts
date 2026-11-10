@@ -86,6 +86,23 @@ export function formatViewCount(count: number | null): string | null {
 }
 
 /**
+ * Formats a subscriber count, e.g. `"1.2K subscribers"`.
+ *
+ * Same compact rules as {@link formatViewCount} — floored, at most one decimal
+ * place, no locale — with the singular `"1 subscriber"` and `null` for a count
+ * YouTube did not publish (hidden subscriber counts stay hidden rather than
+ * being rendered as zero).
+ */
+export function formatSubscriberCount(count: number | null): string | null {
+  if (count === null || !Number.isFinite(count) || count < 0) {
+    return null;
+  }
+
+  const subscribers = Math.floor(count);
+  return `${formatCount(subscribers)} ${subscribers === 1 ? "subscriber" : "subscribers"}`;
+}
+
+/**
  * Picks the largest unit that fits and formats the scaled value.
  *
  * The scaled value is rounded before the unit is committed, so `999999` becomes

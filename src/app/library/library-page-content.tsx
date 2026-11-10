@@ -12,6 +12,8 @@ import {
 } from "@/features/library";
 import { listHistoryEntries, type HistoryEntry } from "@/features/library/history-data";
 import { PlaylistCreateForm } from "@/features/library/playlist-create-form";
+import { listVideoProgress } from "@/features/progress/progress-data";
+import type { VideoProgress } from "@/features/progress/progress";
 import type { PlaylistSummary } from "@/shared/types";
 
 import { HistoryClearAllButton, HistoryClearEntryButton } from "./history-clear-controls";
@@ -88,7 +90,10 @@ interface LibraryListProps {
  */
 function LibraryList({ tab }: LibraryListProps) {
   if (tab === "history") {
-    return <HistoryList entries={listHistoryEntries()} />;
+    const entries = listHistoryEntries();
+    const progressById = listVideoProgress(entries.map((entry) => entry.video.id));
+
+    return <HistoryList entries={entries} progressById={progressById} />;
   }
 
   const playlists = listPlaylists();
@@ -99,6 +104,8 @@ function LibraryList({ tab }: LibraryListProps) {
 
   const isWatchLater = tab === "watch-later";
   const videos = isWatchLater ? listWatchLaterVideos() : listFavouriteVideos();
+  // One batched read for the whole tab; videos without a row get no bar.
+  const progressById = listVideoProgress(videos.map((video) => video.id));
   const heading = isWatchLater ? "Watch later" : "Favourites";
   const description = isWatchLater
     ? "Videos you queue appear here, newest first."
@@ -149,6 +156,7 @@ function LibraryList({ tab }: LibraryListProps) {
                   isWatchLater
                   showPlaylistPicker
                   playlists={playlists}
+                  progress={progressById.get(video.id) ?? null}
                   className="h-full"
                 />
               ) : (
@@ -157,6 +165,7 @@ function LibraryList({ tab }: LibraryListProps) {
                   isFavourite
                   showPlaylistPicker
                   playlists={playlists}
+                  progress={progressById.get(video.id) ?? null}
                   className="h-full"
                 />
               )}
@@ -171,6 +180,8 @@ function LibraryList({ tab }: LibraryListProps) {
 interface HistoryListProps {
   /** Newest viewed first, exactly as `listHistoryEntries` returns them. */
   entries: readonly HistoryEntry[];
+  /** Local playback progress keyed by video id; absent entries have no bar. */
+  progressById: ReadonlyMap<string, VideoProgress>;
 }
 
 /**
@@ -182,7 +193,7 @@ interface HistoryListProps {
  * tab only reads and clears them. The tab navigation lives in `<LibraryTabs>`,
  * above every tab's content.
  */
-function HistoryList({ entries }: HistoryListProps) {
+function HistoryList({ entries, progressById }: HistoryListProps) {
   return (
     <section aria-labelledby="library-history-heading" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -220,7 +231,7 @@ function HistoryList({ entries }: HistoryListProps) {
         >
           {entries.map((entry) => (
             <li key={entry.video.id} className="flex min-w-0 flex-col gap-2">
-              <VideoCard video={entry.video} />
+              <VideoCard video={entry.video} progress={progressById.get(entry.video.id) ?? null} />
 
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">

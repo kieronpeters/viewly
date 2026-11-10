@@ -237,6 +237,51 @@ describe("YoutubePlayer", () => {
     expect(onPlaybackStart).not.toHaveBeenCalled();
   });
 
+  it("fires onPlaybackEnd each time the player reports ENDED", async () => {
+    const { api, players } = createFakeApi();
+    const onPlaybackStart = vi.fn();
+    const onPlaybackEnd = vi.fn();
+    loadYoutubeIframeApiMock.mockResolvedValue(api);
+
+    render(
+      <YoutubePlayer
+        videoId={VIDEO.id}
+        title={VIDEO.title}
+        onPlaybackStart={onPlaybackStart}
+        onPlaybackEnd={onPlaybackEnd}
+      />,
+    );
+
+    await waitFor(() => expect(players).toHaveLength(1));
+
+    const player = players[0];
+
+    act(() => {
+      player.options.events?.onReady?.({ target: player });
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.PLAYING);
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.PAUSED);
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.BUFFERING);
+    });
+
+    expect(onPlaybackEnd).not.toHaveBeenCalled();
+
+    act(() => {
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.ENDED);
+    });
+
+    expect(onPlaybackEnd).toHaveBeenCalledTimes(1);
+    // Finishing the video is not a second view.
+    expect(onPlaybackStart).toHaveBeenCalledTimes(1);
+
+    // Seeking back and finishing again is a new ENDED, not a latched callback.
+    act(() => {
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.PLAYING);
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.ENDED);
+    });
+
+    expect(onPlaybackEnd).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the fallback link and does not crash when the script fails", async () => {
     loadYoutubeIframeApiMock.mockRejectedValue(new Error("Blocked by the browser"));
 

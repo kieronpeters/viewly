@@ -4,13 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   getVideoMock,
+  getChannelMock,
   watchSuggestionsPropsMock,
   notFoundMock,
   isVideoFavouriteMock,
   isInWatchLaterMock,
   listPlaylistsMock,
+  listVideoNotesMock,
+  getVideoProgressMock,
 } = vi.hoisted(() => ({
   getVideoMock: vi.fn(),
+  getChannelMock: vi.fn(),
   watchSuggestionsPropsMock: vi.fn(),
   notFoundMock: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
@@ -18,12 +22,17 @@ const {
   isVideoFavouriteMock: vi.fn(),
   isInWatchLaterMock: vi.fn(),
   listPlaylistsMock: vi.fn(),
+  listVideoNotesMock: vi.fn(),
+  getVideoProgressMock: vi.fn(),
 }));
 
 // `server-only` throws outside a Server Component graph; Vitest is not one.
 vi.mock("server-only", () => ({}));
 // The page tests never hit the YouTube API; the client boundary is mocked.
-vi.mock("@/lib/youtube/client", () => ({ getVideo: getVideoMock }));
+vi.mock("@/lib/youtube/client", () => ({
+  getVideo: getVideoMock,
+  getChannel: getChannelMock,
+}));
 // The suggestions section is an async Server Component. React cannot render an
 // async component in a client test tree, so it is replaced by a sync stub that
 // records its props; the real section is covered in `watch-suggestions.test`.
@@ -44,6 +53,18 @@ vi.mock("@/features/library", () => ({
 vi.mock("@/features/library/actions", () => ({
   toggleFavourite: vi.fn(),
   toggleWatchLater: vi.fn(),
+}));
+// The notes panel is seeded from a local database read; stub both halves so no
+// file is opened and the actions never run.
+vi.mock("@/features/notes", () => ({ listVideoNotes: listVideoNotesMock }));
+// Progress is a server-only read; stub it so no test opens the database file.
+vi.mock("@/features/progress/progress-data", () => ({
+  getVideoProgress: getVideoProgressMock,
+}));
+vi.mock("@/features/notes/actions", () => ({
+  addNote: vi.fn(),
+  editNote: vi.fn(),
+  deleteNote: vi.fn(),
 }));
 // The player wrapper imports the history action; it never runs here.
 vi.mock("@/features/library/history-actions", () => ({
@@ -70,7 +91,7 @@ vi.mock("@/features/library/playlist-actions", () => ({
 vi.mock("next/navigation", () => ({ notFound: notFoundMock }));
 
 import { EnvConfigurationError } from "@/lib/env";
-import type { VideoDetail } from "@/shared/types";
+import type { ChannelDetail, VideoDetail } from "@/shared/types";
 
 import { generateMetadata } from "./page";
 import { WatchPageContent } from "./watch-page-content";
@@ -115,6 +136,16 @@ const VIDEO: VideoDetail = {
   description: "The official video for Never Gonna Give You Up.",
 };
 
+/** Hand-written fixture, shaped like a normalized `channels.list` item. */
+const CHANNEL: ChannelDetail = {
+  id: VIDEO.channelId,
+  title: "Rick Astley",
+  avatarUrl: "https://yt3.ggpht.com/channel-high=s800",
+  subscriberCount: 4_200_000,
+  description: "The official Rick Astley channel.",
+  uploadsPlaylistId: "UUuAXFkgsw1L7xaCfnd5JJOw",
+};
+
 function paramsFor(videoId: string): Promise<{ videoId: string }> {
   return Promise.resolve({ videoId });
 }
@@ -123,6 +154,8 @@ describe("WatchPageContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getVideoMock.mockResolvedValue(null);
+    getChannelMock.mockReset();
+    getChannelMock.mockResolvedValue(null);
     isVideoFavouriteMock.mockReset();
     isVideoFavouriteMock.mockReturnValue(false);
     isInWatchLaterMock.mockReset();
@@ -131,6 +164,10 @@ describe("WatchPageContent", () => {
     listPlaylistsMock.mockReturnValue([
       { id: "playlist-road-trip", name: "Road trip", itemCount: 2 },
     ]);
+    listVideoNotesMock.mockReset();
+    listVideoNotesMock.mockReturnValue([]);
+    getVideoProgressMock.mockReset();
+    getVideoProgressMock.mockReturnValue(null);
   });
 
   it("renders the title and channel for a valid video", async () => {
@@ -143,6 +180,81 @@ describe("WatchPageContent", () => {
     expect(screen.getAllByText(VIDEO.channelTitle).length).toBeGreaterThan(0);
     expect(getVideoMock).toHaveBeenCalledWith(VIDEO_ID);
     expect(notFoundMock).not.toHaveBeenCalled();
+  });
+
+  it("renders the channel card with the avatar and subscriber count from channels.list", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+    getChannelMock.mockResolvedValue(CHANNEL);
+
+    const { container } = render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    // One channels.list call for the video's channel, made through the reader.
+    expect(getChannelMock).toHaveBeenCalledTimes(1);
+    expect(getChannelMock).toHaveBeenCalledWith(VIDEO.channelId);
+
+    const card = container.querySelector<HTMLElement>('[data-slot="watch-channel-card"]');
+    expect(card).not.toBeNull();
+    if (card === null) {
+      throw new Error("Unreachable: the channel card is missing.");
+    }
+
+    expect(within(card).getByText("Rick Astley")).toBeInTheDocument();
+    expect(within(card).getByText("4.2M subscribers")).toBeInTheDocument();
+    expect(card.querySelector("img")).not.toBeNull();
+
+    const link = within(card).getByRole("link", { name: /view on youtube/i });
+    expect(link).toHaveAttribute("href", `https://www.youtube.com/channel/${VIDEO.channelId}`);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("keeps the player and a working channel card when the channel lookup fails", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+    getChannelMock.mockRejectedValue(new Error("quota exceeded"));
+
+    const { container } = render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    // The player, title and actions are unaffected by the failed enrichment.
+    expect(screen.getByRole("region", { name: "Video player" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: VIDEO.title })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Video actions" })).toBeInTheDocument();
+
+    const card = container.querySelector<HTMLElement>('[data-slot="watch-channel-card"]');
+    expect(card).not.toBeNull();
+    if (card === null) {
+      throw new Error("Unreachable: the channel card is missing.");
+    }
+
+    // Snippet values take over, no count is invented, and the link stays valid.
+    expect(within(card).getByText(VIDEO.channelTitle)).toBeInTheDocument();
+    expect(within(card).queryByText(/subscribers?/)).not.toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: /view on youtube/i })).toHaveAttribute(
+      "href",
+      `https://www.youtube.com/watch?v=${VIDEO_ID}`,
+    );
+  });
+
+  it("puts the channel card before the actions in the responsive header row", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+    getChannelMock.mockResolvedValue(CHANNEL);
+
+    const { container } = render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const row = container.querySelector<HTMLElement>('[data-slot="watch-channel-row"]');
+    const card = container.querySelector<HTMLElement>('[data-slot="watch-channel-card"]');
+    const actions = screen.getByRole("group", { name: "Video actions" });
+
+    expect(row).not.toBeNull();
+    expect(card).not.toBeNull();
+    if (row === null || card === null) {
+      throw new Error("Unreachable: the header row is missing.");
+    }
+
+    // Below `sm` the row stacks the card above the actions at 390px; from `sm`
+    // they share one line with the actions pushed to the end.
+    expect(row).toHaveClass("flex-col", "sm:flex-row", "sm:items-center", "sm:justify-between");
+    expect(row.firstElementChild).toBe(card);
+    expect(card.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("describes the player-led grid and stacks it on small screens", async () => {
@@ -522,5 +634,45 @@ describe("when YOUTUBE_API_KEY is missing", () => {
     await expect(generateMetadata({ params: paramsFor(VIDEO_ID) })).rejects.toThrow(
       "upstream exploded",
     );
+  });
+});
+
+describe("WatchPageContent resume prompt", () => {
+  beforeEach(() => {
+    getVideoMock.mockReset();
+    getVideoMock.mockResolvedValue(VIDEO);
+    getChannelMock.mockReset();
+    getChannelMock.mockResolvedValue(null);
+    isVideoFavouriteMock.mockReset();
+    isVideoFavouriteMock.mockReturnValue(false);
+    isInWatchLaterMock.mockReset();
+    isInWatchLaterMock.mockReturnValue(false);
+    listPlaylistsMock.mockReset();
+    listPlaylistsMock.mockReturnValue([]);
+    listVideoNotesMock.mockReset();
+    listVideoNotesMock.mockReturnValue([]);
+    getVideoProgressMock.mockReset();
+  });
+
+  it("shows the resume prompt for a stored position in range", async () => {
+    getVideoProgressMock.mockReturnValue({
+      videoId: VIDEO_ID,
+      positionSeconds: 60,
+      durationSeconds: 200,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(getVideoProgressMock).toHaveBeenCalledWith(VIDEO_ID);
+    expect(screen.getByRole("button", { name: "Resume from 1:00" })).toBeInTheDocument();
+  });
+
+  it("shows no prompt when the video has no saved progress", async () => {
+    getVideoProgressMock.mockReturnValue(null);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    expect(screen.queryByRole("button", { name: /Resume from/ })).toBeNull();
   });
 });

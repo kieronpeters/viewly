@@ -1,4 +1,3 @@
-import { CircleUserRound, ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
@@ -10,11 +9,15 @@ import { PlaylistPicker } from "@/features/library/playlist-picker";
 import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
 import { videoSnapshotFromVideo } from "@/features/library/video-snapshot";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
-import type { VideoDetail } from "@/shared/types";
+import { getVideoProgress } from "@/features/progress/progress-data";
+import type { VideoProgress } from "@/features/progress/progress";
+import type { ChannelDetail, VideoDetail } from "@/shared/types";
 
 import { CopyLinkButton } from "./copy-link-button";
 import { parseWatchVideoId } from "./parse-watch-video-id";
+import { readWatchChannel } from "./read-watch-channel";
 import { readWatchVideo } from "./read-watch-video";
+import { WatchChannelCard } from "./watch-channel-card";
 import { WatchConfigurationState } from "./watch-configuration-state";
 import { WatchDescription } from "./watch-description";
 import { WatchDiscussion } from "./watch-discussion";
@@ -64,13 +67,20 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
   const isFavourite = isVideoFavourite(video.id);
   const inWatchLater = isInWatchLater(video.id);
   const playlists = listPlaylists();
+  // Local playback position for the resume prompt (T68), read per request
+  // beside the other SQLite reads.
+  const progress = getVideoProgress(video.id);
+  // Optional enrichment: null on any failure, never thrown (T74).
+  const channel = await readWatchChannel(video.channelId);
 
   return (
     <WatchVideoDetail
       video={video}
+      channel={channel}
       isFavourite={isFavourite}
       inWatchLater={inWatchLater}
       playlists={playlists}
+      progress={progress}
     />
   );
 }
@@ -78,12 +88,19 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
 export interface WatchVideoDetailProps {
   /** Already normalized by the YouTube client; never built from a raw payload. */
   video: VideoDetail;
+  /**
+   * Channel card metadata, or null when `channels.list` was unavailable. The
+   * card falls back to the snippet's channel name, so the header never goes blank.
+   */
+  channel: ChannelDetail | null;
   /** Server-read saved state for the video, so the control hydrates correctly. */
   isFavourite: boolean;
   /** Server-read watch-later state for the video. */
   inWatchLater: boolean;
   /** Playlists offered by the add-to-playlist picker. */
   playlists: readonly PlaylistOption[];
+  /** Local playback progress, or null when the video was never started. */
+  progress: VideoProgress | null;
 }
 
 /**
@@ -105,12 +122,12 @@ export interface WatchVideoDetailProps {
  */
 export function WatchVideoDetail({
   video,
+  channel,
   isFavourite,
   inWatchLater,
   playlists,
+  progress,
 }: WatchVideoDetailProps) {
-  const youtubeUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}`;
-
   return (
     <article aria-labelledby="watch-title" className="flex min-w-0 flex-col">
       <div className="grid min-w-0 grid-cols-1 items-start gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22.5rem]">
@@ -124,7 +141,7 @@ export function WatchVideoDetail({
             <h2 id="watch-player-heading" className="sr-only">
               Video player
             </h2>
-            <WatchPlayer snapshot={videoSnapshotFromVideo(video)} />
+            <WatchPlayer snapshot={videoSnapshotFromVideo(video)} initialProgress={progress} />
           </section>
 
           <div className="flex min-w-0 flex-col gap-3">
@@ -136,41 +153,21 @@ export function WatchVideoDetail({
             </h1>
 
             {/*
-              One row on desktop, two stacked rows below `sm`: the channel
-              identity (with the outbound link) and the video actions. No
-              subscriber count is shown because the source does not provide one.
+              One row on desktop, two stacked rows below `sm`: the channel card
+              (avatar, name, outbound link) and the video actions. The card owns
+              its own fallbacks, so this row renders even when `channels.list`
+              was unavailable.
             */}
             <div
               data-slot="watch-channel-row"
               className="flex min-w-0 flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between"
             >
-              <div className="flex min-w-0 items-center gap-3">
-                <span
-                  aria-hidden="true"
-                  className="flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground"
-                >
-                  <CircleUserRound className="size-6" />
-                </span>
-
-                <div className="flex min-w-0 flex-col">
-                  {video.channelTitle === "" ? null : (
-                    <p className="text-sm font-medium break-words text-foreground">
-                      <span className="sr-only">Channel: </span>
-                      {video.channelTitle}
-                    </p>
-                  )}
-                  <a
-                    href={youtubeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-11 w-fit items-center gap-1.5 rounded-md text-xs font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  >
-                    <ExternalLink aria-hidden="true" className="size-3.5" />
-                    View on YouTube
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                </div>
-              </div>
+              <WatchChannelCard
+                channel={channel}
+                channelTitle={video.channelTitle}
+                videoId={video.id}
+                channelId={video.channelId}
+              />
 
               <div
                 data-slot="watch-action-row"

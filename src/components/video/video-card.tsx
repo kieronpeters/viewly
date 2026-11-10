@@ -7,6 +7,11 @@ import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle"
 import { PlaylistPicker } from "@/features/library/playlist-picker";
 import { playlistSnapshotFromVideo, type PlaylistOption } from "@/features/library/playlists";
 import { watchLaterSnapshotFromVideo } from "@/features/library/watch-later-toggle";
+import {
+  isResumableProgress,
+  progressPercent,
+  type PlaybackPosition,
+} from "@/features/progress/progress";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatViewCount } from "@/shared/format";
 import type { VideoSummary } from "@/shared/types";
@@ -49,6 +54,15 @@ export interface VideoCardProps {
   showPlaylistPicker?: boolean;
   /** Playlists offered by the picker; ignored unless the picker is shown. */
   playlists?: readonly PlaylistOption[];
+  /**
+   * Local playback progress for this video (T68).
+   *
+   * Omit it for a card with no bar. A stored position only renders between 5%
+   * and 95%, so a barely-started or effectively-finished video looks like any
+   * other card. The card never queries the database; the server read happens in
+   * the library page.
+   */
+  progress?: PlaybackPosition | null;
 }
 
 /**
@@ -79,9 +93,16 @@ export function VideoCard({
   isWatchLater,
   showPlaylistPicker,
   playlists,
+  progress,
 }: VideoCardProps) {
   const duration = formatDuration(video.durationSeconds);
   const viewCount = formatViewCount(video.viewCount);
+  const watchedPercent =
+    progress !== null &&
+    progress !== undefined &&
+    isResumableProgress(progress.positionSeconds, progress.durationSeconds)
+      ? progressPercent(progress.positionSeconds, progress.durationSeconds)
+      : null;
   const hasControls =
     isFavourite !== undefined || isWatchLater !== undefined || showPlaylistPicker === true;
 
@@ -111,6 +132,26 @@ export function VideoCard({
               <span className="sr-only">Duration </span>
               {duration}
             </span>
+          ) : null}
+
+          {/*
+            Watched bar along the bottom edge, like YouTube's. It lives inside
+            the link so the thumbnail keeps one hit area; the link's explicit
+            aria-label names the destination, so this decorative bar does not
+            lengthen the accessible name.
+          */}
+          {watchedPercent !== null ? (
+            <div
+              data-slot="video-card-progress"
+              role="progressbar"
+              aria-label="Watch progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={watchedPercent}
+              className="absolute inset-x-0 bottom-0 h-1 bg-foreground/25"
+            >
+              <div className="h-full bg-red-600" style={{ width: `${watchedPercent}%` }} />
+            </div>
           ) : null}
         </div>
 

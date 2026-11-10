@@ -78,12 +78,25 @@ export interface YoutubePlayerOptions {
   };
 }
 
-/** The subset of a `YT.Player` instance this app calls. */
+/**
+ * The subset of a `YT.Player` instance this app calls.
+ *
+ * The time methods are optional because the player feature tests use light
+ * doubles that only need `getIframe`/`destroy`; the real API always provides
+ * them. Callers that need a number must handle a missing method (see
+ * `YoutubePlayerHandle` in `youtube-player.tsx`).
+ */
 export interface YoutubeIframePlayer {
   /** The iframe the API created for this player. */
   getIframe(): HTMLIFrameElement | null | undefined;
   /** Removes the iframe and detaches the player. */
   destroy(): void;
+  /** Current playback position in seconds, as a float. */
+  getCurrentTime?(): number;
+  /** Total duration in seconds; `0` while the video metadata is unknown. */
+  getDuration?(): number;
+  /** Seeks to `seconds`; `allowSeekAhead` lets the API load past the buffer. */
+  seekTo?(seconds: number, allowSeekAhead?: boolean): void;
 }
 
 /** The subset of `window.YT` this app needs. */

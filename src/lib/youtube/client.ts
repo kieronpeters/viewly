@@ -27,7 +27,8 @@
  * even read. Entries are keyed by endpoint plus normalized parameters (never by
  * key material), bounded at 200 entries with LRU eviction, and expired by TTL:
  * search 60 s, video details 10 min, trending 5 min, categories 24 h, comments
- * 5 min. Concurrent identical calls share one upstream request.
+ * 5 min, channels 24 h, playlist items 10 min. Concurrent identical calls share
+ * one upstream request.
  *
  * The cached value is the **normalized domain object**, not the raw payload:
  * fetching and normalization both run inside the cached loader, so a 200
@@ -43,9 +44,9 @@
  * <https://developers.google.com/youtube/v3/determine_quota_cost>. Do not copy
  * older figures: `search.list` is no longer billed as 100 units from the shared
  * pool. It has its own bucket of **100 calls per day**, and each call costs one
- * unit of that bucket. `videos.list` and `videoCategories.list` cost **1 unit**
- * each from the shared **10,000 units/day** pool. `videos.insert` (unused by
- * Viewly) has a separate 100/day bucket.
+ * unit of that bucket. `videos.list`, `videoCategories.list`, `channels.list` and
+ * `playlistItems.list` cost **1 unit** each from the shared **10,000 units/day**
+ * pool. `videos.insert` (unused by Viewly) has a separate 100/day bucket.
  *
  * | Client call            | Endpoint              | Cost per request                 |
  * | ---------------------- | --------------------- | -------------------------------- |
@@ -55,15 +56,22 @@
  * | `getTrending`          | `videos.list` (chart) | 1 of 10,000 units/day            |
  * | `listVideoCategories`  | `videoCategories.list`| 1 of 10,000 units/day            |
  * | `listComments`         | `commentThreads.list` | 1 of 10,000 units/day            |
+ * | `getChannel`           | `channels.list`       | 1 of 10,000 units/day            |
+ * | `listPlaylistItems`    | `playlistItems.list`  | 1 of 10,000 units/day            |
  *
- * Every retry of a 429/5xx response and every extra results page is another
- * billable call, which is why the cache exists. Budget picture for one local
- * user: 100 searches per day (search only) and 10,000 units/day for details,
- * trending and categories combined. A day of ordinary browsing — say 20
- * searches, 200 detail views and 50 trending loads — costs 20 search calls plus
- * 250 units, leaving most of both budgets untouched. Quota resets at midnight
- * Pacific Time. Exceeding it is a policy violation (ToS §15), so the cache is a
- * correctness control, not just a performance one.
+ * `getChannel` is cached for 24 h, so one channel costs at most one unit per day
+ * however many of its videos are opened. `listPlaylistItems` is cached for 10
+ * min, so a channel page costs one unit for the channel (once a day) plus at
+ * most one unit per ten minutes for its uploads. Every retry of a 429/5xx
+ * response and every extra results page is another billable call, which is why
+ * the cache exists. Budget picture for one local user: 100 searches per day
+ * (search only) and 10,000 units/day for details, trending, categories, comments,
+ * channels and uploads combined. A day of ordinary browsing — say 20 searches,
+ * 200 detail views, 50 trending loads, 40 comment pages, 60 distinct channels
+ * and 20 channel-page visits — costs 20 search calls plus under 400 units,
+ * leaving most of both budgets untouched. Quota resets at midnight Pacific Time.
+ * Exceeding it is a policy violation (ToS §15), so the cache is a correctness
+ * control, not just a performance one.
  *
  * Live smoke check: PENDING. A real request against the YouTube Data API needs an
  * owner-supplied `YOUTUBE_API_KEY`, which is not available in this workspace, so
@@ -82,16 +90,26 @@ import {
   resolveSearchFilters,
   searchPublishedAfter,
 } from "@/shared/search-filters";
-import type { CommentPage, SearchPage, VideoDetail, VideoSummary } from "@/shared/types";
+import type {
+  ChannelDetail,
+  CommentPage,
+  SearchPage,
+  VideoDetail,
+  VideoSummary,
+} from "@/shared/types";
 import {
   DomainValidationError,
+  assertChannelId,
   assertPageToken,
+  assertPlaylistId,
   assertSearchQuery,
   assertVideoId,
   isRecord,
 } from "@/shared/validation";
 import {
+  normalizeChannelResponse,
   normalizeCommentThreadsResponse,
+  normalizePlaylistItemsResponse,
   normalizeSearchResponse,
   normalizeVideoResponse,
 } from "@/shared/youtube";
@@ -130,6 +148,22 @@ const RETRY_DELAY_MS = 200;
 
 /** Parts required for `VideoSummary` / `VideoDetail` normalization. */
 const VIDEO_PARTS = "snippet,contentDetails,statistics";
+
+/**
+ * Parts required by the watch-page card and the channel page: `snippet` carries
+ * the name, avatar and description, `statistics` the subscriber count, and
+ * `contentDetails` the uploads playlist id used for recent uploads.
+ * `brandingSettings` is deliberately omitted — it is another unit of payload
+ * for fields neither surface renders.
+ */
+const CHANNEL_PARTS = "snippet,statistics,contentDetails";
+
+/**
+ * Parts needed to turn a playlist item into a `VideoSummary`: `snippet` has the
+ * title, channel and thumbnails, `contentDetails.videoId` the actual video id
+ * and `contentDetails.videoPublishedAt` the upload time.
+ */
+const PLAYLIST_ITEM_PARTS = "snippet,contentDetails";
 
 /** Fallback region when the caller does not supply one (ISO 3166-1 alpha-2). */
 const DEFAULT_REGION_CODE = "US";
@@ -241,6 +275,13 @@ export interface ListCommentsOptions {
   maxResults?: number;
 }
 
+export interface ListPlaylistItemsOptions {
+  /** Playlist id, usually a channel's uploads playlist (`UU…`). */
+  playlistId: string;
+  /** Requested page size; clamped to 1..50. Defaults to 25. */
+  maxResults?: number;
+}
+
 /** Minimal category shape used by filters; never the raw API payload. */
 export interface VideoCategory {
   id: string;
@@ -303,6 +344,75 @@ export async function getVideo(id: string): Promise<VideoDetail | null> {
     YOUTUBE_CACHE_TTLS_MS.videoDetails,
     async () => normalizeVideoResponse(await fetchJson("videos", params)),
     "videos:detail",
+  );
+}
+
+/**
+ * Fetches one channel's name, avatar, subscriber count, description and uploads
+ * playlist id.
+ * Returns null when YouTube has no usable item for the id (missing or deleted).
+ *
+ * The result is cached for 24 h under the `channels` TTL, so opening many
+ * videos from one channel costs a single `channels.list` unit per day. Callers
+ * that only enrich a page (the watch-page channel card) should treat a failure
+ * as "no channel" rather than an error, which `readWatchChannel` does. The
+ * channel route instead distinguishes a null channel (404) from a thrown
+ * failure (retryable error state), which `readChannel` does.
+ *
+ * @throws {DomainValidationError} when `id` is not a valid channel id.
+ * @throws {YouTubeApiError} for transport, HTTP and payload failures.
+ */
+export async function getChannel(id: string): Promise<ChannelDetail | null> {
+  const channelId = assertChannelId(id);
+
+  const params = {
+    part: CHANNEL_PARTS,
+    id: channelId,
+  };
+
+  return cachedRequest(
+    "channels",
+    params,
+    YOUTUBE_CACHE_TTLS_MS.channels,
+    async () => normalizeChannelResponse(await fetchJson("channels", params)),
+    "channels:detail",
+  );
+}
+
+/**
+ * Lists a playlist's videos, most recent first for an uploads playlist.
+ *
+ * This is the one call the channel page makes for recent uploads: it takes the
+ * uploads playlist id from {@link getChannel} and asks for one page (25 by
+ * default), costing **1 unit** from the shared daily pool. The result is cached
+ * for 10 minutes under the `playlistItems` TTL.
+ *
+ * Each item becomes a `VideoSummary`. `playlistItems.list` carries no duration
+ * or view statistics, so those fields are null and the card omits them; a
+ * request that needs them would have to spend a second `videos.list` unit.
+ * An empty array is a valid "no uploads" result, not an error.
+ *
+ * @throws {DomainValidationError} when `playlistId` is invalid or the payload is malformed.
+ * @throws {YouTubeApiError} for transport, HTTP and quota failures.
+ */
+export async function listPlaylistItems(
+  options: ListPlaylistItemsOptions,
+): Promise<VideoSummary[]> {
+  const playlistId = assertPlaylistId(options.playlistId);
+  const maxResults = clampMaxResults(options.maxResults);
+
+  const params = {
+    part: PLAYLIST_ITEM_PARTS,
+    playlistId,
+    maxResults: String(maxResults),
+  };
+
+  return cachedRequest(
+    "playlistItems",
+    params,
+    YOUTUBE_CACHE_TTLS_MS.playlistItems,
+    async () => normalizePlaylistItemsResponse(await fetchJson("playlistItems", params)),
+    "playlistItems:list",
   );
 }
 

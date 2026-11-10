@@ -5,6 +5,7 @@
  * panel; their components are exported from here once they land.
  */
 export { getWatchVideo } from "./get-watch-video";
+export { getWatchChannel } from "./get-watch-channel";
 export {
   MAX_SUGGESTIONS,
   getVideoSuggestions,

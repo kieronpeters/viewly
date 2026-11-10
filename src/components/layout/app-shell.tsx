@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { ViewlyLogo } from "@/components/brand/viewly-logo";
+import { CommandPalette } from "@/components/layout/command-palette";
 import { NavLinks } from "@/components/layout/nav-links";
 
 const brandLinkClasses =
@@ -75,6 +76,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Suspense>
         </nav>
       </div>
+
+      {/*
+       * One palette for the whole app. It renders no DOM until Ctrl/Cmd+K, so it
+       * adds no height or width to the shell and causes no layout shift.
+       */}
+      <CommandPalette />
     </div>
   );
 }

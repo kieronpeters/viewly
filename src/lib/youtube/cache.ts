@@ -64,6 +64,15 @@ export const DEFAULT_MAX_ENTRIES = 200;
  * - comments (5 min): `commentThreads.list` moves constantly, and its text is
  *   display data only. Five minutes absorbs tab switches and pagination hops
  *   without keeping comment text in memory for longer than necessary.
+ * - channels (24 h): `channels.list` returns a channel's name, avatar,
+ *   subscriber count and uploads playlist id, which change on a scale of days,
+ *   not minutes. One day caps a channel at one unit per day no matter how many
+ *   videos the user opens, and the entry still expires well inside the 30-day
+ *   retention limit for Non-Authorized API Data.
+ * - playlist items (10 min): a channel's recent uploads change at most a few
+ *   times a day, but a new upload should appear while the user is browsing.
+ *   Ten minutes matches video details and costs one unit per distinct uploads
+ *   page per window.
  */
 export const YOUTUBE_CACHE_TTLS_MS = {
   search: 60_000,
@@ -71,6 +80,8 @@ export const YOUTUBE_CACHE_TTLS_MS = {
   trending: 5 * 60_000,
   categories: 24 * 60 * 60_000,
   comments: 5 * 60_000,
+  channels: 24 * 60 * 60_000,
+  playlistItems: 10 * 60_000,
 } as const;
 
 /** Options for {@link createTtlCache}. */

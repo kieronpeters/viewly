@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCount, formatDuration, formatViewCount } from "@/shared/format";
+import {
+  formatCount,
+  formatDuration,
+  formatSubscriberCount,
+  formatViewCount,
+} from "@/shared/format";
 
 describe("formatDuration", () => {
   it("formats durations under an hour as m:ss", () => {
@@ -83,5 +88,28 @@ describe("formatViewCount", () => {
     expect(formatViewCount(-1)).toBeNull();
     expect(formatViewCount(Number.NaN)).toBeNull();
     expect(formatViewCount(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe("formatSubscriberCount", () => {
+  it("appends the noun with a singular form for one subscriber", () => {
+    expect(formatSubscriberCount(0)).toBe("0 subscribers");
+    expect(formatSubscriberCount(1)).toBe("1 subscriber");
+    expect(formatSubscriberCount(2)).toBe("2 subscribers");
+    expect(formatSubscriberCount(999)).toBe("999 subscribers");
+  });
+
+  it("reuses the compact count rules", () => {
+    expect(formatSubscriberCount(1200)).toBe("1.2K subscribers");
+    expect(formatSubscriberCount(1_500_000)).toBe("1.5M subscribers");
+    expect(formatSubscriberCount(999_999)).toBe("1M subscribers");
+  });
+
+  // A hidden count arrives as null; rendering "0 subscribers" would be a lie.
+  it("returns null for an unpublished count", () => {
+    expect(formatSubscriberCount(null)).toBeNull();
+    expect(formatSubscriberCount(-1)).toBeNull();
+    expect(formatSubscriberCount(Number.NaN)).toBeNull();
+    expect(formatSubscriberCount(Number.POSITIVE_INFINITY)).toBeNull();
   });
 });

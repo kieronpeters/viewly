@@ -1,9 +1,10 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadYoutubeIframeApiMock, recordViewMock } = vi.hoisted(() => ({
+const { loadYoutubeIframeApiMock, recordViewMock, publishPlaybackEndedMock } = vi.hoisted(() => ({
   loadYoutubeIframeApiMock: vi.fn(),
   recordViewMock: vi.fn(),
+  publishPlaybackEndedMock: vi.fn(),
 }));
 
 // jsdom cannot execute the real IFrame API, so the shared loader is replaced.
@@ -17,6 +18,10 @@ vi.mock("@/features/library/history-actions", () => ({
   recordView: recordViewMock,
   clearHistoryEntry: vi.fn(),
   clearAllHistory: vi.fn(),
+}));
+// The rail listens to this signal; the wrapper only has to publish it.
+vi.mock("@/components/video/playback-end", () => ({
+  publishPlaybackEnded: publishPlaybackEndedMock,
 }));
 
 import {
@@ -72,6 +77,7 @@ beforeEach(() => {
   loadYoutubeIframeApiMock.mockReset();
   recordViewMock.mockReset();
   recordViewMock.mockResolvedValue(undefined);
+  publishPlaybackEndedMock.mockReset();
 });
 
 describe("WatchPlayer", () => {
@@ -131,6 +137,31 @@ describe("WatchPlayer", () => {
     });
 
     await waitFor(() => expect(recordViewMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("publishes the playback-end signal for the current video", async () => {
+    const { api, players } = createFakeApi();
+    loadYoutubeIframeApiMock.mockResolvedValue(api);
+
+    render(<WatchPlayer snapshot={SNAPSHOT} />);
+
+    await waitFor(() => expect(players).toHaveLength(1));
+
+    const player = players[0];
+
+    act(() => {
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.PLAYING);
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.PAUSED);
+    });
+
+    expect(publishPlaybackEndedMock).not.toHaveBeenCalled();
+
+    act(() => {
+      emitStateChange(player, YOUTUBE_PLAYER_STATE.ENDED);
+    });
+
+    expect(publishPlaybackEndedMock).toHaveBeenCalledTimes(1);
+    expect(publishPlaybackEndedMock).toHaveBeenCalledWith(SNAPSHOT.videoId);
   });
 
   it("keeps playback independent of a failed write", async () => {

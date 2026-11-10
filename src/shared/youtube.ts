@@ -7,8 +7,22 @@
  * broken payloads throw `DomainValidationError` instead of leaking into the UI.
  */
 
-import type { CommentPage, SearchPage, VideoComment, VideoDetail, VideoSummary } from "./types";
-import { DomainValidationError, assertPageToken, isRecord, isVideoId } from "./validation";
+import type {
+  ChannelDetail,
+  CommentPage,
+  SearchPage,
+  VideoComment,
+  VideoDetail,
+  VideoSummary,
+} from "./types";
+import {
+  DomainValidationError,
+  assertPageToken,
+  isChannelId,
+  isPlaylistId,
+  isRecord,
+  isVideoId,
+} from "./validation";
 
 /** Largest title we are willing to render; real YouTube titles are far shorter. */
 const MAX_TITLE_LENGTH = 300;
@@ -80,6 +94,74 @@ export function normalizeVideoResponse(payload: unknown): VideoDetail | null {
   }
 
   return null;
+}
+
+/**
+ * Normalizes a `channels.list` response into a single `ChannelDetail`.
+ *
+ * Returns null for a well-formed response that contains no usable channel,
+ * which is what the API returns for a missing or deleted id. Malformed payloads
+ * throw. Only the fields the watch-page card and the channel page render
+ * survive: id, title, avatar, subscriber count, description and the uploads
+ * playlist id.
+ *
+ * @throws {DomainValidationError} when the payload itself is not a channel response.
+ */
+export function normalizeChannelResponse(payload: unknown): ChannelDetail | null {
+  if (!isRecord(payload)) {
+    throw malformedPayload("Channel response must be an object.");
+  }
+
+  const rawItems = payload.items;
+  if (!Array.isArray(rawItems)) {
+    throw malformedPayload("Channel response must contain an items array.");
+  }
+
+  for (const rawItem of rawItems) {
+    const channel = toChannelDetail(rawItem);
+    if (channel !== null) {
+      return channel;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Normalizes a `playlistItems.list` response into video summaries.
+ *
+ * Playlist items are not videos: the item `id` identifies the playlist entry,
+ * while the video id lives in `contentDetails.videoId` (with
+ * `snippet.resourceId.videoId` as the documented alternative). The upload time
+ * is `contentDetails.videoPublishedAt`, falling back to the item's
+ * `snippet.publishedAt`. `playlistItems.list` returns no statistics or duration,
+ * so those fields are null and the card simply omits them.
+ *
+ * Entries without a valid video id, a usable title or a parseable publish time
+ * are dropped rather than rendered half-formed. An empty `items` array is a
+ * valid empty uploads page, not an error.
+ *
+ * @throws {DomainValidationError} when the payload itself is not a playlist response.
+ */
+export function normalizePlaylistItemsResponse(payload: unknown): VideoSummary[] {
+  if (!isRecord(payload)) {
+    throw malformedPayload("Playlist item response must be an object.");
+  }
+
+  const rawItems = payload.items;
+  if (!Array.isArray(rawItems)) {
+    throw malformedPayload("Playlist item response must contain an items array.");
+  }
+
+  const items: VideoSummary[] = [];
+  for (const rawItem of rawItems) {
+    const summary = toPlaylistVideoSummary(rawItem);
+    if (summary !== null) {
+      items.push(summary);
+    }
+  }
+
+  return items;
 }
 
 /**
@@ -204,6 +286,150 @@ function toVideoDetail(rawItem: unknown): VideoDetail | null {
     ...summary,
     description: readString(snippet, "description") ?? "",
   };
+}
+
+/**
+ * Maps one `playlistItems.list` item to a `VideoSummary`, or null when it lacks
+ * the fields a card needs. The item id is not a video id, so only the nested
+ * video id is trusted; duration and view count stay null because this endpoint
+ * reports neither.
+ */
+function toPlaylistVideoSummary(rawItem: unknown): VideoSummary | null {
+  if (!isRecord(rawItem)) {
+    return null;
+  }
+
+  const snippet = readRecord(rawItem, "snippet");
+  if (snippet === null) {
+    return null;
+  }
+
+  const title = readTitle(snippet);
+  if (title === null) {
+    return null;
+  }
+
+  const contentDetails = readRecord(rawItem, "contentDetails");
+  const id = readVideoId(contentDetails?.videoId) ?? readVideoId(readRecord(snippet, "resourceId"));
+  if (id === null) {
+    return null;
+  }
+
+  const publishedAt =
+    readIsoDate(contentDetails, "videoPublishedAt") ?? readIsoDate(snippet, "publishedAt");
+  if (publishedAt === null) {
+    return null;
+  }
+
+  return {
+    id,
+    title,
+    channelId: readString(snippet, "channelId") ?? "",
+    channelTitle: readString(snippet, "channelTitle") ?? "",
+    thumbnailUrl: pickThumbnailUrl(snippet, id),
+    publishedAt,
+    durationSeconds: null,
+    viewCount: null,
+  };
+}
+
+/**
+ * Maps one `channels.list` item to a `ChannelDetail`, or null when it lacks the
+ * fields the card needs. A hidden subscriber count becomes null rather than 0;
+ * a missing uploads playlist id becomes null rather than an empty request.
+ */
+function toChannelDetail(rawItem: unknown): ChannelDetail | null {
+  if (!isRecord(rawItem)) {
+    return null;
+  }
+
+  const id = rawItem.id;
+  if (!isChannelId(id)) {
+    return null;
+  }
+
+  const snippet = readRecord(rawItem, "snippet");
+  if (snippet === null) {
+    return null;
+  }
+
+  const title = readTitle(snippet);
+  if (title === null) {
+    return null;
+  }
+
+  const statistics = readRecord(rawItem, "statistics");
+
+  return {
+    id,
+    title,
+    avatarUrl: readChannelAvatarUrl(snippet),
+    subscriberCount:
+      statistics !== null && statistics.hiddenSubscriberCount !== true
+        ? readNonNegativeInteger(statistics, "subscriberCount")
+        : null,
+    description: (readString(snippet, "description") ?? "").trim(),
+    uploadsPlaylistId: readUploadsPlaylistId(rawItem),
+  };
+}
+
+/**
+ * Reads `contentDetails.relatedPlaylists.uploads` and keeps it only when it
+ * looks like a playlist id. A missing `contentDetails` part (an older payload or
+ * a caller that requested only snippet/statistics) degrades to null, which the
+ * channel page renders as "uploads unavailable" rather than calling the API
+ * with an empty id.
+ */
+function readUploadsPlaylistId(item: Record<string, unknown>): string | null {
+  const uploads = readString(
+    readRecord(readRecord(item, "contentDetails"), "relatedPlaylists"),
+    "uploads",
+  );
+
+  return isPlaylistId(uploads) ? uploads : null;
+}
+
+/**
+ * Hosts the image loader is configured for in `next.config.ts` (`remotePatterns`).
+ *
+ * A `channels.list` avatar from any other host is dropped here, at the trust
+ * boundary, so `next/image` can never throw on the watch page: the card simply
+ * draws its fallback avatar instead. Keep this list in sync with `next.config.ts`
+ * — `features/library/video-snapshot.test.ts` asserts that config and its own
+ * host list agree.
+ */
+const CHANNEL_AVATAR_HOSTS: ReadonlySet<string> = new Set(["yt3.ggpht.com"]);
+
+/**
+ * Picks the largest renderable channel avatar, or null when the snippet has no
+ * https thumbnail from an allowed host. Unlike videos there is no synthetic
+ * fallback URL: a channel has no `i.ytimg.com` endpoint, so the UI draws one.
+ */
+function readChannelAvatarUrl(snippet: Record<string, unknown>): string | null {
+  const thumbnails = readRecord(snippet, "thumbnails");
+  if (thumbnails === null) {
+    return null;
+  }
+
+  for (const key of THUMBNAIL_KEYS) {
+    const candidate = thumbnails[key];
+    if (!isRecord(candidate) || !isHttpsUrl(candidate.url)) {
+      continue;
+    }
+
+    let hostname: string;
+    try {
+      hostname = new URL(candidate.url).hostname;
+    } catch {
+      continue;
+    }
+
+    if (CHANNEL_AVATAR_HOSTS.has(hostname)) {
+      return candidate.url;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -341,7 +567,7 @@ function readNextPageToken(payload: Record<string, unknown>, label: string): str
 }
 
 /** Reads an ISO-8601 timestamp, rejecting free-form dates and unparseable values. */
-function readIsoDate(source: Record<string, unknown>, key: string): string | null {
+function readIsoDate(source: Record<string, unknown> | null, key: string): string | null {
   const value = readString(source, key);
   if (value === null || !ISO_DATE_TIME_PATTERN.test(value)) {
     return null;

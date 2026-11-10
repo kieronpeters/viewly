@@ -34,6 +34,39 @@ export interface VideoDetail extends VideoSummary {
   description: string;
 }
 
+/**
+ * A channel as shown on the watch page (T74).
+ *
+ * Deliberately thin: what the watch-page card and `/channel/[id]` render.
+ * `avatarUrl` is null when the source published no usable https thumbnail (or
+ * one from a host the image loader cannot serve), so the UI draws its fallback
+ * instead. The subscriber count is null when YouTube hides it or does not
+ * return one; it is never guessed. `uploadsPlaylistId` is the one link the
+ * channel page needs to list recent uploads without a second `channels.list`.
+ */
+export interface ChannelDetail {
+  /** Channel id, always the `UC…` form from `snippet.channelId`. */
+  id: string;
+  /** Display name, trimmed and non-empty. */
+  title: string;
+  /** Absolute https avatar URL, or null when none is renderable. */
+  avatarUrl: string | null;
+  /** Subscriber count when published, otherwise null. */
+  subscriberCount: number | null;
+  /**
+   * Channel description as published, trimmed. Empty when the snippet has none;
+   * never null, so the channel page can render or omit one field without a guard.
+   */
+  description: string;
+  /**
+   * Uploads playlist id from `contentDetails.relatedPlaylists.uploads`, or null
+   * when YouTube did not return one (or it is not a plausible playlist id).
+   * The channel page uses it for `playlistItems.list`; null means "no uploads
+   * grid", never "the channel has no videos".
+   */
+  uploadsPlaylistId: string | null;
+}
+
 /** One page of search results. */
 export interface SearchPage {
   items: VideoSummary[];
