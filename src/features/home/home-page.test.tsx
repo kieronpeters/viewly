@@ -35,6 +35,12 @@ vi.mock("@/features/home", () => ({
   RecommendationShelfSection: ({ kind }: { kind: string }) => <p>{kind} shelf content</p>,
 }));
 
+// The local continue-watching shelf is a server component with a SQLite read;
+// its own suite covers the cards. Here it only has to appear in the page.
+vi.mock("@/features/progress", () => ({
+  ContinueWatchingSection: () => <p>Continue watching row content</p>,
+}));
+
 import Home from "@/app/page";
 
 describe("Home page", () => {
@@ -47,6 +53,7 @@ describe("Home page", () => {
     expect(screen.getByRole("search", { name: "Search videos" })).toBeInTheDocument();
 
     expect(screen.getByText("Trending row content")).toBeInTheDocument();
+    expect(screen.getByText("Continue watching row content")).toBeInTheDocument();
     for (const name of ["Music", "Gaming", "Technology"]) {
       expect(screen.getByText(`${name} row content`)).toBeInTheDocument();
     }

@@ -88,7 +88,12 @@ vi.mock("@/features/library/playlist-actions", () => ({
   removeFromPlaylist: vi.fn(),
 }));
 // Next's real notFound() throws a control-flow error Next catches; mirror it.
-vi.mock("next/navigation", () => ({ notFound: notFoundMock }));
+// The queue rail reads `useRouter` for autoplay navigation, which never fires
+// in these layout tests.
+vi.mock("next/navigation", () => ({
+  notFound: notFoundMock,
+  useRouter: () => ({ push: vi.fn() }),
+}));
 
 import { EnvConfigurationError } from "@/lib/env";
 import type { ChannelDetail, VideoDetail } from "@/shared/types";
@@ -322,6 +327,37 @@ describe("WatchPageContent", () => {
     expect(within(description).getByText("3:33")).toBeInTheDocument();
     expect(within(description).getByText("Published 25 Oct 2009")).toBeInTheDocument();
     expect(within(description).getByText(VIDEO.description)).toBeInTheDocument();
+  });
+
+  it("offers the listen-mode switch beside the player controls", async () => {
+    getVideoMock.mockResolvedValue(VIDEO);
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    // Video mode is the default, so the switch is off and the full meta block
+    // (title, channel, actions) is present.
+    expect(screen.getByRole("switch", { name: "Listen mode" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    expect(screen.getByRole("heading", { level: 1, name: VIDEO.title })).toBeInTheDocument();
+  });
+
+  it("renders clickable timestamps and a Chapters list for a chaptered description", async () => {
+    getVideoMock.mockResolvedValue({
+      ...VIDEO,
+      description: "0:00 Intro\n12:34 Demo\n1:02:03 Encore",
+    });
+
+    render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
+
+    const description = screen.getByRole("region", { name: "Description" });
+
+    // Inline timestamps are buttons, so a click cannot navigate.
+    expect(within(description).getByRole("button", { name: "Seek to 12:34" })).toBeInTheDocument();
+    expect(within(description).getByRole("heading", { name: "Chapters" })).toBeInTheDocument();
+    expect(within(description).getByRole("button", { name: "1:02:03 Encore" })).toBeInTheDocument();
+    expect(within(description).queryAllByRole("link")).toHaveLength(0);
   });
 
   it("mounts the Up next rail beside the player, wired to this video", async () => {

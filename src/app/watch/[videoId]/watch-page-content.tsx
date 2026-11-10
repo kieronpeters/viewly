@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { FavouriteButton } from "@/components/video/favourite-button";
+import { PlayerSeekProvider } from "@/components/video/player-seek";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
+import { WatchQueue } from "@/components/video/watch-queue";
 import { isInWatchLater, isVideoFavourite, listPlaylists } from "@/features/library";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
 import { PlaylistPicker } from "@/features/library/playlist-picker";
@@ -21,7 +23,7 @@ import { WatchChannelCard } from "./watch-channel-card";
 import { WatchConfigurationState } from "./watch-configuration-state";
 import { WatchDescription } from "./watch-description";
 import { WatchDiscussion } from "./watch-discussion";
-import { WatchPlayer } from "./watch-player";
+import { WatchPlayerColumn } from "./watch-player-column";
 import { WatchSuggestions, WatchSuggestionsSkeleton } from "./watch-suggestions";
 
 export interface WatchPageContentProps {
@@ -115,10 +117,13 @@ export interface WatchVideoDetailProps {
  * related videos. That is the order the requirements ask for and it means the
  * page needs no duplicated suggestions markup for the two breakpoints.
  *
- * The player slot still renders {@link WatchPlayer} unchanged; T67 owns the
- * embed behind it. The description and discussion are separate labelled
- * regions so T74/T79/T80 can replace their contents without touching the
- * layout.
+ * The player slot renders the client player column (T86), which owns the
+ * listen-mode preference and the player wrapper; T67 owns the embed behind it.
+ * The primary column is wrapped in a client seek provider
+ * (T71), so a timestamp or chapter click in the description drives the same
+ * player handle without a second embed or a navigation. The description and
+ * discussion are separate labelled regions so T74/T79/T80 can replace their
+ * contents without touching the layout.
  */
 export function WatchVideoDetail({
   video,
@@ -131,68 +136,71 @@ export function WatchVideoDetail({
   return (
     <article aria-labelledby="watch-title" className="flex min-w-0 flex-col">
       <div className="grid min-w-0 grid-cols-1 items-start gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22.5rem]">
-        {/* Primary column: playback, then everything a viewer reads or acts on. */}
-        <div className="flex min-w-0 flex-col gap-4">
-          <section
-            data-slot="watch-player-slot"
-            aria-labelledby="watch-player-heading"
-            className="flex min-w-0 flex-col"
+        {/*
+          Primary column: playback, then everything a viewer reads or acts on.
+          The client wrapper owns listen mode (T86), so the meta block below can
+          be replaced by the compact bar without remounting the description,
+          chapters or discussion.
+        */}
+        <PlayerSeekProvider>
+          <WatchPlayerColumn
+            snapshot={videoSnapshotFromVideo(video)}
+            initialProgress={progress}
+            meta={
+              <>
+                <h1
+                  id="watch-title"
+                  className="text-pretty text-xl font-semibold tracking-tight break-words text-foreground sm:text-2xl"
+                >
+                  {video.title}
+                </h1>
+
+                {/*
+                One row on desktop, two stacked rows below `sm`: the channel card
+                (avatar, name, outbound link) and the video actions. The card owns
+                its own fallbacks, so this row renders even when `channels.list`
+                was unavailable.
+              */}
+                <div
+                  data-slot="watch-channel-row"
+                  className="flex min-w-0 flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <WatchChannelCard
+                    channel={channel}
+                    channelTitle={video.channelTitle}
+                    videoId={video.id}
+                    channelId={video.channelId}
+                  />
+
+                  <div
+                    data-slot="watch-action-row"
+                    role="group"
+                    aria-label="Video actions"
+                    className="flex shrink-0 flex-wrap items-start justify-end gap-2"
+                  >
+                    <FavouriteButton
+                      video={favouriteSnapshotFromVideo(video)}
+                      initialFavourite={isFavourite}
+                    />
+                    <WatchLaterButton
+                      video={watchLaterSnapshotFromVideo(video)}
+                      initialInWatchLater={inWatchLater}
+                    />
+                    <PlaylistPicker
+                      video={playlistSnapshotFromVideo(video)}
+                      playlists={playlists}
+                    />
+                    <CopyLinkButton videoId={video.id} />
+                  </div>
+                </div>
+              </>
+            }
           >
-            <h2 id="watch-player-heading" className="sr-only">
-              Video player
-            </h2>
-            <WatchPlayer snapshot={videoSnapshotFromVideo(video)} initialProgress={progress} />
-          </section>
-
-          <div className="flex min-w-0 flex-col gap-3">
-            <h1
-              id="watch-title"
-              className="text-pretty text-xl font-semibold tracking-tight break-words text-foreground sm:text-2xl"
-            >
-              {video.title}
-            </h1>
-
-            {/*
-              One row on desktop, two stacked rows below `sm`: the channel card
-              (avatar, name, outbound link) and the video actions. The card owns
-              its own fallbacks, so this row renders even when `channels.list`
-              was unavailable.
-            */}
-            <div
-              data-slot="watch-channel-row"
-              className="flex min-w-0 flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <WatchChannelCard
-                channel={channel}
-                channelTitle={video.channelTitle}
-                videoId={video.id}
-                channelId={video.channelId}
-              />
-
-              <div
-                data-slot="watch-action-row"
-                role="group"
-                aria-label="Video actions"
-                className="flex shrink-0 flex-wrap items-start justify-end gap-2"
-              >
-                <FavouriteButton
-                  video={favouriteSnapshotFromVideo(video)}
-                  initialFavourite={isFavourite}
-                />
-                <WatchLaterButton
-                  video={watchLaterSnapshotFromVideo(video)}
-                  initialInWatchLater={inWatchLater}
-                />
-                <PlaylistPicker video={playlistSnapshotFromVideo(video)} playlists={playlists} />
-                <CopyLinkButton videoId={video.id} />
-              </div>
-            </div>
-
             <WatchDescription video={video} />
 
             <WatchDiscussion videoId={video.id} />
-          </div>
-        </div>
+          </WatchPlayerColumn>
+        </PlayerSeekProvider>
 
         {/* Right rail on desktop; below the discussion in the mobile stack. */}
         <aside
@@ -200,9 +208,14 @@ export function WatchVideoDetail({
           aria-label="Suggested videos"
           className="min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto"
         >
-          <Suspense fallback={<WatchSuggestionsSkeleton />}>
-            <WatchSuggestions channelTitle={video.channelTitle} currentVideoId={video.id} />
-          </Suspense>
+          <div className="flex min-w-0 flex-col gap-5">
+            <Suspense fallback={<WatchSuggestionsSkeleton />}>
+              <WatchSuggestions channelTitle={video.channelTitle} currentVideoId={video.id} />
+            </Suspense>
+            {/* The queue is local, so it renders immediately instead of waiting
+                behind the suggestions request and its Suspense boundary. */}
+            <WatchQueue currentVideoId={video.id} />
+          </div>
         </aside>
       </div>
     </article>

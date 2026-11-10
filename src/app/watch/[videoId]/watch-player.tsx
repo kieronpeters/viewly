@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { publishPlaybackEnded } from "@/components/video/playback-end";
+import { subscribeToPauseRequests } from "@/components/video/playback-pause";
+import { usePlayerSeek } from "@/components/video/player-seek";
 import { YoutubePlayer, type YoutubePlayerHandle } from "@/components/video/youtube-player";
+import { YOUTUBE_PLAYER_STATE } from "@/components/video/youtube-iframe-api";
 import { clearProgress, saveProgress } from "@/features/progress/actions";
 import {
   PROGRESS_REPORT_INTERVAL_MS,
@@ -14,7 +17,31 @@ import {
 import { recordView } from "@/features/library/history-actions";
 import type { VideoSnapshot } from "@/features/library/video-snapshot";
 
+import { WatchListenBar } from "./watch-listen-bar";
+import { ListenModeToggle } from "./watch-listen-toggle";
 import { WatchResumePrompt } from "./watch-resume-prompt";
+
+/** How often the listen bar samples the official player while it is visible. */
+const LISTEN_STATUS_POLL_MS = 1_000;
+
+/** The player state the listen bar renders; kept in one place to avoid drift. */
+interface ListenStatus {
+  isPlaying: boolean;
+  positionSeconds: number;
+  durationSeconds: number;
+  volume: number;
+  isMuted: boolean;
+}
+
+function initialListenStatus(durationSeconds: number | null): ListenStatus {
+  return {
+    isPlaying: false,
+    positionSeconds: 0,
+    durationSeconds: durationSeconds ?? 0,
+    volume: 100,
+    isMuted: false,
+  };
+}
 
 export interface WatchPlayerProps {
   /**
@@ -33,6 +60,16 @@ export interface WatchPlayerProps {
    * cleared by the action that reports it).
    */
   initialProgress?: VideoProgress | null;
+  /**
+   * Whether the compact audio-first layout is active (T86).
+   *
+   * The parent owns the persisted preference; this wrapper only renders the
+   * matching presentation. The official iframe stays mounted either way, so
+   * toggling never creates a second player or interrupts playback.
+   */
+  listenMode?: boolean;
+  /** Flips listen mode; omitted on surfaces that do not offer the mode. */
+  onToggleListenMode?: () => void;
 }
 
 /**
@@ -58,12 +95,33 @@ export interface WatchPlayerProps {
  * mutated by merely looking at it. "Start over" seeks to zero and calls
  * `clearProgress`.
  *
+ * ## Description timestamps (T71)
+ *
+ * The wrapper also registers its seek target on the shared
+ * {@link usePlayerSeek} channel, so a click on a timestamp or chapter in
+ * the description reuses exactly this path: the same handle, the same
+ * "remember it until ready" pending seek. No second player is created.
+ *
+ * ## Listen mode (T86)
+ *
+ * The parent owns the persisted preference; this wrapper only swaps the
+ * presentation. The official iframe stays mounted at the same position in the
+ * tree either way, so turning listen mode on or off never creates a second
+ * player and never restarts playback. While the compact bar is visible, a
+ * one-second poll reads the position, playback state and volume through the
+ * same handle, and every bar control calls back into that handle.
+ *
  * ## Failure
  *
  * History and progress are best-effort: every action call is wrapped, because
  * a failed write must never interrupt playback.
  */
-export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerProps) {
+export function WatchPlayer({
+  snapshot,
+  initialProgress = null,
+  listenMode = false,
+  onToggleListenMode,
+}: WatchPlayerProps) {
   const recordedVideoIdRef = useRef<string | null>(null);
   const handleRef = useRef<YoutubePlayerHandle | null>(null);
   const lastReportedAtRef = useRef<number | null>(null);
@@ -71,6 +129,32 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
   /** Seek to apply as soon as the API is ready (prompt clicked before load). */
   const pendingSeekRef = useRef<number | null>(null);
   const [, startTransition] = useTransition();
+  const playerSeek = usePlayerSeek();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  /** Previous mode, so focus moves only after a real toggle, never on load. */
+  const previousListenModeRef = useRef(listenMode);
+
+  /** Whether the IFrame API has handed us a usable handle. */
+  const [isPlayerReady, setIsPlayerReady] = useState(false);
+  /** Snapshot of the official player's clock and volume, sampled for the bar. */
+  const [listenStatus, setListenStatus] = useState<ListenStatus>(() =>
+    initialListenStatus(snapshot.durationSeconds),
+  );
+  /**
+   * Video the local player state belongs to.
+   *
+   * Navigation can reuse this component instance, so a different video must
+   * reset readiness and the bar's clock during render — the pattern React
+   * recommends instead of a resetting effect, which would render one frame
+   * with the previous video's state.
+   */
+  const [stateVideoId, setStateVideoId] = useState(snapshot.videoId);
+
+  if (stateVideoId !== snapshot.videoId) {
+    setStateVideoId(snapshot.videoId);
+    setIsPlayerReady(false);
+    setListenStatus(initialListenStatus(snapshot.durationSeconds));
+  }
 
   /**
    * Local dismissal key, `"<videoId>:<position>"`.
@@ -146,6 +230,47 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
     timerRef.current = setInterval(() => reportProgress(), PROGRESS_REPORT_INTERVAL_MS);
   }, [reportProgress, stopTicker]);
 
+  /**
+   * Seeks the player, remembering the position when the API is not ready yet.
+   *
+   * One path for the resume prompt and for description timestamps/chapters
+   * (T71). A NaN is ignored; negative input is clamped by the handle itself.
+   */
+  const seekToPosition = useCallback((seconds: number) => {
+    if (!Number.isFinite(seconds)) {
+      return;
+    }
+
+    const handle = handleRef.current;
+
+    if (handle === null) {
+      pendingSeekRef.current = Math.max(seconds, 0);
+      return;
+    }
+
+    handle.seekTo(seconds);
+  }, []);
+
+  // Expose this player to description timestamps and chapters. Registering (and
+  // unregistering) never re-renders: the controller lives in a ref.
+  useEffect(() => {
+    if (playerSeek === null) {
+      return;
+    }
+
+    return playerSeek.registerSeekTarget(seekToPosition);
+  }, [playerSeek, seekToPosition]);
+
+  // Sleep timer (T82): the queue rail publishes a pause request through the
+  // shared channel rather than reaching into the embed itself.
+  useEffect(
+    () =>
+      subscribeToPauseRequests(() => {
+        handleRef.current?.pause();
+      }),
+    [],
+  );
+
   // A navigation to another video must not inherit the previous throttle gate
   // or a seek that belonged to the old player.
   useEffect(() => {
@@ -155,6 +280,66 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
 
   // The interval is the only long-lived resource here; unmounting clears it.
   useEffect(() => stopTicker, [stopTicker]);
+
+  /**
+   * Keeps keyboard focus on the mode switch across a layout swap.
+   *
+   * The switch that was activated lives inside the layout that disappears, so
+   * without this the focused element would become inert and the next Tab would
+   * jump past the new controls. Focusing the equivalent switch in the mode that
+   * just appeared keeps the toggle in place for keyboard and screen-reader users.
+   */
+  useEffect(() => {
+    if (previousListenModeRef.current === listenMode) {
+      return;
+    }
+
+    previousListenModeRef.current = listenMode;
+
+    const root = rootRef.current;
+    const selector = listenMode
+      ? '[data-slot="watch-listen-bar"] [data-slot="listen-mode-toggle"]'
+      : '[data-slot="watch-player-stage"] [data-slot="listen-mode-toggle"]';
+
+    root?.querySelector<HTMLElement>(selector)?.focus();
+  }, [listenMode]);
+
+  /**
+   * Samples the official player for the listen bar.
+   *
+   * Reads only through the T68 handle: the bar has no state of its own and no
+   * media element, so the embed remains the single source of truth.
+   */
+  const readListenStatus = useCallback(() => {
+    const handle = handleRef.current;
+
+    if (handle === null) {
+      return;
+    }
+
+    const duration = handle.getDuration() || snapshot.durationSeconds || 0;
+
+    setListenStatus({
+      isPlaying: handle.getPlaybackState() === YOUTUBE_PLAYER_STATE.PLAYING,
+      positionSeconds: handle.getCurrentTime(),
+      durationSeconds: duration,
+      volume: handle.getVolume(),
+      isMuted: handle.isMuted(),
+    });
+  }, [snapshot.durationSeconds]);
+
+  // Poll only while the compact bar is visible: the video layout does not show
+  // a clock, so there is nothing to sample there.
+  useEffect(() => {
+    if (!listenMode) {
+      return;
+    }
+
+    readListenStatus();
+    const timer = setInterval(readListenStatus, LISTEN_STATUS_POLL_MS);
+
+    return () => clearInterval(timer);
+  }, [listenMode, readListenStatus]);
 
   const handlePlaybackStart = useCallback(() => {
     if (recordedVideoIdRef.current === snapshot.videoId) {
@@ -176,15 +361,19 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
     if (timerRef.current === null) {
       startTicker();
     }
+
+    setListenStatus((status) => (status.isPlaying ? status : { ...status, isPlaying: true }));
   }, [startTicker]);
 
   const handlePlaybackPause = useCallback(() => {
     reportProgress(true);
     stopTicker();
+    setListenStatus((status) => (status.isPlaying ? { ...status, isPlaying: false } : status));
   }, [reportProgress, stopTicker]);
 
   const handlePlaybackEnd = useCallback(() => {
     stopTicker();
+    setListenStatus((status) => (status.isPlaying ? { ...status, isPlaying: false } : status));
     publishPlaybackEnded(snapshot.videoId);
 
     startTransition(async () => {
@@ -198,6 +387,7 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
 
   const handlePlayerReady = useCallback((handle: YoutubePlayerHandle) => {
     handleRef.current = handle;
+    setIsPlayerReady(true);
 
     const pending = pendingSeekRef.current;
 
@@ -207,6 +397,95 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
     }
   }, []);
 
+  /**
+   * Listen-bar controls. Each one drives the official player through the same
+   * handle as the description seek channel; the bar never creates a player.
+   */
+  const handleListenPlayPause = useCallback(() => {
+    const handle = handleRef.current;
+
+    if (handle === null) {
+      return;
+    }
+
+    const wasPlaying = handle.getPlaybackState() === YOUTUBE_PLAYER_STATE.PLAYING;
+
+    if (wasPlaying) {
+      handle.pause();
+    } else {
+      handle.play();
+    }
+
+    // Optimistic icon flip; the one-second poll confirms the real state.
+    setListenStatus((status) => ({ ...status, isPlaying: !wasPlaying }));
+  }, []);
+
+  const handleListenSeek = useCallback((seconds: number) => {
+    if (!Number.isFinite(seconds)) {
+      return;
+    }
+
+    handleRef.current?.seekTo(seconds);
+    setListenStatus((status) => ({ ...status, positionSeconds: seconds }));
+  }, []);
+
+  const handleListenVolume = useCallback((volume: number) => {
+    if (!Number.isFinite(volume)) {
+      return;
+    }
+
+    const next = Math.min(Math.max(volume, 0), 100);
+    const handle = handleRef.current;
+
+    handle?.setVolume(next);
+
+    // Raising the volume is an intent to hear something; leaving mute on would
+    // make the slider appear to do nothing.
+    if (next > 0 && handle?.isMuted() === true) {
+      handle.setMuted(false);
+    }
+
+    setListenStatus((status) => ({
+      ...status,
+      volume: next,
+      isMuted: next > 0 ? false : status.isMuted,
+    }));
+  }, []);
+
+  const handleListenToggleMute = useCallback(() => {
+    const handle = handleRef.current;
+
+    if (handle === null) {
+      return;
+    }
+
+    // "Silent" covers both mute and a volume dragged to zero, so the control
+    // always restores something audible instead of toggling a mute flag that
+    // was already false.
+    if (handle.isMuted() || handle.getVolume() === 0) {
+      handle.setMuted(false);
+
+      if (handle.getVolume() === 0) {
+        handle.setVolume(50);
+      }
+
+      setListenStatus((status) => ({
+        ...status,
+        isMuted: false,
+        volume: status.volume === 0 ? 50 : status.volume,
+      }));
+
+      return;
+    }
+
+    handle.setMuted(true);
+    setListenStatus((status) => ({ ...status, isMuted: true }));
+  }, []);
+
+  const toggleListenMode = useCallback(() => {
+    onToggleListenMode?.();
+  }, [onToggleListenMode]);
+
   function handleResume() {
     setDismissedResumeKey(resumeKey);
 
@@ -214,27 +493,12 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
       return;
     }
 
-    const handle = handleRef.current;
-
-    if (handle === null) {
-      // The prompt can be clicked before the embed is ready; apply it then.
-      pendingSeekRef.current = resumePosition;
-      return;
-    }
-
-    handle.seekTo(resumePosition);
+    seekToPosition(resumePosition);
   }
 
   function handleStartOver() {
     setDismissedResumeKey(resumeKey);
-
-    const handle = handleRef.current;
-
-    if (handle === null) {
-      pendingSeekRef.current = 0;
-    } else {
-      handle.seekTo(0);
-    }
+    seekToPosition(0);
 
     startTransition(async () => {
       try {
@@ -246,7 +510,12 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
   }
 
   return (
-    <div data-slot="watch-player" className="flex min-w-0 flex-col gap-2">
+    <div
+      ref={rootRef}
+      data-slot="watch-player"
+      data-listen-mode={listenMode ? "true" : "false"}
+      className="flex min-w-0 flex-col gap-2"
+    >
       {isResumeVisible && resumePosition !== null ? (
         <WatchResumePrompt
           positionSeconds={resumePosition}
@@ -256,15 +525,54 @@ export function WatchPlayer({ snapshot, initialProgress = null }: WatchPlayerPro
         />
       ) : null}
 
-      <YoutubePlayer
-        videoId={snapshot.videoId}
-        title={snapshot.title}
-        onPlaybackStart={handlePlaybackStart}
-        onPlaybackPlay={handlePlaybackPlay}
-        onPlaybackPause={handlePlaybackPause}
-        onPlayerReady={handlePlayerReady}
-        onPlaybackEnd={handlePlaybackEnd}
-      />
+      {/*
+        Fixed slot for the compact bar. It is always the second child (after the
+        optional resume prompt) so switching modes never moves the player's
+        stage in the tree; moving it would remount the iframe and create a
+        second player.
+      */}
+      <div data-slot="watch-listen-slot">
+        {listenMode ? (
+          <WatchListenBar
+            snapshot={snapshot}
+            isPlaying={listenStatus.isPlaying}
+            positionSeconds={listenStatus.positionSeconds}
+            durationSeconds={listenStatus.durationSeconds}
+            volume={listenStatus.volume}
+            isMuted={listenStatus.isMuted}
+            isReady={isPlayerReady}
+            onPlayPause={handleListenPlayPause}
+            onSeek={handleListenSeek}
+            onVolumeChange={handleListenVolume}
+            onToggleMute={handleListenToggleMute}
+            onShowVideo={toggleListenMode}
+            onToggleListenMode={toggleListenMode}
+          />
+        ) : null}
+      </div>
+
+      {/*
+        The official embed is the one and only player. Listen mode keeps it
+        mounted (playback continues) but removes it from view and from the
+        accessibility tree, so the bar is the only visible control surface.
+      */}
+      <div
+        data-slot="watch-player-stage"
+        className={listenMode ? "sr-only" : undefined}
+        aria-hidden={listenMode ? true : undefined}
+        inert={listenMode ? true : undefined}
+      >
+        <YoutubePlayer
+          videoId={snapshot.videoId}
+          title={snapshot.title}
+          onPlaybackStart={handlePlaybackStart}
+          onPlaybackPlay={handlePlaybackPlay}
+          onPlaybackPause={handlePlaybackPause}
+          onPlayerReady={handlePlayerReady}
+          onPlaybackEnd={handlePlaybackEnd}
+          modeControl={<ListenModeToggle enabled={listenMode} onToggle={toggleListenMode} />}
+        />
+      </div>
     </div>
   );
 }

@@ -16,7 +16,6 @@ import {
   isYouTubeApiError,
   listComments,
   listPlaylistItems,
-  listVideoCategories,
   searchVideos,
 } from "@/lib/youtube/client";
 import { YOUTUBE_CACHE_TTLS_MS } from "@/lib/youtube/cache";
@@ -681,7 +680,7 @@ describe("getVideos", () => {
   });
 });
 
-describe("getTrending and listVideoCategories", () => {
+describe("getTrending", () => {
   it("requests the most popular chart for the region", async () => {
     fetchMock.mockImplementation(async () => jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
 
@@ -707,24 +706,6 @@ describe("getTrending and listVideoCategories", () => {
     expect(Object.hasOwn(summary as object, "description")).toBe(false);
     expect(JSON.stringify(videos)).not.toContain(DESCRIPTION_TEXT);
     expect(summary).toMatchObject({ id: VIDEO_ID, durationSeconds: 213 });
-  });
-
-  it("maps categories and drops unusable entries", async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        items: [
-          { id: "10", snippet: { title: " Music ", assignable: true } },
-          { id: "20", snippet: { title: "", assignable: false } },
-          { id: "", snippet: { title: "Broken", assignable: true } },
-        ],
-      }),
-    );
-
-    const categories = await listVideoCategories("us");
-
-    expect(requestUrl().pathname).toBe("/youtube/v3/videoCategories");
-    expect(requestUrl().searchParams.get("regionCode")).toBe("US");
-    expect(categories).toEqual([{ id: "10", title: "Music", assignable: true }]);
   });
 });
 
@@ -1015,36 +996,22 @@ describe("caching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps trending for five minutes and categories for a day", async () => {
+  it("keeps trending for five minutes and then refreshes", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    fetchMock.mockImplementation(async (input) => {
-      const url = input instanceof URL ? input : new URL(String(input));
-      return url.pathname.endsWith("/videoCategories")
-        ? jsonResponse({ items: [{ id: "10", snippet: { title: "Music", assignable: true } }] })
-        : jsonResponse(videoPayload([videoItem(VIDEO_ID)]));
-    });
+    fetchMock.mockImplementation(async () => jsonResponse(videoPayload([videoItem(VIDEO_ID)])));
 
     await getTrending();
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await getTrending();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.trending - 1);
     await getTrending();
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(Date.now() + 1);
     await getTrending();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-
-    // Categories survive the trending refresh and expire on their own TTL.
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-
-    vi.setSystemTime(Date.now() + YOUTUBE_CACHE_TTLS_MS.categories);
-    await listVideoCategories("us");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("coalesces concurrent identical requests into one upstream fetch", async () => {
@@ -1188,30 +1155,9 @@ describe("request construction", () => {
     });
   });
 
-  it("sends category parameters with the default region", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
-
-    await listVideoCategories();
-
-    expect(Object.fromEntries(requestUrl().searchParams)).toEqual({
-      part: "snippet",
-      regionCode: "US",
-      key: FAKE_KEY,
-    });
-  });
-
-  it("upper-cases a lower-case category region", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
-
-    await listVideoCategories("gb");
-
-    expect(requestUrl().searchParams.get("regionCode")).toBe("GB");
-  });
-
   it("rejects invalid region codes before the network", async () => {
     for (const regionCode of ["", "g", "gbr", "12", " gb", "ÜS"]) {
       await expect(getTrending({ regionCode })).rejects.toBeInstanceOf(DomainValidationError);
-      await expect(listVideoCategories(regionCode)).rejects.toBeInstanceOf(DomainValidationError);
     }
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -1492,17 +1438,6 @@ describe("malformed upstream payloads", () => {
     }
   });
 
-  it("surfaces a malformed category payload as a DomainValidationError", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ items: {} }));
-
-    const error = await readThrown(() => listVideoCategories("us"));
-
-    expect(error).toBeInstanceOf(DomainValidationError);
-    if (error instanceof DomainValidationError) {
-      expect(error.code).toBe("malformed_payload");
-    }
-  });
-
   // REGRESSION (T38): guards the "errors are never cached" guarantee. A 200
   // response whose body fails normalization must not be stored in the request
   // cache, or the DomainValidationError would be replayed for the full TTL
@@ -1533,12 +1468,6 @@ describe("key containment", () => {
         return jsonResponse(searchPayload([searchItem(VIDEO_ID)]));
       }
 
-      if (url.pathname.endsWith("/videoCategories")) {
-        return jsonResponse({
-          items: [{ id: "10", snippet: { title: "Music", assignable: true } }],
-        });
-      }
-
       if (url.pathname.endsWith("/commentThreads")) {
         return jsonResponse(commentPayload([commentThread("c1")]));
       }
@@ -1551,7 +1480,6 @@ describe("key containment", () => {
       await getVideo(VIDEO_ID),
       await getVideos([VIDEO_ID]),
       await getTrending(),
-      await listVideoCategories(),
       await listComments({ videoId: VIDEO_ID }),
       await listPlaylistItems({ playlistId: UPLOADS_PLAYLIST_ID }),
     ];

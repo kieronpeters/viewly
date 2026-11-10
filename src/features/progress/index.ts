@@ -8,6 +8,18 @@
  */
 export { getVideoProgress, listVideoProgress } from "./progress-data";
 export {
+  continueWatchingFromRow,
+  listContinueWatchingVideos,
+  type ContinueWatchingItem,
+} from "./continue-watching";
+export {
+  CONTINUE_WATCHING_TITLE,
+  ContinueWatchingSection,
+  ContinueWatchingShelf,
+  type ContinueWatchingSectionProps,
+  type ContinueWatchingShelfProps,
+} from "./continue-watching-section";
+export {
   COMPLETE_RATIO,
   PROGRESS_REPORT_INTERVAL_MS,
   RESUME_MIN_RATIO,

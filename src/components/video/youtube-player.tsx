@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -40,10 +40,10 @@ const OBSERVER_ROOT_MARGIN = "200px";
 /**
  * Imperative playback controls exposed once the API has created the player.
  *
- * The watch page uses these for progress reporting and the resume prompt. The
- * methods are safe to call at any time: an unavailable API or a destroyed
- * player reads as `0` and seeking is a no-op, so a blocked embed never throws
- * into React.
+ * The watch page uses these for progress reporting, the resume prompt and the
+ * listen-mode bar (T86). The methods are safe to call at any time: an
+ * unavailable API or a destroyed player reads as `0` and every command is a
+ * no-op, so a blocked embed never throws into React.
  */
 export interface YoutubePlayerHandle {
   /** Current position in whole-ish seconds; `0` when unavailable. */
@@ -52,6 +52,20 @@ export interface YoutubePlayerHandle {
   getDuration(): number;
   /** Seeks to `seconds`, clamped to a non-negative value. */
   seekTo(seconds: number): void;
+  /** Starts playback through the official player. */
+  play(): void;
+  /** Pauses playback through the official player. */
+  pause(): void;
+  /** Current {@link YOUTUBE_PLAYER_STATE}, or `UNSTARTED` when unavailable. */
+  getPlaybackState(): number;
+  /** Current volume (0–100); `100` when the API is unavailable. */
+  getVolume(): number;
+  /** Sets volume (0–100); ignored when the API is unavailable. */
+  setVolume(volume: number): void;
+  /** Whether the official player is muted. */
+  isMuted(): boolean;
+  /** Mutes or unmutes the official player. */
+  setMuted(muted: boolean): void;
 }
 
 export interface YoutubePlayerProps {
@@ -101,6 +115,13 @@ export interface YoutubePlayerProps {
    * prop is omitted and `T` is a no-op. The player never changes its own width.
    */
   onToggleTheater?: () => void;
+  /**
+   * Extra controls rendered at the end of the player's control row.
+   *
+   * The watch page uses this for the listen-mode switch (T86) so the mode
+   * control shares the player's control row instead of adding another one.
+   */
+  modeControl?: ReactNode;
 }
 
 /**
@@ -141,6 +162,7 @@ export function YoutubePlayer({
   onPlayerReady,
   onPlaybackEnd,
   onToggleTheater,
+  modeControl,
 }: YoutubePlayerProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef(title);
@@ -210,21 +232,21 @@ export function YoutubePlayer({
     };
 
     /** Reads a player number without letting a blocked/destroyed API throw. */
-    const readSeconds = (read: (() => number) | undefined): number => {
+    const readNumber = (read: (() => number) | undefined, fallback: number): number => {
       try {
         const value = read?.();
 
-        return typeof value === "number" && Number.isFinite(value) ? value : 0;
+        return typeof value === "number" && Number.isFinite(value) ? value : fallback;
       } catch {
-        return 0;
+        return fallback;
       }
     };
 
     // One handle per mounted player. Its methods read the live instance, so a
     // caller can hold it across a pause and still get the current position.
     const handle: YoutubePlayerHandle = {
-      getCurrentTime: () => readSeconds(player?.getCurrentTime?.bind(player)),
-      getDuration: () => readSeconds(player?.getDuration?.bind(player)),
+      getCurrentTime: () => readNumber(player?.getCurrentTime?.bind(player), 0),
+      getDuration: () => readNumber(player?.getDuration?.bind(player), 0),
       seekTo: (seconds) => {
         if (!Number.isFinite(seconds)) {
           return;
@@ -232,6 +254,62 @@ export function YoutubePlayer({
 
         try {
           player?.seekTo?.(Math.max(seconds, 0), true);
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      play: () => {
+        try {
+          player?.playVideo?.();
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      pause: () => {
+        try {
+          player?.pauseVideo?.();
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      getPlaybackState: () => {
+        try {
+          const value = player?.getPlayerState?.();
+
+          return typeof value === "number" && Number.isFinite(value)
+            ? value
+            : YOUTUBE_PLAYER_STATE.UNSTARTED;
+        } catch {
+          return YOUTUBE_PLAYER_STATE.UNSTARTED;
+        }
+      },
+      getVolume: () => readNumber(player?.getVolume?.bind(player), 100),
+      setVolume: (volume) => {
+        if (!Number.isFinite(volume)) {
+          return;
+        }
+
+        try {
+          player?.setVolume?.(Math.min(Math.max(volume, 0), 100));
+        } catch {
+          // A destroyed player is a no-op, not an error for the page.
+        }
+      },
+      isMuted: () => {
+        try {
+          return player?.isMuted?.() === true;
+        } catch {
+          return false;
+        }
+      },
+      setMuted: (muted) => {
+        try {
+          if (muted) {
+            player?.mute?.();
+            return;
+          }
+
+          player?.unMute?.();
         } catch {
           // A destroyed player is a no-op, not an error for the page.
         }
@@ -397,6 +475,8 @@ export function YoutubePlayer({
           </kbd>
           Keyboard shortcuts
         </Button>
+
+        {modeControl}
       </div>
 
       <WatchShortcutsOverlay open={isHelpOpen} onClose={closeHelp} />

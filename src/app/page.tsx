@@ -13,6 +13,7 @@ import {
   getAllCategories,
   getHomeCategories,
 } from "@/features/home";
+import { ContinueWatchingSection } from "@/features/progress";
 
 export const metadata: Metadata = {
   title: "Discover · Viewly",
@@ -23,13 +24,14 @@ export const metadata: Metadata = {
  * `/` home discovery page.
  *
  * The whole page is a static shell: the hero, the browse chips, the search form
- * and one `<Suspense>` boundary per row. The three upper rows are local
- * recommendation shelves computed from history and favourites; each streams and
- * hides independently when it has nothing to show. Every row component fetches
- * behind its own boundary, so rows stream independently and a slow or failing
- * section can never block the hero or the other rows. No request data is read
- * here, and the page never imports the YouTube client directly — only
- * `@/features/home`.
+ * and one `<Suspense>` boundary per row. The first row is the local
+ * continue-watching shelf (SQLite only, no YouTube call); the next three are
+ * local recommendation shelves computed from history and favourites; each
+ * streams and hides independently when it has nothing to show. Every row
+ * component fetches behind its own boundary, so rows stream independently and a
+ * slow or failing section can never block the hero or the other rows. No
+ * request data is read here, and the page never imports the YouTube client
+ * directly — only `@/features/home` and the progress feature.
  */
 export default function Home() {
   // Static lists from the shared categories module: safe outside Suspense.
@@ -59,6 +61,15 @@ export default function Home() {
       </section>
 
       <CategoryChips categories={allCategories} />
+
+      {/*
+       * Local "Continue watching" shelf: built from SQLite only, so it costs no
+       * YouTube quota. It hides itself when nothing is in progress, which is why
+       * the generic row skeleton is safe as a fallback.
+       */}
+      <Suspense fallback={<VideoRowSkeleton title="Continue watching" />}>
+        <ContinueWatchingSection titleId="home-continue-watching-heading" />
+      </Suspense>
 
       {HOME_RECOMMENDATION_SHELVES.map((shelf) => (
         <Suspense key={shelf.kind} fallback={<VideoRowSkeleton title={shelf.skeletonTitle} />}>

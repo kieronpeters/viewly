@@ -112,29 +112,9 @@ export interface CommentPage {
   commentsDisabled: boolean;
 }
 
-/**
- * A video saved to the local library.
- * Snapshot of the video identity plus when it was saved; timestamps are ISO-8601.
- */
-export interface LibraryItem {
-  videoId: string;
-  title: string;
-  channelTitle: string;
-  thumbnailUrl: string;
-  durationSeconds: number | null;
-  savedAt: IsoDateTime;
-}
-
 /** A playlist as shown in a list. Kept minimal; extend when persistence lands. */
 export interface PlaylistSummary {
   id: string;
   name: string;
   itemCount: number;
-}
-
-/** A playlist with its saved videos, oldest saved first. */
-export interface PlaylistDetail {
-  id: string;
-  name: string;
-  items: LibraryItem[];
 }

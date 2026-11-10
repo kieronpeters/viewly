@@ -97,6 +97,22 @@ export interface YoutubeIframePlayer {
   getDuration?(): number;
   /** Seeks to `seconds`; `allowSeekAhead` lets the API load past the buffer. */
   seekTo?(seconds: number, allowSeekAhead?: boolean): void;
+  /** Starts playback through YouTube's own player. */
+  playVideo?(): void;
+  /** Pauses playback through YouTube's own player. */
+  pauseVideo?(): void;
+  /** Current {@link YOUTUBE_PLAYER_STATE} value. */
+  getPlayerState?(): number;
+  /** Current volume in the API's 0–100 range. */
+  getVolume?(): number;
+  /** Sets volume in the API's 0–100 range. */
+  setVolume?(volume: number): void;
+  /** Whether YouTube's player is currently muted. */
+  isMuted?(): boolean;
+  /** Mutes YouTube's player. */
+  mute?(): void;
+  /** Unmutes YouTube's player. */
+  unMute?(): void;
 }
 
 /** The subset of `window.YT` this app needs. */

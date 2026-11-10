@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, ListPlus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -17,6 +18,14 @@ import {
   subscribeToPlaybackEnded,
 } from "./playback-end";
 import { selectUpNextVideo, UP_NEXT_COUNTDOWN_SECONDS } from "./up-next";
+import {
+  addVideoToQueue,
+  getWatchQueue,
+  isVideoQueued,
+  removeVideoFromQueue,
+  selectQueueAutoplayVideo,
+  useWatchQueue,
+} from "./watch-queue-store";
 
 export interface VideoSuggestionsProps {
   /** Already filtered, de-duplicated and capped by `selectVideoSuggestions`. */
@@ -63,6 +72,7 @@ const THUMBNAIL_SIZES = "160px";
 export function VideoSuggestions({ videos, currentVideoId, className }: VideoSuggestionsProps) {
   const router = useRouter();
   const [autoplayEnabled, setAutoplayEnabled] = useAutoplayPreference();
+  const queue = useWatchQueue();
 
   const nextVideo = useMemo(
     () => selectUpNextVideo(videos, currentVideoId),
@@ -91,6 +101,13 @@ export function VideoSuggestions({ videos, currentVideoId, className }: VideoSug
       }
 
       if (consumedSequenceRef.current === event.sequence) {
+        return;
+      }
+
+      // The queue owns the hand-off whenever it has a waiting item. Leave the
+      // event untouched so WatchQueue can start its countdown; otherwise both
+      // rails would race to navigate to the same video.
+      if (selectQueueAutoplayVideo(getWatchQueue(), currentVideoId) !== null) {
         return;
       }
 
@@ -282,16 +299,17 @@ export function VideoSuggestions({ videos, currentVideoId, className }: VideoSug
           const duration = formatDuration(video.durationSeconds);
           const viewCount = formatViewCount(video.viewCount);
           const isNext = nextVideo !== null && video.id === nextVideo.id;
+          const isQueued = isVideoQueued(queue, video.id);
 
           return (
-            <li key={video.id} className="min-w-0">
+            <li key={video.id} className="flex min-w-0 items-start gap-1">
               <Link
                 href={`/watch/${video.id}`}
                 aria-label={isNext ? `${video.title} — up next` : video.title}
                 data-slot="up-next-row"
                 data-next={isNext ? "true" : undefined}
                 className={cn(
-                  "flex min-w-0 gap-2 rounded-lg p-1.5 transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none",
+                  "flex min-w-0 flex-1 gap-2 rounded-lg p-1.5 transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none",
                   isNext && "bg-surface-elevated ring-1 ring-primary/50",
                 )}
               >
@@ -329,6 +347,21 @@ export function VideoSuggestions({ videos, currentVideoId, className }: VideoSug
                   )}
                 </div>
               </Link>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={
+                  isQueued ? `Remove ${video.title} from queue` : `Add ${video.title} to queue`
+                }
+                aria-pressed={isQueued}
+                title={isQueued ? "Remove from queue" : "Add to queue"}
+                onClick={() => (isQueued ? removeVideoFromQueue(video.id) : addVideoToQueue(video))}
+                className="min-h-11 min-w-11 shrink-0 text-muted-foreground"
+              >
+                {isQueued ? <Check aria-hidden="true" /> : <ListPlus aria-hidden="true" />}
+              </Button>
             </li>
           );
         })}

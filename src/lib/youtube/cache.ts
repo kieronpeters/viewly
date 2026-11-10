@@ -58,9 +58,6 @@ export const DEFAULT_MAX_ENTRIES = 200;
  *   cheap freshness.
  * - trending (5 min): `mostPopular` shifts during the day; five minutes keeps
  *   the home page stable under refresh without hiding a genuinely new chart.
- * - categories (24 h): `videoCategories.list` changes only when YouTube adds or
- *   retires a category, and the list is region-scoped. One day matches the
- *   practical churn rate and costs one unit per region per day.
  * - comments (5 min): `commentThreads.list` moves constantly, and its text is
  *   display data only. Five minutes absorbs tab switches and pagination hops
  *   without keeping comment text in memory for longer than necessary.
@@ -78,7 +75,6 @@ export const YOUTUBE_CACHE_TTLS_MS = {
   search: 60_000,
   videoDetails: 10 * 60_000,
   trending: 5 * 60_000,
-  categories: 24 * 60 * 60_000,
   comments: 5 * 60_000,
   channels: 24 * 60 * 60_000,
   playlistItems: 10 * 60_000,

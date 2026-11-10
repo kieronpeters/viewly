@@ -9,9 +9,8 @@ database and no public deployment.
 Working today:
 
 - Next.js 16 App Router foundation with a responsive app shell (desktop sidebar, mobile bottom nav).
-- Midnight Purple theme and shared UI primitives: buttons, inputs, skeletons, and empty/error
-  states. `Card` and `Toast` also live in `src/components/ui`, but no screen uses them yet; treat
-  them as internal primitives rather than shipped UI.
+- Midnight Purple theme and shared UI primitives: buttons, cards, inputs, skeletons, and empty/error
+  states.
 - YouTube discovery: home page with trending and category rows, paginated search, and category pages,
   backed by a server-only client with a process-local TTL cache and typed errors.
 - Watch page with the official YouTube embed, video metadata and description, favourite and watch
@@ -20,6 +19,8 @@ Working today:
   plus playlist creation and a detail route at `/library/playlists/[playlistId]`.
 - History is written from the player on the first playback of a video, with per-entry remove and
   clear-all controls on the History tab.
+- Watch statistics at `/library/stats`: estimated watch time, top channels, the current streak and a
+  12-week activity heatmap, read from the local history.
 - Keyless watch page: when `YOUTUBE_API_KEY` is missing, `/watch/[videoId]` renders an authored
   "YouTube is not configured" setup state that names the variable, instead of the player or the
   error boundary. The tab title stays neutral.

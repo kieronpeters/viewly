@@ -12,6 +12,11 @@ import {
 } from "@/features/library";
 import { listHistoryEntries, type HistoryEntry } from "@/features/library/history-data";
 import { PlaylistCreateForm } from "@/features/library/playlist-create-form";
+import { listContinueWatchingVideos } from "@/features/progress/continue-watching";
+import {
+  ContinueWatchingShelf,
+  type ContinueWatchingShelfProps,
+} from "@/features/progress/continue-watching-section";
 import { listVideoProgress } from "@/features/progress/progress-data";
 import type { VideoProgress } from "@/features/progress/progress";
 import type { PlaylistSummary } from "@/shared/types";
@@ -40,6 +45,10 @@ export interface LibraryPageContentProps {
  * The four tab counts are separate `COUNT(*)` queries (`countLibraryEntries`),
  * never list reads: a tab that is not open must not be loaded to size it.
  *
+ * One cross-tab "Continue watching" shelf sits above the tabs. It reads the
+ * local progress join once per request and hides itself when nothing is in
+ * progress; like the tabs it costs no YouTube call.
+ *
  * The lazy 30-day metadata sweep (T46) runs before the list read, so the cards
  * below never render a snapshot that the sweep was about to replace. It is
  * awaited inside the same `<Suspense>` boundary, so a slow or failed sweep
@@ -54,8 +63,29 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
   const tab = resolveLibraryTab(params.tab);
   const counts = countLibraryEntries();
 
+  // The shelf spans every tab, so it is read once here. A failed local read
+  // hides it rather than replacing the whole library with an error; the tab
+  // list below still renders from its own reads.
+  let continueWatching: ContinueWatchingShelfProps["items"] = [];
+  try {
+    continueWatching = await listContinueWatchingVideos();
+  } catch {
+    continueWatching = [];
+  }
+
   return (
     <div className="flex flex-col gap-6">
+      {/*
+       * Cross-tab local shelf: every in-progress video that has a stored
+       * snapshot, independent of the active tab. It renders nothing when the
+       * list is empty, so an untouched library looks exactly as before.
+       */}
+      <ContinueWatchingShelf
+        items={continueWatching}
+        titleId="library-continue-watching-heading"
+        layout="grid"
+      />
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <LibraryTabs activeTab={tab} counts={counts} />
         {/*

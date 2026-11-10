@@ -26,9 +26,9 @@
  * public signatures are unchanged, and a cache hit returns before the API key is
  * even read. Entries are keyed by endpoint plus normalized parameters (never by
  * key material), bounded at 200 entries with LRU eviction, and expired by TTL:
- * search 60 s, video details 10 min, trending 5 min, categories 24 h, comments
- * 5 min, channels 24 h, playlist items 10 min. Concurrent identical calls share
- * one upstream request.
+ * search 60 s, video details 10 min, trending 5 min, comments 5 min, channels
+ * 24 h, playlist items 10 min. Concurrent identical calls share one upstream
+ * request.
  *
  * The cached value is the **normalized domain object**, not the raw payload:
  * fetching and normalization both run inside the cached loader, so a 200
@@ -44,7 +44,7 @@
  * <https://developers.google.com/youtube/v3/determine_quota_cost>. Do not copy
  * older figures: `search.list` is no longer billed as 100 units from the shared
  * pool. It has its own bucket of **100 calls per day**, and each call costs one
- * unit of that bucket. `videos.list`, `videoCategories.list`, `channels.list` and
+ * unit of that bucket. `videos.list`, `channels.list` and
  * `playlistItems.list` cost **1 unit** each from the shared **10,000 units/day**
  * pool. `videos.insert` (unused by Viewly) has a separate 100/day bucket.
  *
@@ -54,7 +54,6 @@
  * | `getVideo`             | `videos.list`         | 1 of 10,000 units/day            |
  * | `getVideos`            | `videos.list`         | 1 unit per 50 ids (batch)        |
  * | `getTrending`          | `videos.list` (chart) | 1 of 10,000 units/day            |
- * | `listVideoCategories`  | `videoCategories.list`| 1 of 10,000 units/day            |
  * | `listComments`         | `commentThreads.list` | 1 of 10,000 units/day            |
  * | `getChannel`           | `channels.list`       | 1 of 10,000 units/day            |
  * | `listPlaylistItems`    | `playlistItems.list`  | 1 of 10,000 units/day            |
@@ -65,7 +64,7 @@
  * most one unit per ten minutes for its uploads. Every retry of a 429/5xx
  * response and every extra results page is another billable call, which is why
  * the cache exists. Budget picture for one local user: 100 searches per day
- * (search only) and 10,000 units/day for details, trending, categories, comments,
+ * (search only) and 10,000 units/day for details, trending, comments,
  * channels and uploads combined. A day of ordinary browsing — say 20 searches,
  * 200 detail views, 50 trending loads, 40 comment pages, 60 distinct channels
  * and 20 channel-page visits — costs 20 search calls plus under 400 units,
@@ -282,14 +281,6 @@ export interface ListPlaylistItemsOptions {
   maxResults?: number;
 }
 
-/** Minimal category shape used by filters; never the raw API payload. */
-export interface VideoCategory {
-  id: string;
-  title: string;
-  /** Whether videos can be assigned to this category. */
-  assignable: boolean;
-}
-
 /**
  * Runs `search.list` for videos and normalizes the response.
  *
@@ -464,25 +455,6 @@ export async function getVideos(ids: readonly string[]): Promise<VideoSummary[]>
   }
 
   return result;
-}
-
-/**
- * Lists assignable video categories for a region, or all categories when none is given.
- *
- * @throws {DomainValidationError} for an invalid region code or a malformed payload.
- * @throws {YouTubeApiError} for transport and HTTP failures.
- */
-export async function listVideoCategories(regionCode?: string): Promise<VideoCategory[]> {
-  const region = regionCode === undefined ? DEFAULT_REGION_CODE : assertRegionCode(regionCode);
-
-  const params = {
-    part: "snippet",
-    regionCode: region,
-  };
-
-  return cachedRequest("videoCategories", params, YOUTUBE_CACHE_TTLS_MS.categories, async () =>
-    normalizeCategoryList(await fetchJson("videoCategories", params)),
-  );
 }
 
 /**
@@ -791,40 +763,6 @@ function toVideoSummary(detail: VideoDetail): VideoSummary {
   const summary: VideoSummary & { description?: string } = { ...detail };
   delete summary.description;
   return summary;
-}
-
-/**
- * Normalizes a `videoCategories.list` payload into categories, dropping entries
- * without a usable id, snippet or title.
- */
-function normalizeCategoryList(payload: unknown): VideoCategory[] {
-  if (!isRecord(payload) || !Array.isArray(payload.items)) {
-    throw malformedPayload("Video category response must contain an items array.");
-  }
-
-  const categories: VideoCategory[] = [];
-  for (const item of payload.items) {
-    if (!isRecord(item) || typeof item.id !== "string" || item.id.length === 0) {
-      continue;
-    }
-
-    if (!isRecord(item.snippet)) {
-      continue;
-    }
-
-    const title = typeof item.snippet.title === "string" ? item.snippet.title.trim() : "";
-    if (title.length === 0) {
-      continue;
-    }
-
-    categories.push({
-      id: item.id,
-      title,
-      assignable: item.snippet.assignable === true,
-    });
-  }
-
-  return categories;
 }
 
 /**

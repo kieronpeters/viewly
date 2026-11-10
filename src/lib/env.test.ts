@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // graph; Vitest is not one, so the marker module is mocked here.
 vi.mock("server-only", () => ({}));
 
-import { EnvConfigurationError, getYoutubeApiKey, isYoutubeApiKeyConfigured } from "@/lib/env";
+import { EnvConfigurationError, getYoutubeApiKey } from "@/lib/env";
 
 const ORIGINAL_KEY = process.env.YOUTUBE_API_KEY;
 
@@ -76,20 +76,5 @@ describe("getYoutubeApiKey", () => {
     expect(error.message).toContain("YOUTUBE_API_KEY");
     expect(error.message).toContain(".env.local");
     expect(error.message).not.toContain("YOUR_API_KEY_HERE");
-  });
-});
-
-describe("isYoutubeApiKeyConfigured", () => {
-  it("reports false when the key is missing", () => {
-    expect(isYoutubeApiKeyConfigured()).toBe(false);
-  });
-
-  it("reports true when a valid key is configured, without exposing it", () => {
-    setKey(FAKE_KEY);
-
-    const configured: boolean = isYoutubeApiKeyConfigured();
-
-    expect(configured).toBe(true);
-    expect(String(configured)).not.toContain(FAKE_KEY);
   });
 });

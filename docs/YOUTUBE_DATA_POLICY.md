@@ -213,7 +213,7 @@ checking, a project has 100 `search.list` calls per day, 100 `videos.insert` cal
 Viewly) and 10,000 units per day shared across the other endpoints; daily quotas reset at midnight
 Pacific Time.
 
-`searchVideos`, `getVideo`, `getVideos`, `listVideoCategories` and `getTrending` all consume quota
+`searchVideos`, `getVideo`, `getVideos` and `getTrending` all consume quota
 from those buckets, and the shared cache absorbs repeat calls. The client retries a 429 or 5xx
 response once, then maps `403 quotaExceeded` to the `quota` error code. There is no local quota ledger
 and no request budgeting. Quota exhaustion and the user-facing copy are documented in

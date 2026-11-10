@@ -45,16 +45,52 @@
  * (`src/features/progress/progress.ts`). This module stores what it is given
  * and only clamps `positionSeconds` to `durationSeconds`, so a seek past the
  * end cannot overflow a card's progress bar.
+ *
+ * ## Continue watching
+ *
+ * {@link ProgressRepository.listContinueWatching} joins this table to the three
+ * stored display snapshots (`history`, `favourites`, `watch_later`), so a home
+ * or library shelf can render a card without a YouTube call. The fraction is
+ * checked with integer arithmetic (`position * 100` against `duration * 5` /
+ * `duration * 95`) to avoid floating-point boundary noise. A progress row with
+ * no snapshot anywhere has nothing to display and is excluded by the join
+ * filter, not rendered as a placeholder.
  */
 import "server-only";
 
-import { inArray, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 
-import { videoProgress } from "@/db/schema";
+import { favourites, history, videoProgress, watchLater } from "@/db/schema";
 import type { ViewlyDatabase } from "@/lib/db/client";
 
 /** A row of `video_progress`, with `updatedAt` as a `Date`. */
 export type VideoProgressRow = typeof videoProgress.$inferSelect;
+
+/**
+ * One in-progress video joined to a stored display snapshot.
+ *
+ * The snapshot columns are denormalised per list; when a video appears in more
+ * than one list this query picks `history` first (it is refreshed on every
+ * view), then `favourites`, then `watch_later`.
+ */
+export interface ContinueWatchingRow {
+  /** YouTube video id. */
+  videoId: string;
+  /** Snapshot title. */
+  title: string;
+  /** Snapshot channel name. */
+  channelTitle: string;
+  /** Snapshot thumbnail URL. */
+  thumbnailUrl: string;
+  /** Snapshot duration; `null` for live streams or missing details. */
+  durationSeconds: number | null;
+  /** Last reported position in whole seconds. */
+  positionSeconds: number;
+  /** Duration the progress bar must be measured against. */
+  progressDurationSeconds: number;
+  /** When the position was last written; the list is newest first. */
+  updatedAt: Date;
+}
 
 /** Input for {@link ProgressRepository.save}. */
 export interface SaveVideoProgressInput {
@@ -86,6 +122,15 @@ export interface ProgressRepository {
    * have validated both values already.
    */
   save(input: SaveVideoProgressInput): VideoProgressRow;
+  /**
+   * Videos between 5% and 95% complete, joined to their stored display
+   * snapshot and ordered by most recently reported progress.
+   *
+   * A video with progress but no row in any of the three snapshot tables is
+   * omitted: there is no title, thumbnail or channel to render. Reads only the
+   * local database, so a continue-watching shelf costs no YouTube call.
+   */
+  listContinueWatching(): ContinueWatchingRow[];
   /** Deletes one video's progress. Returns `true` when a row was removed. */
   clear(videoId: string): boolean;
 }
@@ -139,6 +184,45 @@ export function createProgressRepository(db: ViewlyDatabase): ProgressRepository
       }
 
       return row;
+    },
+
+    listContinueWatching() {
+      // Three left joins because a video may live in none, one or several of
+      // the snapshot tables. `coalesce` supplies the display fields from the
+      // first list that has the row; the `or` filter then drops progress rows
+      // whose snapshot is missing everywhere, since a card cannot be built.
+      return db
+        .select({
+          videoId: videoProgress.videoId,
+          title: sql<string>`coalesce(${history.title}, ${favourites.title}, ${watchLater.title})`,
+          channelTitle: sql<string>`coalesce(${history.channelTitle}, ${favourites.channelTitle}, ${watchLater.channelTitle})`,
+          thumbnailUrl: sql<string>`coalesce(${history.thumbnailUrl}, ${favourites.thumbnailUrl}, ${watchLater.thumbnailUrl})`,
+          durationSeconds: sql<
+            number | null
+          >`coalesce(${history.durationSeconds}, ${favourites.durationSeconds}, ${watchLater.durationSeconds})`,
+          positionSeconds: videoProgress.positionSeconds,
+          progressDurationSeconds: videoProgress.durationSeconds,
+          updatedAt: videoProgress.updatedAt,
+        })
+        .from(videoProgress)
+        .leftJoin(history, eq(history.videoId, videoProgress.videoId))
+        .leftJoin(favourites, eq(favourites.videoId, videoProgress.videoId))
+        .leftJoin(watchLater, eq(watchLater.videoId, videoProgress.videoId))
+        .where(
+          and(
+            // Integer arithmetic, matching `isResumableProgress`: at least 5%
+            // and strictly below 95%. Avoids float rounding at the boundaries.
+            sql`${videoProgress.positionSeconds} * 100 >= ${videoProgress.durationSeconds} * 5`,
+            sql`${videoProgress.positionSeconds} * 100 < ${videoProgress.durationSeconds} * 95`,
+            or(
+              isNotNull(history.videoId),
+              isNotNull(favourites.videoId),
+              isNotNull(watchLater.videoId),
+            ),
+          ),
+        )
+        .orderBy(desc(videoProgress.updatedAt), asc(videoProgress.videoId))
+        .all();
     },
 
     clear(videoId) {

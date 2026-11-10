@@ -4,7 +4,8 @@ import { Fragment, useId, useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { splitDescriptionLinks } from "./description-links";
+import { splitDescription } from "./description-timestamps";
+import { usePlayerSeek } from "./player-seek";
 
 /** Default rough character budget of one rendered line in the 20rem sidebar. */
 const APPROXIMATE_CHARACTERS_PER_LINE = 44;
@@ -52,6 +53,11 @@ export interface ExpandableDescriptionProps {
  * server component. The text is rendered through React text nodes, never
  * through `dangerouslySetInnerHTML`, and only absolute `http`/`https` URLs are
  * turned into links (see `description-links.ts`).
+ *
+ * Timestamps (`0:00`, `12:34`, `1:02:03`) are buttons, not links: they call the
+ * watch page's seek channel (T71) and never navigate or open a tab. A
+ * description rendered without a player keeps the buttons inert instead of
+ * hiding the timestamps.
  */
 export function ExpandableDescription({
   text,
@@ -60,7 +66,8 @@ export function ExpandableDescription({
 }: ExpandableDescriptionProps) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
-  const segments = useMemo(() => splitDescriptionLinks(text), [text]);
+  const tokens = useMemo(() => splitDescription(text), [text]);
+  const playerSeek = usePlayerSeek();
 
   const collapsible = shouldCollapseDescription(text, charactersPerLine);
   const collapsed = collapsible && !expanded;
@@ -75,21 +82,37 @@ export function ExpandableDescription({
           data-slot="video-description"
           className="text-sm leading-relaxed break-words whitespace-pre-line text-muted-foreground"
         >
-          {segments.map((segment, index) =>
-            segment.type === "link" ? (
-              <a
-                key={`link-${index}`}
-                href={segment.href}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="rounded-sm break-words text-foreground underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              >
-                {segment.text}
-              </a>
-            ) : (
-              <Fragment key={`text-${index}`}>{segment.text}</Fragment>
-            ),
-          )}
+          {tokens.map((token, index) => {
+            if (token.type === "link") {
+              return (
+                <a
+                  key={`link-${index}`}
+                  href={token.href}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="rounded-sm break-words text-foreground underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {token.text}
+                </a>
+              );
+            }
+
+            if (token.type === "timestamp") {
+              return (
+                <button
+                  key={`timestamp-${index}`}
+                  type="button"
+                  aria-label={`Seek to ${token.text}`}
+                  onClick={() => playerSeek?.seekTo(token.seconds)}
+                  className="inline cursor-pointer rounded-sm border-0 bg-transparent p-0 tabular-nums text-foreground underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {token.text}
+                </button>
+              );
+            }
+
+            return <Fragment key={`text-${index}`}>{token.text}</Fragment>;
+          })}
         </p>
       </div>
 

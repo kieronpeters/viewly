@@ -3,6 +3,8 @@ import { formatPublishedDate } from "@/components/video/format-published-date";
 import { formatDuration, formatViewCount } from "@/shared/format";
 import type { VideoDetail } from "@/shared/types";
 
+import { WatchChapters } from "./watch-chapters";
+
 export interface WatchDescriptionProps {
   /** Already normalized by the YouTube client; never built from a raw payload. */
   video: VideoDetail;
@@ -18,6 +20,11 @@ export interface WatchDescriptionProps {
  *
  * `ExpandableDescription` renders the text through React text nodes and only
  * linkifies absolute http(s) URLs, so no upstream HTML reaches the page.
+ *
+ * T71 adds two ways to scrub to a timestamp in that same text: every `0:00` /
+ * `12:34` / `1:02:03` becomes a button, and a Chapters list appears once there
+ * are at least two distinct timestamps. Both seek the player through the shared
+ * channel; neither is a link, so a click cannot navigate.
  */
 export function WatchDescription({ video }: WatchDescriptionProps) {
   const viewCount = formatViewCount(video.viewCount);
@@ -65,6 +72,8 @@ export function WatchDescription({ video }: WatchDescriptionProps) {
       ) : (
         <p className="text-sm text-muted-foreground">No description was provided for this video.</p>
       )}
+
+      {hasDescription ? <WatchChapters text={video.description} /> : null}
     </section>
   );
 }

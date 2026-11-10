@@ -15,6 +15,12 @@ import { AUTOPLAY_PREFERENCE_KEY, readAutoplayPreference } from "./autoplay-pref
 import { clearPlaybackEndedEvent, publishPlaybackEnded } from "./playback-end";
 import { selectUpNextVideo, UP_NEXT_COUNTDOWN_SECONDS } from "./up-next";
 import { VideoSuggestions } from "./video-suggestions";
+import {
+  addVideoToQueue,
+  getWatchQueue,
+  resetWatchQueueCache,
+  WATCH_QUEUE_STORAGE_KEY,
+} from "./watch-queue-store";
 
 const CURRENT_ID = "currentVid1";
 const NEXT_ID = "aaaaaaaaaaa";
@@ -59,6 +65,7 @@ function startCountdown() {
 beforeEach(() => {
   pushMock.mockReset();
   window.localStorage.clear();
+  resetWatchQueueCache();
   clearPlaybackEndedEvent();
   vi.useRealTimers();
 });
@@ -66,6 +73,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   window.localStorage.clear();
+  resetWatchQueueCache();
   clearPlaybackEndedEvent();
 });
 
@@ -220,5 +228,43 @@ describe("VideoSuggestions autoplay preference", () => {
     renderRail();
 
     expect(autoplaySwitch()).toHaveAttribute("aria-checked", "false");
+  });
+});
+
+describe("VideoSuggestions queue integration", () => {
+  it("adds and removes a suggestion through the queue control", async () => {
+    const user = userEvent.setup();
+    renderRail();
+
+    await user.click(screen.getByRole("button", { name: `Add ${NEXT_VIDEO.title} to queue` }));
+
+    expect(getWatchQueue().map((video) => video.id)).toEqual([NEXT_ID]);
+    expect(window.localStorage.getItem(WATCH_QUEUE_STORAGE_KEY)).not.toBeNull();
+
+    const remove = screen.getByRole("button", {
+      name: `Remove ${NEXT_VIDEO.title} from queue`,
+    });
+
+    expect(remove).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(remove);
+
+    expect(getWatchQueue()).toEqual([]);
+  });
+
+  it("leaves the end-of-playback hand-off to the queue when it has an item", () => {
+    vi.useFakeTimers();
+
+    act(() => addVideoToQueue(NEXT_VIDEO));
+    renderRail();
+    fireEvent.click(autoplaySwitch());
+    act(() => publishPlaybackEnded(CURRENT_ID));
+
+    // WatchQueue owns this countdown, not the suggestions rail.
+    expect(countdown()).toBeNull();
+
+    act(() => vi.advanceTimersByTime(UP_NEXT_COUNTDOWN_SECONDS * 1000));
+
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

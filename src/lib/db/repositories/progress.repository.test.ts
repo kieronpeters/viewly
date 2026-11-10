@@ -159,6 +159,128 @@ describe("clear", () => {
   });
 });
 
+describe("listContinueWatching", () => {
+  /** Seeds the display snapshot every list shares, through the real repository. */
+  function addSnapshot(videoId: string, title: string, durationSeconds: number | null = 200) {
+    const snapshot = {
+      videoId,
+      title,
+      channelTitle: "Snapshot channel",
+      thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+      durationSeconds,
+    };
+
+    library.repository.history.recordView({ ...snapshot, viewedAt: at(1_000) });
+  }
+
+  /** Seeds one progress row at an exact fraction of a 200-second video. */
+  function addProgress(videoId: string, positionSeconds: number, updatedAt: number) {
+    repository.save({ videoId, positionSeconds, durationSeconds: 200, updatedAt: at(updatedAt) });
+  }
+
+  it("selects only the 5%-95% window, newest progress first", () => {
+    // 200-second videos, so each position is an exact percentage.
+    addSnapshot("below000001", "Below five percent");
+    addSnapshot("atmin000001", "Exactly five percent");
+    addSnapshot("middle00001", "In the middle");
+    addSnapshot("nearend0001", "Near the end");
+    addSnapshot("atend000001", "Exactly ninety-five percent");
+    addSnapshot("finished001", "Finished");
+
+    addProgress("below000001", 8, 6_000); // 4%
+    addProgress("atmin000001", 10, 3_000); // 5%, included
+    addProgress("middle00001", 100, 2_000); // 50%, included
+    addProgress("nearend0001", 189, 1_000); // 94.5%, included
+    addProgress("atend000001", 190, 900); // 95%, excluded
+    addProgress("finished001", 200, 800); // 100%, excluded
+
+    const rows = repository.listContinueWatching();
+
+    expect(rows.map((row) => row.videoId)).toEqual(["atmin000001", "middle00001", "nearend0001"]);
+    expect(rows.map((row) => row.title)).toEqual([
+      "Exactly five percent",
+      "In the middle",
+      "Near the end",
+    ]);
+    expect(rows[1]).toMatchObject({
+      positionSeconds: 100,
+      progressDurationSeconds: 200,
+    });
+  });
+
+  it("omits progress rows that have no stored snapshot anywhere", () => {
+    addSnapshot("withsnap001", "Has a snapshot");
+    addProgress("withsnap001", 100, 1_000);
+    addProgress("nosnapshot1", 100, 2_000);
+
+    expect(repository.listContinueWatching().map((row) => row.videoId)).toEqual(["withsnap001"]);
+  });
+
+  it("uses the history snapshot when a video is in more than one list", () => {
+    const videoId = "shared00001";
+    addProgress(videoId, 100, 1_000);
+
+    const snapshot = {
+      videoId,
+      channelTitle: "Channel",
+      thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+      durationSeconds: 200,
+    };
+
+    library.repository.favourites.add({
+      ...snapshot,
+      title: "Favourite title",
+      channelTitle: "Favourite channel",
+      savedAt: at(1_000),
+    });
+    library.repository.watchLater.add({
+      ...snapshot,
+      title: "Watch later title",
+      savedAt: at(1_000),
+    });
+    library.repository.history.recordView({
+      ...snapshot,
+      title: "History title",
+      channelTitle: "History channel",
+      viewedAt: at(1_000),
+    });
+
+    const rows = repository.listContinueWatching();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      videoId,
+      title: "History title",
+      channelTitle: "History channel",
+    });
+  });
+
+  it("falls back to watch later for the snapshot and keeps a null snapshot duration", () => {
+    library.repository.watchLater.add({
+      videoId: "lateronly01",
+      title: "Only queued",
+      channelTitle: "Queued channel",
+      thumbnailUrl: "https://i.ytimg.com/vi/lateronly01/mqdefault.jpg",
+      durationSeconds: null,
+      savedAt: at(1_000),
+    });
+    addProgress("lateronly01", 100, 1_000);
+
+    expect(repository.listContinueWatching()).toEqual([
+      {
+        videoId: "lateronly01",
+        title: "Only queued",
+        channelTitle: "Queued channel",
+        thumbnailUrl: "https://i.ytimg.com/vi/lateronly01/mqdefault.jpg",
+        durationSeconds: null,
+        positionSeconds: 100,
+        progressDurationSeconds: 200,
+        updatedAt: at(1_000),
+      },
+    ]);
+  });
+});
+
 describe("migration constraints", () => {
   it("rejects a duplicate video id at the primary key", () => {
     const insert = library.sqlite.prepare(
