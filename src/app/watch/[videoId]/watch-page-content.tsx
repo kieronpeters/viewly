@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { FavouriteButton } from "@/components/video/favourite-button";
-import { PlayerSeekProvider } from "@/components/video/player-seek";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { WatchQueue } from "@/components/video/watch-queue";
 import { isInWatchLater, isVideoFavourite, listPlaylists } from "@/features/library";
@@ -120,15 +119,15 @@ export interface WatchVideoDetailProps {
  * page needs no duplicated suggestions markup for the two breakpoints.
  *
  * The player slot renders the client player column (T86), which owns the
- * listen-mode preference and the player wrapper; T67 owns the embed behind it.
- * Theater mode (T70) is shared through `WatchTheaterProvider`: the grid and rail
- * are one client layout boundary, while the description and discussion remain
- * server-rendered children that never remount on a toggle.
- * The primary column is wrapped in a client seek provider
- * (T71), so a timestamp or chapter click in the description drives the same
- * player handle without a second embed or a navigation. The description and
- * discussion are separate labelled regions so T74/T79/T80 can replace their
- * contents without touching the layout.
+ * listen-mode preference and activates the shell player (T75); T67 owns the
+ * embed behind it. Theater mode (T70) is shared through `WatchTheaterProvider`:
+ * the grid and rail are one client layout boundary, while the description and
+ * discussion remain server-rendered children that never remount on a toggle.
+ * The seek channel (T71) is provided by the shell, beside the one shared
+ * player, so a timestamp or chapter click drives that player without a second
+ * embed or a navigation. The description and discussion are separate labelled
+ * regions so T74/T79/T80 can replace their contents without touching the
+ * layout.
  */
 export function WatchVideoDetail({
   video,
@@ -163,67 +162,67 @@ export function WatchVideoDetail({
             Primary column: playback, then everything a viewer reads or acts on.
             The client wrapper owns listen mode (T86), so the meta block below can
             be replaced by the compact bar without remounting the description,
-            chapters or discussion.
+            chapters or discussion. The seek channel (T71) and the single player
+            belong to the shell (T75), which is why this route no longer provides
+            either: description timestamps reach the same embed from any route.
           */}
-          <PlayerSeekProvider>
-            <WatchPlayerColumn
-              snapshot={videoSnapshotFromVideo(video)}
-              initialProgress={progress}
-              meta={
-                <>
-                  <h1
-                    id="watch-title"
-                    className="text-pretty text-xl font-semibold tracking-tight break-words text-foreground sm:text-2xl"
-                  >
-                    {video.title}
-                  </h1>
+          <WatchPlayerColumn
+            snapshot={videoSnapshotFromVideo(video)}
+            initialProgress={progress}
+            meta={
+              <>
+                <h1
+                  id="watch-title"
+                  className="text-pretty text-xl font-semibold tracking-tight break-words text-foreground sm:text-2xl"
+                >
+                  {video.title}
+                </h1>
 
-                  {/*
+                {/*
                   One row on desktop, two stacked rows below `sm`: the channel card
                   (avatar, name, outbound link) and the video actions. The card owns
                   its own fallbacks, so this row renders even when `channels.list`
                   was unavailable.
                 */}
+                <div
+                  data-slot="watch-channel-row"
+                  className="flex min-w-0 flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <WatchChannelCard
+                    channel={channel}
+                    channelTitle={video.channelTitle}
+                    videoId={video.id}
+                    channelId={video.channelId}
+                  />
+
                   <div
-                    data-slot="watch-channel-row"
-                    className="flex min-w-0 flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between"
+                    data-slot="watch-action-row"
+                    role="group"
+                    aria-label="Video actions"
+                    className="flex shrink-0 flex-wrap items-start justify-end gap-2"
                   >
-                    <WatchChannelCard
-                      channel={channel}
-                      channelTitle={video.channelTitle}
-                      videoId={video.id}
-                      channelId={video.channelId}
+                    <FavouriteButton
+                      video={favouriteSnapshotFromVideo(video)}
+                      initialFavourite={isFavourite}
                     />
-
-                    <div
-                      data-slot="watch-action-row"
-                      role="group"
-                      aria-label="Video actions"
-                      className="flex shrink-0 flex-wrap items-start justify-end gap-2"
-                    >
-                      <FavouriteButton
-                        video={favouriteSnapshotFromVideo(video)}
-                        initialFavourite={isFavourite}
-                      />
-                      <WatchLaterButton
-                        video={watchLaterSnapshotFromVideo(video)}
-                        initialInWatchLater={inWatchLater}
-                      />
-                      <PlaylistPicker
-                        video={playlistSnapshotFromVideo(video)}
-                        playlists={playlists}
-                      />
-                      <CopyLinkButton videoId={video.id} />
-                    </div>
+                    <WatchLaterButton
+                      video={watchLaterSnapshotFromVideo(video)}
+                      initialInWatchLater={inWatchLater}
+                    />
+                    <PlaylistPicker
+                      video={playlistSnapshotFromVideo(video)}
+                      playlists={playlists}
+                    />
+                    <CopyLinkButton videoId={video.id} />
                   </div>
-                </>
-              }
-            >
-              <WatchDescription video={video} />
+                </div>
+              </>
+            }
+          >
+            <WatchDescription video={video} />
 
-              <WatchDiscussion videoId={video.id} />
-            </WatchPlayerColumn>
-          </PlayerSeekProvider>
+            <WatchDiscussion videoId={video.id} />
+          </WatchPlayerColumn>
         </WatchStageLayout>
       </article>
     </WatchTheaterProvider>

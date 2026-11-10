@@ -54,4 +54,18 @@ describe("AppShell brand link", () => {
 
     expect(screen.getAllByRole("dialog", { name: "Command palette" })).toHaveLength(1);
   });
+
+  it("mounts one player host but no player while nothing is selected", () => {
+    render(
+      <AppShell>
+        <p>Page content</p>
+      </AppShell>,
+    );
+
+    // The shell owns the player (T75), but a route that never picked a video
+    // must not create an iframe or surface.
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(document.querySelector('[data-slot="player-surface"]')).toBeNull();
+    expect(screen.queryByRole("region", { name: "Mini player" })).toBeNull();
+  });
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
+import { MiniPlayer } from "@/components/player/mini-player";
 import { publishPlaybackEnded } from "@/components/video/playback-end";
 import { subscribeToPauseRequests } from "@/components/video/playback-pause";
 import { usePlayerSeek } from "@/components/video/player-seek";
@@ -72,6 +73,33 @@ export interface WatchPlayerProps {
   listenMode?: boolean;
   /** Flips listen mode; omitted on surfaces that do not offer the mode. */
   onToggleListenMode?: () => void;
+  /**
+   * Toggles theater mode when the viewer presses `T`.
+   *
+   * The watch column registers this through the shell provider, because the
+   * player now renders above the route's theater provider. When omitted (an
+   * isolated player) the watch theater context is used instead.
+   */
+  onToggleTheater?: () => void;
+  /**
+   * Whether this instance is the watch stage or the shell's mini player (T75).
+   *
+   * The embed, the progress writes and the seek registration are identical in
+   * both variants; only the surrounding chrome changes. The stage slot keeps a
+   * fixed position in the tree either way, so switching variants never remounts
+   * the iframe.
+   */
+  variant?: "watch" | "mini";
+  /** Closes the mini player and releases the video; ignored on the watch stage. */
+  onDismiss?: () => void;
+  /**
+   * Reports the video id the first time playback starts.
+   *
+   * The shell player uses it to decide whether a mini player represents a real
+   * playback session. It is separate from `onPlaybackStart` so recording a view
+   * and deciding to show a surface stay independent.
+   */
+  onPlaybackStarted?: (videoId: string) => void;
 }
 
 /**
@@ -115,6 +143,15 @@ export interface WatchPlayerProps {
  * one-second poll reads the position, playback state and volume through the
  * same handle, and every bar control calls back into that handle.
  *
+ * ## Shell ownership (T75)
+ *
+ * The shell's `PlayerProvider` renders this component once and alternates
+ * between `variant="watch"` and `variant="mini"`. That is why every block below
+ * is wrapped in an always-rendered slot: the stage keeps the same position in
+ * the tree in both variants, so navigating away from the watch route changes
+ * the chrome but never unmounts the iframe. The mini variant is a remote
+ * control for the same embed, with its own artwork, title, seek and close.
+ *
  * ## Failure
  *
  * History and progress are best-effort: every action call is wrapped, because
@@ -125,7 +162,12 @@ export function WatchPlayer({
   initialProgress = null,
   listenMode = false,
   onToggleListenMode,
+  onToggleTheater,
+  variant = "watch",
+  onDismiss,
+  onPlaybackStarted,
 }: WatchPlayerProps) {
+  const isMini = variant === "mini";
   const recordedVideoIdRef = useRef<string | null>(null);
   const handleRef = useRef<YoutubePlayerHandle | null>(null);
   const lastReportedAtRef = useRef<number | null>(null);
@@ -135,6 +177,7 @@ export function WatchPlayer({
   const [, startTransition] = useTransition();
   const playerSeek = usePlayerSeek();
   const theater = useWatchTheater();
+  const toggleTheater = onToggleTheater ?? theater.toggleTheater;
   const rootRef = useRef<HTMLDivElement | null>(null);
   /** Previous mode, so focus moves only after a real toggle, never on load. */
   const previousListenModeRef = useRef(listenMode);
@@ -335,13 +378,18 @@ export function WatchPlayer({
 
     previousListenModeRef.current = listenMode;
 
+    // The mini player has no mode switch, so there is nothing to focus.
+    if (isMini) {
+      return;
+    }
+
     const root = rootRef.current;
     const selector = listenMode
       ? '[data-slot="watch-listen-bar"] [data-slot="listen-mode-toggle"]'
       : '[data-slot="watch-player-stage"] [data-slot="listen-mode-toggle"]';
 
     root?.querySelector<HTMLElement>(selector)?.focus();
-  }, [listenMode]);
+  }, [listenMode, isMini]);
 
   /**
    * Samples the official player for the listen bar.
@@ -367,10 +415,11 @@ export function WatchPlayer({
     });
   }, [snapshot.durationSeconds]);
 
-  // Poll only while the compact bar is visible: the video layout does not show
-  // a clock, so there is nothing to sample there.
+  // Poll only while a surface that shows a clock is visible: the video layout
+  // does not show one, so there is nothing to sample there. The mini player
+  // shows progress on every route, so it polls too.
   useEffect(() => {
-    if (!listenMode) {
+    if (!listenMode && !isMini) {
       return;
     }
 
@@ -378,7 +427,7 @@ export function WatchPlayer({
     const timer = setInterval(readListenStatus, LISTEN_STATUS_POLL_MS);
 
     return () => clearInterval(timer);
-  }, [listenMode, readListenStatus]);
+  }, [listenMode, isMini, readListenStatus]);
 
   const handlePlaybackStart = useCallback(() => {
     if (recordedVideoIdRef.current === snapshot.videoId) {
@@ -386,6 +435,7 @@ export function WatchPlayer({
     }
 
     recordedVideoIdRef.current = snapshot.videoId;
+    onPlaybackStarted?.(snapshot.videoId);
 
     startTransition(async () => {
       try {
@@ -394,7 +444,7 @@ export function WatchPlayer({
         // History is best-effort: a failed write must never interrupt playback.
       }
     });
-  }, [snapshot, startTransition]);
+  }, [snapshot, startTransition, onPlaybackStarted]);
 
   const handlePlaybackPlay = useCallback(() => {
     if (timerRef.current === null) {
@@ -548,32 +598,39 @@ export function WatchPlayer({
     });
   }
 
+  const isStageHidden = listenMode || isMini;
+
   return (
     <div
       ref={rootRef}
       data-slot="watch-player"
       data-listen-mode={listenMode ? "true" : "false"}
+      data-variant={variant}
       className="relative isolate flex min-w-0 flex-col gap-2"
     >
-      <WatchAmbientBackdrop snapshot={snapshot} />
-
-      {isResumeVisible && resumePosition !== null ? (
-        <WatchResumePrompt
-          positionSeconds={resumePosition}
-          durationSeconds={initialProgress?.durationSeconds ?? 0}
-          onResume={handleResume}
-          onStartOver={handleStartOver}
-        />
-      ) : null}
-
       {/*
-        Fixed slot for the compact bar. It is always the second child (after the
-        optional resume prompt) so switching modes never moves the player's
-        stage in the tree; moving it would remount the iframe and create a
-        second player.
+        Every slot below is always rendered, even when empty. The embed must keep
+        the same position in the React tree when listen mode flips or when the
+        shell switches between the watch stage and the mini player: a different
+        position would remount the iframe and stop playback.
       */}
+      <div data-slot="watch-ambient-slot">
+        {isMini ? null : <WatchAmbientBackdrop snapshot={snapshot} />}
+      </div>
+
+      <div data-slot="watch-resume-slot">
+        {!isMini && isResumeVisible && resumePosition !== null ? (
+          <WatchResumePrompt
+            positionSeconds={resumePosition}
+            durationSeconds={initialProgress?.durationSeconds ?? 0}
+            onResume={handleResume}
+            onStartOver={handleStartOver}
+          />
+        ) : null}
+      </div>
+
       <div data-slot="watch-listen-slot">
-        {listenMode ? (
+        {!isMini && listenMode ? (
           <WatchListenBar
             snapshot={snapshot}
             isPlaying={listenStatus.isPlaying}
@@ -593,15 +650,17 @@ export function WatchPlayer({
       </div>
 
       {/*
-        The official embed is the one and only player. Listen mode keeps it
-        mounted (playback continues) but removes it from view and from the
-        accessibility tree, so the bar is the only visible control surface.
+        The official embed is the one and only player. Listen mode and the mini
+        player keep it mounted (playback continues) but remove it from view and
+        from the accessibility tree, so the visible controls are the only
+        surface. The embed is never moved in the DOM; the shell only repositions
+        the box that contains it.
       */}
       <div
         data-slot="watch-player-stage"
-        className={listenMode ? "sr-only" : undefined}
-        aria-hidden={listenMode ? true : undefined}
-        inert={listenMode ? true : undefined}
+        className={isStageHidden ? "sr-only" : undefined}
+        aria-hidden={isStageHidden ? true : undefined}
+        inert={isStageHidden ? true : undefined}
       >
         <YoutubePlayer
           videoId={snapshot.videoId}
@@ -611,10 +670,23 @@ export function WatchPlayer({
           onPlaybackPause={handlePlaybackPause}
           onPlayerReady={handlePlayerReady}
           onPlaybackEnd={handlePlaybackEnd}
-          onToggleTheater={theater.toggleTheater}
+          onToggleTheater={toggleTheater}
           modeControl={<ListenModeToggle enabled={listenMode} onToggle={toggleListenMode} />}
         />
       </div>
+
+      {isMini ? (
+        <MiniPlayer
+          snapshot={snapshot}
+          isPlaying={listenStatus.isPlaying}
+          positionSeconds={listenStatus.positionSeconds}
+          durationSeconds={listenStatus.durationSeconds}
+          isReady={isPlayerReady}
+          onPlayPause={handleListenPlayPause}
+          onSeek={handleListenSeek}
+          onClose={() => onDismiss?.()}
+        />
+      ) : null}
     </div>
   );
 }
