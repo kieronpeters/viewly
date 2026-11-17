@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { FavouriteButton } from "@/components/video/favourite-button";
-import { formatRelativeAge } from "@/components/video/format-relative-age";
+import { RelativeAge } from "@/components/video/relative-age";
 import { VideoCardMenu } from "@/components/video/video-card-menu";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
@@ -70,8 +70,6 @@ export function VideoCard({
 }: VideoCardProps) {
   const duration = formatDuration(video.durationSeconds);
   const viewCount = formatViewCount(video.viewCount);
-  const age = formatRelativeAge(video.publishedAt);
-  const meta = [viewCount, age].filter((value): value is string => value !== null).join(" · ");
 
   const watchedPercent =
     progress !== null &&
@@ -136,8 +134,12 @@ export function VideoCard({
           {video.channelTitle === "" ? null : (
             <p className="truncate text-sm leading-5 text-muted-foreground">{video.channelTitle}</p>
           )}
-          {meta === "" ? null : (
-            <p className="truncate text-xs leading-5 text-muted-foreground">{meta}</p>
+          {viewCount === null && video.publishedAt === "" ? null : (
+            <p className="truncate text-xs leading-5 text-muted-foreground">
+              {viewCount === null ? null : <span>{viewCount}</span>}
+              {viewCount === null ? null : <span aria-hidden="true"> · </span>}
+              <RelativeAge publishedAt={video.publishedAt} />
+            </p>
           )}
         </div>
 

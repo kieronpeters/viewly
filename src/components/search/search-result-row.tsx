@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { formatRelativeAge } from "@/components/video/format-relative-age";
+import { RelativeAge } from "@/components/video/relative-age";
 import { VideoCardMenu } from "@/components/video/video-card-menu";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatViewCount } from "@/shared/format";
@@ -23,8 +23,6 @@ const THUMBNAIL_SIZES = "(min-width: 1024px) 500px, (min-width: 640px) 360px, 10
 export function SearchResultRow({ video }: { video: VideoSummary }) {
   const duration = formatDuration(video.durationSeconds);
   const viewCount = formatViewCount(video.viewCount);
-  const age = formatRelativeAge(video.publishedAt);
-  const meta = [viewCount, age].filter((value): value is string => value !== null).join(" · ");
   const [firstCharacter] = Array.from(video.channelTitle.trim());
 
   return (
@@ -61,7 +59,13 @@ export function SearchResultRow({ video }: { video: VideoSummary }) {
             {video.title}
           </h3>
 
-          {meta === "" ? null : <p className="text-xs leading-5 text-muted-foreground">{meta}</p>}
+          {viewCount === null && video.publishedAt === "" ? null : (
+            <p className="text-xs leading-5 text-muted-foreground">
+              {viewCount === null ? null : <span>{viewCount}</span>}
+              {viewCount === null ? null : <span aria-hidden="true"> · </span>}
+              <RelativeAge publishedAt={video.publishedAt} />
+            </p>
+          )}
 
           {video.channelTitle === "" ? null : (
             <div className="mt-1 flex items-center gap-2">
