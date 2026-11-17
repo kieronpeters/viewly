@@ -1,0 +1,499 @@
+{
+  "flow": "home",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-17",
+  "evidence": "docs/re-evidence/home/",
+  "route": {
+    "path": "/",
+    "documentTitle": "YouTube",
+    "shell": "masthead + guide rail (>=1024 only) + filter chip bar + rich grid, dark theme",
+    "signedOut": true
+  },
+  "viewports": [
+    {
+      "width": 390,
+      "height": 844,
+      "usableWidth": 375,
+      "guide": "absent",
+      "columns": 1,
+      "contentInsetPx": 20,
+      "cardWidthPx": 335,
+      "thumbnailPx": { "w": 335, "h": 188 },
+      "cardGapPx": 0,
+      "rowGapPx": 36,
+      "mastheadHeightPx": 56,
+      "searchAffordance": "icon button (no inline search field)",
+      "evidence": "390/r3/ready.dom.json, 390/styles2/styles-deep.json"
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "usableWidth": 753,
+      "guide": "absent",
+      "columns": 2,
+      "contentInsetPx": 24,
+      "cardWidthPx": 345,
+      "thumbnailPx": { "w": 345, "h": 194 },
+      "cardGapPx": 16,
+      "rowGapPx": 36,
+      "mastheadHeightPx": 56,
+      "searchAffordance": "inline search field (compressed, ~116px)",
+      "evidence": "768/r3/ready.dom.json, 768/r1/chrome.json"
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "usableWidth": 1265,
+      "guide": "72px mini rail, 240px drawer when opened",
+      "columns": 3,
+      "contentInsetPx": 96,
+      "cardWidthPx": 371,
+      "thumbnailPx": { "w": 371, "h": 209 },
+      "cardGapPx": 16,
+      "rowGapPx": 36,
+      "mastheadHeightPx": 56,
+      "searchAffordance": "inline search field (515px) + submit button + voice button",
+      "evidence": "1280/r3/ready.dom.json, 1280/styles2/styles-deep.json"
+    }
+  ],
+  "states": [
+    {
+      "id": "loading",
+      "name": "loading",
+      "trigger": "feed request in flight after a client-side refresh (chip change, reload)",
+      "userSees": "shell retained (masthead, guide, chip bar); grid replaced by skeleton tiles: 16:9 block, 36px avatar circle, two text bars; centred indeterminate spinner below the grid; no text, no error copy",
+      "recovery": "automatic",
+      "measured": { "skeletonElements": 107, "ghostCards": 31 },
+      "evidence": "1280/r1/state-loading.dom.json, 1280/r1/shots/state-loading.png, 1280/r1/loading.json"
+    },
+    {
+      "id": "ready",
+      "name": "ready",
+      "trigger": "feed resolved with at least one item",
+      "userSees": "filter chips with one selected; card grid (3/2/1 columns); cards with thumbnail + duration badge + title + channel avatar/name + view/age metadata + overflow action; horizontal shelves further down; promoted tiles may occupy a grid cell",
+      "recovery": null,
+      "measured": { "cardsAtSettle": [26, 34], "shelves": 2 },
+      "evidence": "1280/r3/ready.dom.json, 768/r3/ready.dom.json, 390/r3/ready.dom.json"
+    },
+    {
+      "id": "empty",
+      "name": "empty",
+      "trigger": "signed-out visitor with no local activity (fresh profile)",
+      "userSees": "authored panel replacing the grid: short heading + one sentence inviting search/watch activity; centred; elevated surface; no chip bar; shell retained",
+      "recovery": "search or watch a video (the panel's own invitation)",
+      "measured": {
+        "panelVisualPx": { "w": 700, "h": 100 },
+        "headingLinePx": { "w": 299, "h": 29 },
+        "bodyLinePx": { "w": 403, "h": 17 }
+      },
+      "evidence": "1280/empty/state-empty.dom.json, 1280/empty/shots/state-empty.png, 768/empty/state-empty.dom.json, 390/empty/state-empty.dom.json"
+    },
+    {
+      "id": "error",
+      "name": "error",
+      "trigger": "feed request fails (browse/guide/next blocked on a cold profile)",
+      "userSees": "skeleton tiles first (0-4s), then the same authored panel as the empty state; no error copy, no alert, no retry affordance at 4s or 12s",
+      "recovery": "none offered in the surface; empty-state invitation only",
+      "measured": { "skeletonsAt4s": [63, 123], "alerts": 0, "retry": false },
+      "evidence": "1280/cold-error/cold-state.json, 390/cold-error/cold-state.json"
+    },
+    {
+      "id": "offline-cold",
+      "name": "offline (cold)",
+      "trigger": "navigation attempted with no network before the app is cached",
+      "userSees": "browser-owned network error page (document is not the app); connection troubleshooting copy and an error code",
+      "recovery": "browser retry / reconnect",
+      "measured": { "appDomNodes": 45 },
+      "evidence": "1280/cold-offline/cold-state.json"
+    },
+    {
+      "id": "offline-warm",
+      "name": "offline (warm)",
+      "trigger": "network lost after the feed rendered",
+      "userSees": "no visual change and no alert when a feed action is attempted; previously rendered cards remain",
+      "recovery": "none offered; stale content persists",
+      "measured": { "alerts": 0, "cardsUnchanged": 31 },
+      "evidence": "1280/r3/offline.json"
+    },
+    {
+      "id": "disabled",
+      "name": "disabled",
+      "trigger": "signed-out session",
+      "userSees": "no create or notifications controls; account area is a sign-in call to action; guide holds only the public destinations; card actions that need an account are still listed in the menu",
+      "recovery": "not applicable (signed-out surface)",
+      "evidence": "1280/r3/keyboard.json, 1280/r3/menu-items.json, 1280/r1/chrome.json"
+    }
+  ],
+  "controls": [
+    {
+      "id": "guide-toggle",
+      "name": "guide toggle",
+      "role": "button",
+      "ariaLabel": "Guide",
+      "keyboard": ["Enter", "Space"],
+      "pointer": "click",
+      "behaviour": "toggles the guide rail between the 72px mini rail and a 240px drawer; drawer reaches full width in ~0.4s",
+      "evidence": "1280/r3/guide.json, 1280/r3/keyboard.json"
+    },
+    {
+      "id": "logo-home",
+      "name": "brand home link",
+      "role": "link",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "behaviour": "navigates to /",
+      "evidence": "1280/r3/keyboard.json"
+    },
+    {
+      "id": "skip-navigation",
+      "name": "skip navigation",
+      "role": "button",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "present off-screen until focused; third stop in the desktop tab order; jumps past the shell",
+      "evidence": "1280/r3/keyboard.json, 1280/empty/state-empty.dom.json"
+    },
+    {
+      "id": "search-field",
+      "name": "search field",
+      "role": "combobox",
+      "keyboard": ["/", "Tab", "Enter"],
+      "pointer": "click, type",
+      "behaviour": "at >=656px an inline field; pressing / moves focus into it; absent at 390 where an icon button opens search",
+      "evidence": "1280/r3/keyboard.json, 390/r3/keyboard.json"
+    },
+    {
+      "id": "search-submit",
+      "name": "search submit",
+      "role": "button",
+      "ariaLabel": "Search",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "evidence": "1280/r3/keyboard.json"
+    },
+    {
+      "id": "voice-search",
+      "name": "voice search",
+      "role": "button",
+      "ariaLabel": "Search with your voice",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "behaviour": "present at >=656px; absent at 390",
+      "evidence": "1280/r3/keyboard.json, 390/r3/keyboard.json"
+    },
+    {
+      "id": "settings",
+      "name": "settings",
+      "role": "button",
+      "ariaLabel": "Settings",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "evidence": "1280/r3/keyboard.json"
+    },
+    {
+      "id": "sign-in",
+      "name": "sign-in entry",
+      "role": "link",
+      "ariaLabel": "Sign in",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "behaviour": "out of scope: not followed (no auth attempts)",
+      "evidence": "1280/r3/keyboard.json"
+    },
+    {
+      "id": "guide-links",
+      "name": "guide destinations",
+      "role": "link",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "four public destinations in the signed-out rail (home, short-form, subscriptions, account); each is 56px tall with icon + label",
+      "evidence": "1280/r3/keyboard.json"
+    },
+    {
+      "id": "filter-chips",
+      "name": "filter chips",
+      "role": "tab",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "one selected chip; selecting another replaces the feed in place without a route change; first content change ~0.12s, settled ~0.9-1.9s; rail scrolls horizontally and scrolls itself when focus moves",
+      "evidence": "1280/r3/chip.json, 768/r3/chip.json, 390/r3/chip.json"
+    },
+    {
+      "id": "card-link",
+      "name": "video card",
+      "role": "link",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "thumbnail and title are one link target to the watch route; the card also carries an overflow button",
+      "evidence": "1280/r3/ready.dom.json"
+    },
+    {
+      "id": "card-overflow",
+      "name": "card overflow menu",
+      "role": "button",
+      "ariaLabel": "More actions",
+      "keyboard": ["Enter", "Escape"],
+      "pointer": "click",
+      "behaviour": "opens a menu of three account-adjacent actions (queue, playlist, share) in ~30-40ms; Escape closes it in ~50ms and returns focus to the trigger",
+      "evidence": "1280/r3/menu.json, 1280/r3/menu-items.json, 768/r3/menu.json, 390/r3/menu.json"
+    },
+    {
+      "id": "grid-scroll",
+      "name": "infinite scroll",
+      "role": "none",
+      "keyboard": ["End", "PageDown"],
+      "pointer": "scroll",
+      "behaviour": "reaching the end appends more cards and grows the document; first growth ~0.56-0.87s; the grid is virtualised (earlier cards are recycled), so item counts in the DOM are not monotonic",
+      "evidence": "1280/r3/scroll.json, 768/r3/scroll.json, 390/r3/scroll.json"
+    }
+  ],
+  "events": [
+    { "id": "enter-to-loading", "from": "route entry", "event": "feed request", "to": "loading" },
+    {
+      "id": "loading-to-ready",
+      "from": "loading",
+      "event": "feed resolves with items",
+      "to": "ready"
+    },
+    {
+      "id": "loading-to-empty",
+      "from": "loading",
+      "event": "feed resolves with no items",
+      "to": "empty"
+    },
+    {
+      "id": "loading-to-noop",
+      "from": "loading",
+      "event": "feed fails",
+      "to": "empty (no error surface)"
+    },
+    {
+      "id": "chip-refilter",
+      "from": "ready",
+      "event": "select another chip",
+      "to": "loading (brief) then ready"
+    },
+    { "id": "menu-open", "from": "ready", "event": "activate card overflow", "to": "menu open" },
+    {
+      "id": "menu-escape",
+      "from": "menu open",
+      "event": "Escape",
+      "to": "ready with focus on trigger"
+    },
+    {
+      "id": "scroll-append",
+      "from": "ready",
+      "event": "scroll to end",
+      "to": "ready with more items"
+    },
+    {
+      "id": "offline-warm-noop",
+      "from": "ready",
+      "event": "feed action while offline",
+      "to": "ready (unchanged, no alert)"
+    }
+  ],
+  "timings": {
+    "serverResponseStartMs": [136, 215],
+    "domContentLoadedMs": [2091, 2356],
+    "loadEventEndMs": [2140, 2403],
+    "firstPaintMs": [1840, 2312],
+    "firstContentfulPaintMs": [1840, 2688],
+    "largestContentfulPaintMs": [2416, 5380],
+    "cumulativeLayoutShift": [0.0003, 0.0128],
+    "longestMainThreadTaskMs": [0, 952],
+    "cardMenuOpenMs": [30, 39],
+    "cardMenuCloseMs": [48, 51],
+    "chipFilterFirstChangeMs": [118, 123],
+    "chipFilterSettledMs": [896, 1899],
+    "infiniteScrollFirstAppendMs": [509, 865],
+    "guideDrawerOpenMs": [401, 401]
+  },
+  "timingsMeta": {
+    "method": "PerformanceNavigationTiming/Paint/LCP/CLS/long-task entries captured in-page; interaction latency measured from input dispatch to observed DOM/visual change on one machine and network",
+    "samples": {
+      "navigation": 3,
+      "cardMenuOpen": 5,
+      "cardMenuClose": 2,
+      "chipFilter": 4,
+      "infiniteScroll": 5,
+      "guideDrawer": 1
+    },
+    "evidence": "1280/r1/timing.json, 1280/r2/timing.json, 390/r1/timing.json, 768/r1/timing.json, 1280/r3/interaction records"
+  },
+  "a11y": {
+    "focusOrder1280": [
+      "guide toggle",
+      "brand home link",
+      "skip navigation",
+      "search field (combobox)",
+      "search submit",
+      "voice search",
+      "settings",
+      "sign-in",
+      "guide: home",
+      "guide: short-form",
+      "guide: subscriptions",
+      "guide: account",
+      "chip 1 (selected)",
+      "chip 2",
+      "chip 3",
+      "chip 4"
+    ],
+    "focusOrder390": [
+      "guide toggle",
+      "brand home link",
+      "skip navigation",
+      "search (icon button)",
+      "settings",
+      "sign-in",
+      "chip 1 (selected)",
+      "chip 2"
+    ],
+    "focusReturnAfterMenuEscape": true,
+    "skipLinkPresent": true,
+    "visibleFocus": "white rounded focus indicator on the focused control (screenshot kbd-01)",
+    "labels": "all measured controls expose an accessible name; chips are named by their visible text",
+    "roles": {
+      "combobox": 1,
+      "tab": 21,
+      "button": 58,
+      "link": 57,
+      "heading": 32,
+      "banner": 1,
+      "navigation": 1,
+      "main": 1
+    },
+    "axNodes": [1829, 1933],
+    "axIgnored": [734, 814],
+    "reducedMotion": "no running CSS animations were reported and the probed chip transition is 0s, before and under prefers-reduced-motion; there is little for the preference to suppress, and the inline preview's own motion could not be observed",
+    "evidence": "1280/r3/keyboard.json, 390/r3/keyboard.json, 1280/r3/reduced-motion.json, 390/r3/ready.ax.json"
+  },
+  "appearance": {
+    "page": { "background": "rgb(15, 15, 15)", "fontFamily": "Roboto, Arial, sans-serif" },
+    "masthead": {
+      "heightPx": 56,
+      "searchFieldPx": { "w": 515, "h": 24 },
+      "note": "field box is the input element; the surrounding pill is ~40px tall"
+    },
+    "chip": {
+      "heightPx": 32,
+      "gapPx": 12,
+      "labelNote": "label typography was not captured (the host element reports inherited 10px; the rendered label is larger)",
+      "selected": "inverted fill (light surface, dark label)",
+      "note": "corner radius is applied below the probed host element; visually ~8px"
+    },
+    "card": {
+      "thumbnailRadiusPx": 12,
+      "thumbnailAspect": "16:9",
+      "title": {
+        "fontSize": 16,
+        "lineHeight": 22,
+        "fontWeight": 500,
+        "color": "rgb(241, 241, 241)",
+        "lines": 2,
+        "paddingRightPx": 24
+      },
+      "meta": {
+        "fontSize": 14,
+        "lineHeight": 20,
+        "fontWeight": 400,
+        "color": "rgb(170, 170, 170)"
+      },
+      "avatarPx": 36,
+      "avatarRadius": "50%",
+      "badge": {
+        "fontSize": 12,
+        "fontWeight": 500,
+        "lineHeight": 18,
+        "color": "rgb(255, 255, 255)",
+        "heightPx": 18
+      },
+      "titleGapBelowThumbPx": 12,
+      "verticalCardGapPx": 36
+    },
+    "shelf": {
+      "widthPx": 1145,
+      "firstShelfTopPx": 1210,
+      "note": "horizontal shelf row with its own title, below the first grid rows"
+    },
+    "emptyPanel": {
+      "visualPx": { "w": 700, "h": 100 },
+      "alignment": "centred in the content column",
+      "radiusPx": 12,
+      "surface": "raised surface, lighter than the page background",
+      "headingBoxPx": { "w": 299, "h": 29 },
+      "bodyBoxPx": { "w": 403, "h": 17 }
+    }
+  },
+  "gaps": [
+    {
+      "id": "signed-in-home",
+      "question": "What changes when signed in (personalised feed, subscriptions, notifications, create)?",
+      "why": "Requires an account session; guardrails forbid logged-in state and private endpoints.",
+      "severity": "high"
+    },
+    {
+      "id": "hover-preview",
+      "question": "Does hovering a card start a muted inline preview, and after what delay?",
+      "why": "Not reproduced in 3 dedicated runs (media requests returned 403 in this environment); a single earlier probe saw a playing element at ~0.71s. Cannot state a reliable range.",
+      "severity": "medium"
+    },
+    {
+      "id": "error-copy",
+      "question": "Is there any authored error message or retry affordance on home at all?",
+      "why": "Observed 4s and 12s after a blocked feed request: skeleton then the empty panel, no alert or retry. A longer wait or a different failure class might surface one.",
+      "severity": "medium"
+    },
+    {
+      "id": "first-load-loading",
+      "question": "Is the skeleton shown on the very first cold load, or is the feed server-rendered?",
+      "why": "Holding the browse XHR paused the feed on a warm reload but no pause occurred on a cold first navigation, which suggests server-rendered initial data.",
+      "severity": "medium"
+    },
+    {
+      "id": "mobile-bottom-nav",
+      "question": "Does mobile web show a bottom navigation bar?",
+      "why": "At 390 with a desktop user agent no bottom bar was rendered; a real phone user agent may differ. Device emulation was not used.",
+      "severity": "medium"
+    },
+    {
+      "id": "chip-keyboard",
+      "question": "Do chips support arrow-key roving focus inside the tablist?",
+      "why": "Only Tab and Enter were exercised; the rail scrolls when focus moves but arrow-key behaviour was not measured.",
+      "severity": "low"
+    },
+    {
+      "id": "shelf-controls",
+      "question": "What controls does a horizontal shelf expose (arrows, see-all) and how do they behave?",
+      "why": "Shelves were present below the fold; their controls were not exercised.",
+      "severity": "low"
+    },
+    {
+      "id": "sponsored-tile",
+      "question": "How much of a promoted grid tile differs from a normal card?",
+      "why": "Promoted tiles appeared in several runs with a sponsor line and two call-to-action buttons; ad inventory is not reproducible on demand.",
+      "severity": "low"
+    },
+    {
+      "id": "empty-panel-tokens",
+      "question": "Exact background colour and type scale of the empty panel",
+      "why": "The panel is rendered by a component the card-oriented style probe did not target; geometry is measured from the snapshot, colour/type are read from the screenshot.",
+      "severity": "low"
+    },
+    {
+      "id": "region-locale",
+      "question": "Which parts of the surface depend on region, language or experiment assignment?",
+      "why": "One region and one locale were observed; chip taxonomy and promoted content are assignment-dependent.",
+      "severity": "medium"
+    },
+    {
+      "id": "signed-out-actions",
+      "question": "What happens when a signed-out user activates queue/playlist/save actions?",
+      "why": "Not followed: it leads to an auth surface the guardrails exclude.",
+      "severity": "medium"
+    }
+  ]
+}

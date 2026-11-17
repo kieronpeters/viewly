@@ -4,6 +4,7 @@ out
 build
 coverage
 data
+docs/re-evidence
 package-lock.json
 AGENTS.md
 src/db/migrations/meta

@@ -24,3 +24,17 @@ events, timings, accessibility and known gaps.
 
 `specVersion` in the JSON increments on any behavioural change. Contract tests pin the
 version they were written against.
+
+## Contract tests
+
+`tests/contracts/<flow>.contract.test.tsx` holds the executable contract derived from a spec.
+Two markers are used deliberately:
+
+- `it(...)` asserts behaviour Viewly already satisfies. A regression fails CI.
+- `it.fails(...)` asserts a known parity gap. It passes while the gap exists and starts failing
+  the moment the behaviour is implemented, which forces the author to promote it to `it(...)`
+  and update `docs/parity/<flow>-report.md`.
+
+Gaps are therefore explicit in the suite, cannot be closed silently, and the suite stays green
+while the work is pending. Each contract names the spec control or state it derives from, and
+the parity report records the gap count and the reason for every miss.
