@@ -1,10 +1,11 @@
 import Link from "next/link";
 
+import { SearchChips } from "@/components/search/search-chips";
+import { SearchResultRow } from "@/components/search/search-result-row";
 import { SearchError } from "@/components/search/search-error";
 import { buildSearchHref } from "@/components/search/search-url";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { VideoCard } from "@/components/video/video-card";
 import { isYouTubeApiError, searchVideos } from "@/lib/youtube/client";
 import {
   type SearchFilters,
@@ -102,17 +103,16 @@ export async function SearchResults({ searchParams }: SearchResultsProps) {
       <h2 id="search-results-heading" className="sr-only">
         Search results
       </h2>
+      <SearchChips query={query} filters={filters} />
+
       <p className="text-sm break-words text-muted-foreground">
         Results for <span className="font-medium text-foreground">“{query}”</span>
       </p>
 
-      <ul
-        role="list"
-        className="content-in grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-      >
+      <ul role="list" className="content-in flex flex-col gap-6">
         {page.items.map((video) => (
           <li key={video.id} className="min-w-0">
-            <VideoCard video={video} className="h-full" />
+            <SearchResultRow video={video} />
           </li>
         ))}
       </ul>

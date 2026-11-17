@@ -125,11 +125,11 @@ describe("search contract: results", () => {
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("Loading search results");
 
-    // The grid of placeholders is decorative; the status text is the announcement.
-    const grid = status.querySelector("div.grid");
-    expect(grid).not.toBeNull();
-    expect(grid).toHaveAttribute("aria-hidden", "true");
-    expect(grid?.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
+    // The placeholder rows are decorative; the status text is the announcement.
+    const decorative = Array.from(status.querySelectorAll('[aria-hidden="true"]')).find(
+      (element) => element.querySelectorAll('[data-slot="skeleton"]').length > 0,
+    );
+    expect(decorative).toBeTruthy();
   });
 
   it("offers an explicit load-more control while another page exists", async () => {

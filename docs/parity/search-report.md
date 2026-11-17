@@ -92,8 +92,9 @@ like-for-like comparison.
 - G3: pending — three gaps must be implemented or converted to documented deviations.
 - G4/G5: pending implementation and review.
 
-## Post-redesign delta (P1-P2, 2026-11-17)
+## Post-redesign delta (P1-P3, 2026-11-17)
 
 - Search now renders inside the shared masthead, with a clear-query control and the / focus shortcut.
 - Every result card carries the overflow menu, so the row-menu gap is closed.
-- Results are still a card grid; the wide-row layout and chip filters remain P3 work.
+- Results now render as wide rows (500px thumbnail, 18/26 two-line title, metadata, channel avatar); chip shortcuts sit above them as URL links.
+- The row snippet description is omitted because Viewly does not normalize it from search.list; chip filters stay links, so the tablist gap remains open.

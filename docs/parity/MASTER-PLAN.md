@@ -140,3 +140,4 @@ three-width visual check, and a parity report delta.
 
 - 2026-11-17 — plan created; watch flow closed at spec 0.1.0.
 - 2026-11-17 — P1 (tokens, masthead, rail) and P2 (grid, card, menu, age, shortcut) landed; 121 test files green, 3 home + 2 search gaps closed.
+- 2026-11-17 — P3 search wide rows, chip shortcuts and row skeletons landed; suite green.
