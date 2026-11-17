@@ -1,0 +1,33 @@
+{
+  "flow": "<flow-name>",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "capturedAt": "YYYY-MM-DD",
+  "evidence": "docs/re-evidence/<flow>/",
+  "states": [
+    { "name": "loading", "trigger": "route entry", "recovery": "automatic" },
+    { "name": "ready", "trigger": "data resolved", "recovery": null },
+    { "name": "empty", "trigger": "no results", "recovery": "change query" },
+    { "name": "error", "trigger": "upstream failure", "recovery": "retry" }
+  ],
+  "controls": [
+    {
+      "name": "<control>",
+      "keyboard": "<keys>",
+      "pointer": "<gesture>",
+      "aria": "<role/name>"
+    }
+  ],
+  "timings": {
+    "routeTransitionMs": [0, 300],
+    "playerReadyMs": [0, 1500],
+    "interactionMs": [0, 200]
+  },
+  "a11y": {
+    "focusOrder": [],
+    "focusReturn": true,
+    "reducedMotion": true,
+    "labelledControls": true
+  },
+  "gaps": []
+}

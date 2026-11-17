@@ -55,3 +55,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Reverse-engineering evidence (local only, disposable)
+docs/re-evidence/
