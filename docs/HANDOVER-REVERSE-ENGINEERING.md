@@ -265,3 +265,14 @@ Definition of done:
 - Every deviation is written down, with a reason
 - No shortcuts that create legal or ethical debt
 - The pipeline is repeatable by someone who has never met us
+
+---
+
+## Amendment 2026-11-17 � optional read-only Google sign-in
+
+Approved by the owner. The "no logged-in state" guardrail now has one explicit exception:
+an optional, read-only Google/YouTube sign-in that reads subscriptions, playlists and channel
+identity through the official Data API with the youtube.readonly scope. It never writes to
+YouTube, never reads watch history through a private surface, and the app remains fully usable
+signed out. Watch history enters Viewly only through the owner's own Google Takeout export.
+Setup and the exact stored data are in docs/GOOGLE-LOGIN-SETUP.md.
