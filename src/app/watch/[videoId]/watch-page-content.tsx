@@ -14,6 +14,7 @@ import { readVideoNotes, type VideoNote } from "@/features/notes";
 import { readVideoProgress } from "@/features/progress/progress-data";
 import type { VideoProgress } from "@/features/progress/progress";
 import { readDatabase } from "@/lib/db/read-state";
+import { formatDuration } from "@/shared/format";
 import type { ChannelDetail, VideoDetail } from "@/shared/types";
 
 import { CopyLinkButton } from "./copy-link-button";
@@ -247,6 +248,28 @@ export function WatchVideoDetail({
                     <CopyLinkButton videoId={video.id} />
                   </div>
                 </div>
+
+                {/*
+                  The only honest path into the viewer's real YouTube history:
+                  open the same video on youtube.com, resuming at the locally
+                  saved position. Embedded playback is never attributed to the
+                  account, so this link is the deliberate hand-off.
+                */}
+                <a
+                  href={`https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}${
+                    progress !== null && progress.positionSeconds > 5
+                      ? `&t=${Math.floor(progress.positionSeconds)}s`
+                      : ""
+                  }`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                >
+                  {progress !== null && progress.positionSeconds > 5
+                    ? `Continue on YouTube at ${formatDuration(Math.floor(progress.positionSeconds))}`
+                    : "Continue on YouTube"}
+                  <span className="sr-only"> (opens in a new tab and records history there)</span>
+                </a>
               </>
             }
           >
