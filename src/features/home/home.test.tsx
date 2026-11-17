@@ -119,18 +119,17 @@ describe("CategoryChips", () => {
     expect(CATEGORIES).toHaveLength(8);
   });
 
-  it("keeps every chip a 44px target in a wrapping row", () => {
-    // jsdom does no layout: this guards the strategy that keeps 360px safe —
-    // the row wraps between chips instead of scrolling, and each chip is tall
-    // enough to tap.
+  it("lays every chip out in one scrolling 32px row", () => {
+    // jsdom does no layout: this guards the strategy that matches the observed
+    // 32px chip row — a single horizontally scrolling line, not a wrapping grid.
     render(<CategoryChips categories={getAllCategories()} />);
 
     const nav = screen.getByRole("navigation", { name: "Browse categories" });
 
-    expect(within(nav).getByRole("list")).toHaveClass("flex-wrap");
+    expect(nav).toHaveClass("overflow-x-auto");
 
     for (const link of within(nav).getAllByRole("link")) {
-      expect(link).toHaveClass("min-h-11");
+      expect(link).toHaveClass("h-8");
     }
   });
 });

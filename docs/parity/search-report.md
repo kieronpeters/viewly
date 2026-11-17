@@ -7,14 +7,14 @@ Surface: signed-out web at 390 / 768 / 1280 (spec evidence: `docs/re-evidence/se
 
 ## Contract results
 
-`tests/contracts/search.contract.test.tsx` — 12 contracts: **9 satisfied, 3 gaps**.
+`tests/contracts/search.contract.test.tsx` — 12 contracts: **11 satisfied, 1 gap**.
 
 | Contract                                                        | Spec reference           | Status  | Note                                                |
 | --------------------------------------------------------------- | ------------------------ | ------- | --------------------------------------------------- |
 | named search landmark with a labelled, prefilled query field    | `controls.query-field`   | pass    | GET form works before hydration                     |
 | every filter control labelled; query carried with the selection | `controls.filters-panel` | pass    | inline selects, not a dialog                        |
 | clear-filters appears only while a filter is active             | `controls.filters-panel` | pass    | URL is the single source of truth                   |
-| clear-query control inside the field                            | `controls.clear-query`   | **gap** | no clear affordance when a query is prefilled       |
+| clear-query control inside the field                            | `controls.clear-query`   | pass    | clear control in the field                          |
 | named results region with one watch link per result             | `controls.result-row`    | pass    | —                                                   |
 | loading announced, placeholder grid decorative                  | `states.loading`         | pass    | `role="status"`, `aria-hidden` grid                 |
 | explicit load-more control when another page exists             | `controls.show-more`     | pass    | a link that navigates, not an in-place append       |
@@ -22,7 +22,7 @@ Surface: signed-out web at 390 / 768 / 1280 (spec evidence: `docs/re-evidence/se
 | failure announced with retry instead of an empty list           | `states.error`           | pass    | deliberate: the observed surface never surfaced one |
 | filter chips as a tablist                                       | `controls.filter-chips`  | **gap** | no chip row on the results surface                  |
 | result title clamped to two lines                               | `appearance.resultRow`   | pass    | —                                                   |
-| per-row action menu                                             | `controls.row-overflow`  | **gap** | cards carry no overflow action                      |
+| per-row action menu                                             | `controls.row-overflow`  | pass    | per-card overflow menu                              |
 
 ## Gaps and their reason
 
@@ -91,3 +91,9 @@ like-for-like comparison.
   contract work.
 - G3: pending — three gaps must be implemented or converted to documented deviations.
 - G4/G5: pending implementation and review.
+
+## Post-redesign delta (P1-P2, 2026-11-17)
+
+- Search now renders inside the shared masthead, with a clear-query control and the / focus shortcut.
+- Every result card carries the overflow menu, so the row-menu gap is closed.
+- Results are still a card grid; the wide-row layout and chip filters remain P3 work.

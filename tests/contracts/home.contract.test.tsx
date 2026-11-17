@@ -111,7 +111,7 @@ describe("home contract: search", () => {
     expect(screen.getByRole("searchbox", { name: "Search videos" })).toBeInTheDocument();
   });
 
-  it.fails("focuses the search field when the / shortcut is pressed", () => {
+  it("focuses the search field when the / shortcut is pressed", () => {
     // Spec control `search-field`: "/" moves focus into the field.
     render(<SearchForm />);
 
@@ -157,29 +157,27 @@ describe("home contract: video card", () => {
 
   it("shows the channel and the view count", () => {
     render(<VideoCard video={VIDEO} />);
-    const link = screen.getByRole("link", { name: VIDEO.title });
 
-    expect(within(link).getByText(VIDEO.channelTitle)).toBeInTheDocument();
-    expect(within(link).getByText("1.5M views")).toBeInTheDocument();
+    expect(screen.getByText(VIDEO.channelTitle)).toBeInTheDocument();
+    expect(screen.getByText(/1\.5M views/)).toBeInTheDocument();
   });
 
   it("switches its motion off when the viewer prefers reduced motion", () => {
-    render(<VideoCard video={VIDEO} />);
+    const { container } = render(<VideoCard video={VIDEO} />);
 
-    const link = screen.getByRole("link", { name: VIDEO.title });
-    expect(link).toHaveClass("motion-reduce:transition-none");
-    expect(link).toHaveClass("motion-reduce:hover:translate-y-0");
+    const image = container.querySelector("img");
+    expect(image).toHaveClass("motion-reduce:transition-none");
+    expect(image).toHaveClass("motion-reduce:group-hover/link:scale-100");
   });
 
-  it.fails("shows how old the video is next to its view count", () => {
+  it("shows how old the video is next to its view count", () => {
     // Spec `states.ready`: metadata is views *and* age.
     render(<VideoCard video={VIDEO} />);
 
-    const link = screen.getByRole("link", { name: VIDEO.title });
-    expect(within(link).getByText(/ago$/i)).toBeInTheDocument();
+    expect(screen.getByText(/\bago$/)).toBeInTheDocument();
   });
 
-  it.fails("opens a More actions menu and returns focus to the trigger on Escape", async () => {
+  it("opens a More actions menu and returns focus to the trigger on Escape", async () => {
     // Spec control `card-overflow`: menu in ~30-40ms, Escape in ~50ms, focus returned.
     const user = userEvent.setup();
     render(<VideoCard video={VIDEO} />);

@@ -26,6 +26,7 @@ vi.mock("@/features/home", () => ({
     { slug: "education", name: "Education" },
   ],
   TrendingSection: () => <p>Trending row content</p>,
+  FeedSection: () => <p>Feed grid content</p>,
   CategorySection: ({ name }: { name: string }) => <p>{name} row content</p>,
   HOME_RECOMMENDATION_SHELVES: [
     { kind: "because-you-watched", skeletonTitle: "Because you watched" },
@@ -44,15 +45,14 @@ vi.mock("@/features/progress", () => ({
 import Home from "@/app/page";
 
 describe("Home page", () => {
-  it("renders the search hero and a row per home category", () => {
+  it("renders the feed grid, local shelves and a row per home category", () => {
     render(<Home />);
 
-    expect(
-      screen.getByRole("heading", { name: "What do you want to watch?", level: 1 }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("search", { name: "Search videos" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Home", level: 1 })).toBeInTheDocument();
+    // Search lives in the masthead now, not in the page body.
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
 
-    expect(screen.getByText("Trending row content")).toBeInTheDocument();
+    expect(screen.getByText("Feed grid content")).toBeInTheDocument();
     expect(screen.getByText("Continue watching row content")).toBeInTheDocument();
     for (const name of ["Music", "Gaming", "Technology"]) {
       expect(screen.getByText(`${name} row content`)).toBeInTheDocument();

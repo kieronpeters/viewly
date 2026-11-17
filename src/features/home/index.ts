@@ -43,4 +43,10 @@ export {
   type RecommendationSourceReader,
   type RecommendationView,
 } from "./recommendations";
-export { CategorySection, TrendingSection, type CategorySectionProps } from "./sections";
+export { FeedSection } from "./feed-section";
+export {
+  CategorySection,
+  TrendingSection,
+  describeHomeError,
+  type CategorySectionProps,
+} from "./sections";

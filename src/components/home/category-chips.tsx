@@ -12,33 +12,28 @@ export interface CategoryChipsProps {
 }
 
 /**
- * Compact "Browse categories" nav shown under the hero.
- *
- * Links every category from the shared list to `/category/<slug>`, including
- * the ones without a discovery row of their own. Purely presentational: the
- * caller supplies the list, so this never fetches or costs YouTube quota.
+ * The chip row under the masthead: a single horizontally scrolling line of
+ * category chips, shaped like the observed filter bar. Links go to each
+ * category route; the row scrolls itself when it overflows on narrow screens.
  */
 export function CategoryChips({ categories }: CategoryChipsProps) {
   return (
-    <nav aria-labelledby="home-browse-heading" className="flex flex-col gap-2">
-      <h2
-        id="home-browse-heading"
-        className="text-xs font-medium tracking-wide text-muted-foreground uppercase"
-      >
+    <nav
+      aria-labelledby="home-browse-heading"
+      className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto px-1 pb-1"
+    >
+      <h2 id="home-browse-heading" className="sr-only">
         Browse categories
       </h2>
-      <ul className="flex flex-wrap gap-2">
-        {categories.map((category) => (
-          <li key={category.slug}>
-            <Link
-              href={`/category/${category.slug}`}
-              className="inline-flex min-h-11 items-center rounded-full border border-border bg-surface px-3 text-sm font-medium text-foreground transition-colors outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              {category.name}
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {categories.map((category) => (
+        <Link
+          key={category.slug}
+          href={`/category/${category.slug}`}
+          className="inline-flex h-8 shrink-0 items-center rounded-lg bg-muted px-3 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          {category.name}
+        </Link>
+      ))}
     </nav>
   );
 }

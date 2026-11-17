@@ -7,21 +7,21 @@ Surface: signed-out web at 390 / 768 / 1280 (spec evidence: `docs/re-evidence/ho
 
 ## Contract results
 
-`tests/contracts/home.contract.test.tsx` — 15 contracts: **11 satisfied, 4 gaps**.
+`tests/contracts/home.contract.test.tsx` — 15 contracts: **14 satisfied, 1 gap**.
 
 | Contract                                                 | Spec reference           | Status  | Note                                               |
 | -------------------------------------------------------- | ------------------------ | ------- | -------------------------------------------------- |
 | skip link is the first focus stop, targets `main`        | `a11y.skipLinkPresent`   | pass    | Viewly is stronger here: first stop, not third     |
 | one main landmark, labelled primary navigation           | `a11y` roles             | pass    | —                                                  |
 | named search landmark with a labelled field              | `controls.search-field`  | pass    | —                                                  |
-| `/` moves focus into search                              | `controls.search-field`  | **gap** | no global shortcut handler                         |
+| `/` moves focus into search                              | `controls.search-field`  | pass    | implemented as a masthead shortcut                 |
 | chips are a tablist with one selected chip               | `controls.filter-chips`  | **gap** | chips are links to `/category/<slug>`, not filters |
 | card is one link to `/watch/<id>` named by its title     | `controls.card-link`     | pass    | —                                                  |
 | title clamps to two lines, duration is announced         | `appearance.card`        | pass    | `line-clamp-2`, screen-reader "Duration" prefix    |
 | channel and view count shown                             | `states.ready`           | pass    | —                                                  |
 | motion switches off under reduced motion                 | `a11y.reducedMotion`     | pass    | `motion-reduce` classes plus a global rule         |
-| publish age shown next to views                          | `states.ready`           | **gap** | `publishedAt` is available but never rendered      |
-| overflow menu opens, Escape closes, focus returns        | `controls.card-overflow` | **gap** | no per-card menu exists                            |
+| publish age shown next to views                          | states.ready             | pass    | rendered as a relative age (ormatRelativeAge)      |
+| overflow menu opens, Escape closes, focus returns        | `controls.card-overflow` | pass    | overflow menu with focus return                    |
 | list of cards is named by its heading                    | `appearance.shelf`       | pass    | —                                                  |
 | loading row is announced and placeholders are decorative | `states.loading`         | pass    | `role="status"`, `aria-hidden` skeletons           |
 | authored empty state with a recovery path                | `states.empty`           | pass    | component supports heading, message, action        |
@@ -114,3 +114,10 @@ LCP 2.4–5.4 s, CLS 0.0003–0.0128; those are context, not Viewly's budget.
   contract work.
 - G3: pending — the four gaps must be either implemented or recorded as deviations with reasons.
 - G4/G5: pending implementation and review.
+
+## Post-redesign delta (P1-P2, 2026-11-17)
+
+- Shell: 56px masthead with the search field, 72px icon rail (hidden below md), bottom bar on narrow screens.
+- Home: chip row plus a 1/2/3-column grid (16px/36px gutters) inside its own Suspense boundary; hero removed.
+- Card: 16:9 thumbnail (12px radius), two-line 16/22 title, 36px initial avatar, channel + views + relative age, overflow menu with Escape focus return.
+- Search gains a clear-query control and the / shortcut; three home gaps and two search gaps are now enforced contracts.

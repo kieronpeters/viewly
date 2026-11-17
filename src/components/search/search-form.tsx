@@ -1,6 +1,6 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
@@ -19,13 +19,12 @@ export interface SearchFormProps {
 }
 
 /**
- * The primary search input.
+ * The primary search input, shaped like the observed masthead field.
  *
- * A client component only because it trims the value before navigating; it
- * never performs a request on its own, so typing costs nothing. Submitting
- * pushes `/search?q=...` through the router, and the page's server component
- * fetches the results. The form also keeps `action`/`method` so it still works
- * as a plain GET form before hydration.
+ * A client component because it trims the value, clears the field, and listens
+ * for the `/` focus shortcut; it never performs a request on its own. Submitting
+ * pushes `/search?q=...` through the router. The form keeps `action`/`method`
+ * so it still works as a plain GET form before hydration.
  */
 export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
   const router = useRouter();
@@ -52,6 +51,34 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
     startTransition(() => router.push(href));
   }
 
+  function clearQuery() {
+    setQuery("");
+    setError(null);
+    inputRef.current?.focus();
+  }
+
+  /**
+   * `/` focuses search, like the observed surface. Ignored while the user is
+   * typing in a field or editing content, so it never steals a literal slash.
+   */
+  React.useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) {
+        return;
+      }
+
+      event.preventDefault();
+      inputRef.current?.focus();
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <form
       role="search"
@@ -65,29 +92,46 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
         <label htmlFor={INPUT_ID} className="sr-only">
           Search videos
         </label>
-        <Input
-          ref={inputRef}
-          id={INPUT_ID}
-          name="q"
-          type="search"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            if (error !== null) {
-              setError(null);
-            }
-          }}
-          placeholder="Search videos"
-          autoComplete="off"
-          maxLength={MAX_SEARCH_QUERY_LENGTH}
-          enterKeyHint="search"
-          aria-invalid={error === null ? undefined : true}
-          aria-describedby={error === null ? undefined : errorId}
-          className="h-11 min-w-0 flex-1 text-base"
-        />
-        <Button type="submit" size="lg" disabled={isPending} className="h-11 shrink-0 px-4">
+        <div className="relative min-w-0 flex-1">
+          <Input
+            ref={inputRef}
+            id={INPUT_ID}
+            name="q"
+            type="search"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              if (error !== null) {
+                setError(null);
+              }
+            }}
+            placeholder="Search"
+            autoComplete="off"
+            maxLength={MAX_SEARCH_QUERY_LENGTH}
+            enterKeyHint="search"
+            aria-invalid={error === null ? undefined : true}
+            aria-describedby={error === null ? undefined : errorId}
+            className="h-10 min-w-0 rounded-full border-border bg-surface pr-10 text-base focus-visible:border-ring"
+          />
+          {query === "" ? null : (
+            <button
+              type="button"
+              onClick={clearQuery}
+              aria-label="Clear search query"
+              className="absolute top-1/2 right-1 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <X aria-hidden="true" className="size-4" />
+            </button>
+          )}
+        </div>
+        <Button
+          type="submit"
+          size="icon"
+          disabled={isPending}
+          aria-label="Search"
+          className="size-10 shrink-0 rounded-full"
+        >
           <Search aria-hidden="true" />
-          <span>Search</span>
         </Button>
       </div>
 
@@ -103,9 +147,9 @@ export function SearchForm({ initialQuery = "", className }: SearchFormProps) {
 /**
  * The form pre-filled from the URL.
  *
- * `useSearchParams` is a request-time hook, so the page renders this inside a
- * `<Suspense>` boundary. The boundary's fallback is the same empty form, which
- * keeps the input on screen (and usable) while the params resolve.
+ * `useSearchParams` is a request-time hook, so the shell renders this inside a
+ * `<Suspense>` boundary. The key remounts the field when the query changes, so
+ * back/forward and a hard refresh restore the same value.
  */
 export function SearchFormWithQuery() {
   const searchParams = useSearchParams();

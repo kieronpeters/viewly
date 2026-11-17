@@ -100,9 +100,9 @@ describe("SearchResults", () => {
     expect(within(list).getAllByRole("listitem")).toHaveLength(2);
     // The streamed grid fades in when the results skeleton is replaced.
     expect(list).toHaveClass("content-in");
-    // One tab stop per card: the grid link, and nothing else in discovery.
+    // One tab stop for "open the video", plus one overflow menu per card.
     expect(within(list).getAllByRole("link")).toHaveLength(2);
-    expect(within(list).queryAllByRole("button")).toHaveLength(0);
+    expect(within(list).getAllByRole("button", { name: /more actions/i })).toHaveLength(2);
     expect(section).toHaveTextContent("Results for “rick”");
   });
 

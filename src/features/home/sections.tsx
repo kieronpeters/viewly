@@ -92,7 +92,7 @@ export async function CategorySection({ slug, name }: CategorySectionProps) {
  * Only the stable `code` decides the message: HTTP status, upstream reasons and
  * the request URL (which can contain the API key) are never rendered.
  */
-function describeHomeError(error: unknown): string {
+export function describeHomeError(error: unknown): string {
   if (!isYouTubeApiError(error)) {
     return "Something went wrong while loading this section. Please try again in a moment.";
   }

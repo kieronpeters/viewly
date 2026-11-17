@@ -98,7 +98,7 @@ describe("search contract: query and filters", () => {
     );
   });
 
-  it.fails("offers a clear-query control inside the search field", () => {
+  it("offers a clear-query control inside the search field", () => {
     // Spec control `clear-query`, named "Clear search query" in the observed surface.
     render(<SearchForm initialQuery="coastlines" />);
 
@@ -181,7 +181,7 @@ describe("search contract: result rows", () => {
     expect(heading).toHaveClass("line-clamp-2");
   });
 
-  it.fails("exposes a row action menu on every result", async () => {
+  it("exposes a row action menu on every result", async () => {
     // Spec control `row-overflow`.
     searchVideosMock.mockResolvedValueOnce(pageOf());
 

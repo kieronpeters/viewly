@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+﻿import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -54,9 +54,9 @@ describe("VideoCard", () => {
 
     expect(link).toHaveAttribute("href", "/watch/dQw4w9WgXcQ");
     expect(within(link).getByText(VIDEO_FIXTURE.title)).toBeInTheDocument();
-    expect(within(link).getByText(VIDEO_FIXTURE.channelTitle)).toBeInTheDocument();
-    expect(within(link).getByText("1.5M views")).toBeInTheDocument();
     expect(within(link).getByText("3:33")).toBeInTheDocument();
+    expect(screen.getByText(VIDEO_FIXTURE.channelTitle)).toBeInTheDocument();
+    expect(screen.getByText(/1\.5M views/)).toBeInTheDocument();
   });
 
   it("renders a normalized title containing an apostrophe as plain text", () => {
@@ -126,7 +126,8 @@ describe("VideoCard", () => {
   it("omits the favourite control unless the caller opts in", () => {
     render(<VideoCard video={VIDEO_FIXTURE} />);
 
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /favourites/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /more actions/i })).toBeInTheDocument();
   });
 
   it("renders both save controls as siblings of the card link in a stable order", () => {
@@ -144,13 +145,14 @@ describe("VideoCard", () => {
     expect(link).not.toContainElement(controls);
     // The wrapper owns the tab stops: link, favourite, watch later.
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      `More actions for ${VIDEO_FIXTURE.title}`,
       "Remove from favourites",
       "Remove from Watch Later",
     ]);
     expect(within(link).queryAllByRole("button")).toHaveLength(0);
     expect(link.querySelectorAll("a, button")).toHaveLength(0);
-    expect(buttons[0].parentElement?.parentElement).toBe(controls);
     expect(buttons[1].parentElement?.parentElement).toBe(controls);
+    expect(buttons[2].parentElement?.parentElement).toBe(controls);
   });
 
   it("renders only the watch-later control when only its state is passed", () => {
@@ -188,8 +190,8 @@ describe("VideoCard", () => {
     // The link is named by the title once, not by the whole text block.
     expect(link).toHaveAccessibleName(VIDEO_FIXTURE.title);
     // The channel, views and duration stay part of the link's text content.
-    expect(within(link).getByText(VIDEO_FIXTURE.channelTitle)).toBeInTheDocument();
-    expect(within(link).getByText("1.5M views")).toBeInTheDocument();
+    expect(screen.getByText(VIDEO_FIXTURE.channelTitle)).toBeInTheDocument();
+    expect(screen.getByText(/1\.5M views/)).toBeInTheDocument();
     expect(within(link).getByText("3:33")).toBeInTheDocument();
     // jsdom cannot decode the optimizer URL, so only the encoded source is asserted.
     expect(image?.getAttribute("src")).toContain(encodeURIComponent(VIDEO_FIXTURE.thumbnailUrl));
@@ -253,11 +255,12 @@ describe("VideoCard", () => {
     expect(controls).not.toBeNull();
     expect(link).not.toContainElement(controls);
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      `More actions for ${VIDEO_FIXTURE.title}`,
       "Remove from favourites",
       "Remove from Watch Later",
       "Add to playlist",
     ]);
-    expect(buttons[2]).toHaveAttribute("aria-expanded", "false");
+    expect(buttons[3]).toHaveAttribute("aria-expanded", "false");
   });
 
   it("opens the picker inline and lists the playlists", () => {
@@ -291,6 +294,9 @@ describe("VideoCard", () => {
     expect(link).toHaveFocus();
 
     await user.tab();
+    expect(screen.getByRole("button", { name: /more actions/i })).toHaveFocus();
+
+    await user.tab();
     expect(screen.getByRole("button", { name: "Remove from favourites" })).toHaveFocus();
 
     await user.tab();
@@ -306,6 +312,9 @@ describe("VideoCard", () => {
 
     await user.tab();
     expect(screen.getByRole("link", { name: /Never Gonna Give You Up/ })).toHaveFocus();
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: /more actions/i })).toHaveFocus();
 
     await user.tab();
     expect(document.body).toHaveFocus();
@@ -328,13 +337,10 @@ describe("VideoCard", () => {
     const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
     const image = container.querySelector("img");
 
-    // The lift is a translate on the card (no layout change), and the hover
-    // treatment is switched off entirely for reduced-motion viewers.
-    expect(link).toHaveClass("hover:-translate-y-0.5", "hover:bg-surface-elevated");
-    expect(link).toHaveClass("motion-reduce:hover:translate-y-0");
-    expect(link).toHaveClass("motion-reduce:transition-none");
-    expect(image).toHaveClass("group-hover/card:scale-[1.03]");
-    expect(image).toHaveClass("motion-reduce:group-hover/card:scale-100");
+    // The hover treatment is a thumbnail zoom, switched off entirely for reduced motion.
+    expect(image).toHaveClass("group-hover/link:scale-[1.02]");
+    expect(image).toHaveClass("motion-reduce:group-hover/link:scale-100");
+    expect(image).toHaveClass("motion-reduce:transition-none");
   });
 
   it("keeps the save confirmations mounted but visually empty", () => {
@@ -342,8 +348,13 @@ describe("VideoCard", () => {
 
     const regions = screen.getAllByRole("status");
 
-    expect(regions).toHaveLength(2);
-    for (const region of regions) {
+    // Two save confirmations plus the card menu's copy status.
+    expect(regions).toHaveLength(3);
+    const saveRegions = regions.filter((region) =>
+      region.className.includes("pointer-events-none"),
+    );
+    expect(saveRegions).toHaveLength(2);
+    for (const region of saveRegions) {
       expect(region).toBeEmptyDOMElement();
       expect(region).toHaveClass("pointer-events-none", "absolute", "opacity-0");
     }

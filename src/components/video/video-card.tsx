@@ -3,6 +3,8 @@ import Link from "next/link";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { FavouriteButton } from "@/components/video/favourite-button";
+import { formatRelativeAge } from "@/components/video/format-relative-age";
+import { VideoCardMenu } from "@/components/video/video-card-menu";
 import { WatchLaterButton } from "@/components/video/watch-later-button";
 import { favouriteSnapshotFromVideo } from "@/features/library/favourite-toggle";
 import { PlaylistPicker } from "@/features/library/playlist-picker";
@@ -18,9 +20,9 @@ import { formatDuration, formatViewCount } from "@/shared/format";
 import type { VideoSummary } from "@/shared/types";
 
 /**
- * Widths for a 1/2/3/4 column grid (below 640px, 640px, 1024px, 1280px).
- * Keeping this on the image means the browser downloads a thumbnail that is
- * close to its rendered width instead of a full-size still.
+ * Widths for the responsive grid (1 column, then 2, 3 and 4).
+ * Keeping this on the image means the browser downloads a thumbnail close to
+ * its rendered width instead of a full-size still.
  */
 const THUMBNAIL_SIZES =
   "(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
@@ -30,62 +32,32 @@ export interface VideoCardProps {
   video: VideoSummary;
   /** Optional grid-item classes, e.g. a col-span. Layout stays with the parent. */
   className?: string;
-  /**
-   * Opt-in favourite control.
-   *
-   * Omit the prop for the plain card used by home, search and category grids.
-   * Pass the server-read saved state (`true` / `false`) to render the toggle;
-   * the card itself never queries the database.
-   */
+  /** Opt-in favourite control (library grids only). */
   isFavourite?: boolean;
-  /**
-   * Opt-in watch-later control.
-   *
-   * Omitted independently of {@link isFavourite}, so a grid can show either
-   * control, both, or neither without changing the plain card.
-   */
+  /** Opt-in watch-later control. */
   isWatchLater?: boolean;
-  /**
-   * Opt-in add-to-playlist control.
-   *
-   * Discovery grids leave this off, so the card they render is unchanged. The
-   * library passes `true` together with {@link playlists}; the picker itself
-   * stays a Client Component and never queries the database.
-   */
+  /** Opt-in add-to-playlist control. */
   showPlaylistPicker?: boolean;
   /** Playlists offered by the picker; ignored unless the picker is shown. */
   playlists?: readonly PlaylistOption[];
-  /**
-   * Local playback progress for this video (T68).
-   *
-   * Omit it for a card with no bar. A stored position only renders between 5%
-   * and 95%, so a barely-started or effectively-finished video looks like any
-   * other card. The card never queries the database; the server read happens in
-   * the library page.
-   */
+  /** Local playback progress, or null for a card with no bar. */
   progress?: PlaybackPosition | null;
 }
 
+/** First visible character of a channel name, or "?" when there is none. */
+function channelInitial(name: string): string {
+  const [first] = Array.from(name.trim());
+  return first === undefined ? "?" : first.toUpperCase();
+}
+
 /**
- * A video in a list or grid.
+ * A video card shaped like the observed surface: 16:9 thumbnail with a 12px
+ * radius and duration badge, a two-line title, then an avatar row with the
+ * channel, views and relative age, plus an overflow menu.
  *
- * The card root is a positioning wrapper, not a link: the title/thumbnail
- * `<Link>` and the optional controls are siblings. That keeps one tab stop for
- * "open the video" plus one per control without ever nesting a button inside an
- * anchor, which is invalid HTML and unreachable for keyboard and screen-reader
- * users. The duration badge and image stay decorative text inside the link; the
- * controls are absolutely positioned over the thumbnail corner when the caller
- * opts in.
- *
- * DOM order is link, favourite, watch later, playlist, so the tab sequence is
- * stable whether one or more controls are rendered. The buttons sit in a flex
- * row with a gap, and each control's inline error stacks underneath its own
- * button.
- *
- * The thumbnail is decorative: the adjacent `<h3>` already names the video and
- * both sit inside the same link, so an `alt` equal to the title would repeat
- * the link's name twice. `alt=""` keeps the image out of the accessibility tree
- * while the visible duration badge stays part of the link text.
+ * The thumbnail and title are one link; the avatar row is plain text so the
+ * card keeps a single tab stop for "open the video", and the optional save
+ * controls remain siblings of the link. The menu is the second stop.
  */
 export function VideoCard({
   video,
@@ -98,6 +70,9 @@ export function VideoCard({
 }: VideoCardProps) {
   const duration = formatDuration(video.durationSeconds);
   const viewCount = formatViewCount(video.viewCount);
+  const age = formatRelativeAge(video.publishedAt);
+  const meta = [viewCount, age].filter((value): value is string => value !== null).join(" · ");
+
   const watchedPercent =
     progress !== null &&
     progress !== undefined &&
@@ -108,31 +83,19 @@ export function VideoCard({
     isFavourite !== undefined || isWatchLater !== undefined || showPlaylistPicker === true;
 
   return (
-    <div data-slot="video-card" className={cn("relative min-w-0", className)}>
-      {/*
-        The link contains the thumbnail, duration, title, channel and view
-        count, so its computed name would start with the duration badge. Name
-        the destination explicitly; the visible text stays readable in browse
-        mode and the label still contains the visible title (Label in Name).
-      */}
+    <div data-slot="video-card" className={cn("group/card relative min-w-0", className)}>
       <Link
         href={`/watch/${video.id}`}
         aria-label={video.title}
-        className={cn(
-          // Hover lift is a `translate` on the card, so neighbouring cards do not
-          // move and grid measurement never changes. `motion-reduce` removes the
-          // movement (not just its duration) for viewers who ask for less motion.
-          "group/card flex h-full min-w-0 flex-col overflow-hidden rounded-xl bg-card text-card-foreground transition-[background-color,box-shadow,translate] duration-200 ease-out hover:-translate-y-0.5 hover:bg-surface-elevated hover:shadow-lg hover:shadow-background/60 motion-reduce:transition-none motion-reduce:hover:translate-y-0",
-          FOCUS_RING,
-        )}
+        className={cn("group/link block min-w-0 rounded-xl", FOCUS_RING)}
       >
-        <div className="relative aspect-video w-full overflow-hidden bg-muted">
+        <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-muted">
           <Image
             src={video.thumbnailUrl}
             alt=""
             fill
             sizes={THUMBNAIL_SIZES}
-            className="object-cover transition-transform duration-300 ease-out group-hover/card:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover/card:scale-100"
+            className="object-cover transition-transform duration-300 ease-out group-hover/link:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover/link:scale-100"
           />
           {duration !== null ? (
             <span className="absolute right-1.5 bottom-1.5 rounded bg-background/85 px-1.5 py-0.5 text-xs font-medium text-foreground tabular-nums">
@@ -141,12 +104,6 @@ export function VideoCard({
             </span>
           ) : null}
 
-          {/*
-            Watched bar along the bottom edge, like YouTube's. It lives inside
-            the link so the thumbnail keeps one hit area; the link's explicit
-            aria-label names the destination, so this decorative bar does not
-            lengthen the accessible name.
-          */}
           {watchedPercent !== null ? (
             <div
               data-slot="video-card-progress"
@@ -162,19 +119,35 @@ export function VideoCard({
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-1 p-3">
-          <h3 className="line-clamp-2 text-sm leading-snug font-medium">{video.title}</h3>
-          {video.channelTitle !== "" ? (
-            <p className="truncate text-xs text-muted-foreground">{video.channelTitle}</p>
-          ) : null}
-          {viewCount !== null ? <p className="text-xs text-muted-foreground">{viewCount}</p> : null}
-        </div>
+        <h3 className="line-clamp-2 pt-3 text-base leading-[22px] font-medium text-foreground">
+          {video.title}
+        </h3>
       </Link>
+
+      <div className="mt-1.5 flex min-w-0 items-start gap-2">
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-muted-foreground"
+        >
+          {channelInitial(video.channelTitle)}
+        </span>
+
+        <div className="min-w-0 flex-1">
+          {video.channelTitle === "" ? null : (
+            <p className="truncate text-sm leading-5 text-muted-foreground">{video.channelTitle}</p>
+          )}
+          {meta === "" ? null : (
+            <p className="truncate text-xs leading-5 text-muted-foreground">{meta}</p>
+          )}
+        </div>
+
+        <VideoCardMenu videoId={video.id} title={video.title} />
+      </div>
 
       {hasControls ? (
         <div
           data-slot="video-card-controls"
-          className="absolute top-2 right-2 flex max-w-[calc(100%_-_0.5rem)] items-start justify-end gap-1.5"
+          className="absolute top-2 right-2 flex max-w-[calc(100%_-_0.5rem)] items-start justify-end gap-1.5 rounded-full bg-background/80 p-0.5"
         >
           {isFavourite === undefined ? null : (
             <FavouriteButton

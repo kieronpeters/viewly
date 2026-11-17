@@ -170,7 +170,9 @@ describe("PlaylistPageContent", () => {
     await waitFor(() => {
       expect(renamePlaylistMock).toHaveBeenCalledWith(PLAYLIST.id, "Summer drive");
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("Playlist renamed.");
+    expect((await screen.findAllByRole("status")).map((node) => node.textContent)).toContain(
+      "Playlist renamed.",
+    );
   });
 
   it("confirms before deleting and returns to the playlist list", async () => {

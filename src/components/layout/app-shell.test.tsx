@@ -5,12 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
   useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
 }));
 
 import { AppShell } from "@/components/layout/app-shell";
 
 describe("AppShell brand link", () => {
-  it("gives the sidebar and mobile home links the accessible name Viewly home", () => {
+  it("gives the masthead brand link the accessible name Viewly home", () => {
     render(
       <AppShell>
         <p>Page content</p>
@@ -19,7 +20,7 @@ describe("AppShell brand link", () => {
 
     const homeLinks = screen.getAllByRole("link", { name: "Viewly home" });
 
-    expect(homeLinks).toHaveLength(2);
+    expect(homeLinks).toHaveLength(1);
 
     for (const link of homeLinks) {
       expect(link).toHaveAttribute("href", "/");

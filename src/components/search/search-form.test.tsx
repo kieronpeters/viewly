@@ -35,7 +35,7 @@ describe("SearchForm", () => {
     render(<SearchForm />);
 
     await user.type(getSearchbox(), "  rick astley  ");
-    await user.click(screen.getByRole("button", { name: /search/i }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     expect(push).toHaveBeenCalledTimes(1);
     const url = parseHref(push.mock.calls[0]?.[0] as string);
@@ -71,7 +71,7 @@ describe("SearchForm", () => {
     render(<SearchForm />);
     const input = getSearchbox();
 
-    await user.click(screen.getByRole("button", { name: /search/i }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     expect(push).not.toHaveBeenCalled();
     expect(input).toHaveFocus();
@@ -82,7 +82,7 @@ describe("SearchForm", () => {
     render(<SearchForm />);
     const input = getSearchbox();
 
-    await user.click(screen.getByRole("button", { name: /search/i }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     const alert = await screen.findByRole("alert");
 
@@ -128,7 +128,9 @@ describe("SearchForm", () => {
 
     await user.keyboard("cats");
     await user.tab();
-    const button = screen.getByRole("button", { name: /search/i });
+    expect(screen.getByRole("button", { name: "Clear search query" })).toHaveFocus();
+    await user.tab();
+    const button = screen.getByRole("button", { name: "Search" });
     expect(button).toHaveFocus();
 
     await user.keyboard("{Enter}");
@@ -144,11 +146,11 @@ describe("SearchForm", () => {
     render(<SearchForm />);
 
     const input = getSearchbox();
-    const row = input.closest("div");
-    const button = screen.getByRole("button", { name: /search/i });
+    const field = input.parentElement;
+    const button = screen.getByRole("button", { name: "Search" });
 
-    expect(row).toHaveClass("flex", "w-full", "min-w-0");
-    expect(input).toHaveClass("min-w-0", "flex-1");
+    expect(field).toHaveClass("relative", "min-w-0", "flex-1");
+    expect(input).toHaveClass("min-w-0");
     expect(button).toHaveClass("shrink-0");
   });
 

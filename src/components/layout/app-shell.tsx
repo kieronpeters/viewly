@@ -5,44 +5,45 @@ import { ViewlyLogo } from "@/components/brand/viewly-logo";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { NavLinks } from "@/components/layout/nav-links";
 import { PlayerProvider } from "@/components/player/player-provider";
+import { SearchFormWithQuery } from "@/components/search/search-form";
 import { PlayerSeekProvider } from "@/components/video/player-seek";
 
 const brandLinkClasses =
-  "inline-flex min-h-11 items-center rounded-sm outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
+  "inline-flex min-h-11 shrink-0 items-center rounded-sm px-2 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 /**
- * `NavLinks` reads `usePathname()`, which is runtime-only URL data. It is wrapped in
- * `<Suspense>` so the shell can still prerender while the active link resolves on the
- * client. These placeholders reserve exactly the space the nav occupies so the swap
- * causes no layout shift: three `min-h-11` rows with `gap-1` for the sidebar, and one
- * `min-h-14` strip for the bottom bar.
+ * Masthead skeleton. `SearchFormWithQuery` reads request-time URL data, so the
+ * search slot streams; the shell itself stays prerenderable.
  */
-function NavLinksFallback({ variant }: { variant: "sidebar" | "bottom" }) {
-  if (variant === "bottom") {
-    return <div aria-hidden="true" className="h-14 w-full bg-muted/40" />;
-  }
+function SearchFallback() {
+  return <div aria-hidden="true" className="h-10 w-full rounded-full bg-surface" />;
+}
 
+function RailFallback() {
   return (
-    <div aria-hidden="true" className="flex flex-col gap-1">
+    <div aria-hidden="true" className="flex w-full flex-col items-center gap-2 px-2 py-3">
       {Array.from({ length: 3 }, (_, index) => (
-        <div key={index} className="min-h-11 rounded-md bg-muted/40" />
+        <div key={index} className="h-14 w-14 rounded-xl bg-muted/40" />
       ))}
     </div>
   );
 }
 
+function BottomNavFallback() {
+  return <div aria-hidden="true" className="h-14 w-full bg-muted/40" />;
+}
+
+/**
+ * The application shell, shaped like the observed watch surface: a 56px
+ * masthead with the search field centred, a 72px icon rail on wide screens,
+ * and a bottom bar on narrow ones. The player, seek channel and command
+ * palette stay single-instance across navigation.
+ */
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    /*
-     * One player for the whole session (T75). `PlayerProvider` owns the only
-     * `YT.Player`; it renders the watch stage or the mini player, so a route
-     * change swaps props and placement but never unmounts the embed. The seek
-     * channel (T71) lives beside it, because the description timestamps and the
-     * player must agree on one channel even while the player is off-route.
-     */
     <PlayerSeekProvider>
       <PlayerProvider>
-        <div className="flex h-dvh flex-col overflow-hidden bg-background md:flex-row">
+        <div className="flex h-dvh flex-col overflow-hidden bg-background">
           <a
             href="#main-content"
             className="fixed left-4 top-4 z-50 inline-flex min-h-11 -translate-y-20 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground outline-none focus:translate-y-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -50,49 +51,59 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Skip to content
           </a>
 
-          <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:flex">
-            <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
-              <Link href="/" aria-label="Viewly home" className={brandLinkClasses}>
-                <ViewlyLogo />
-              </Link>
-            </div>
-            <nav aria-label="Primary" className="flex-1 overflow-y-auto p-3">
-              <Suspense fallback={<NavLinksFallback variant="sidebar" />}>
-                <NavLinks />
-              </Suspense>
-            </nav>
-          </aside>
+          <header
+            data-slot="masthead"
+            className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-2 sm:gap-4 sm:px-4"
+          >
+            <Link href="/" aria-label="Viewly home" className={brandLinkClasses}>
+              <ViewlyLogo size="sm" />
+            </Link>
 
-          <div className="flex min-h-0 flex-1 flex-col">
-            <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface px-4 md:hidden">
-              <Link href="/" aria-label="Viewly home" className={brandLinkClasses}>
-                <ViewlyLogo size="md" />
-              </Link>
-            </header>
+            <div className="mx-auto flex w-full max-w-2xl min-w-0 justify-center px-1">
+              <Suspense fallback={<SearchFallback />}>
+                <SearchFormWithQuery />
+              </Suspense>
+            </div>
+
+            <Link
+              href="/library"
+              className="shrink-0 rounded-full px-3 py-2 text-sm font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              You
+            </Link>
+          </header>
+
+          <div className="flex min-h-0 flex-1">
+            <aside
+              data-slot="guide-rail"
+              className="hidden w-[72px] shrink-0 flex-col border-r border-border bg-background md:flex"
+            >
+              <nav aria-label="Primary" className="flex-1 py-1">
+                <Suspense fallback={<RailFallback />}>
+                  <NavLinks variant="rail" />
+                </Suspense>
+              </nav>
+            </aside>
 
             <main
               id="main-content"
               data-scroll-root
               tabIndex={-1}
-              className="flex min-h-0 flex-1 flex-col overflow-y-auto outline-none"
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto outline-none"
             >
               {children}
             </main>
-
-            <nav
-              aria-label="Primary"
-              className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
-            >
-              <Suspense fallback={<NavLinksFallback variant="bottom" />}>
-                <NavLinks variant="bottom" />
-              </Suspense>
-            </nav>
           </div>
 
-          {/*
-           * One palette for the whole app. It renders no DOM until Ctrl/Cmd+K, so it
-           * adds no height or width to the shell and causes no layout shift.
-           */}
+          <nav
+            aria-label="Primary"
+            className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+          >
+            <Suspense fallback={<BottomNavFallback />}>
+              <NavLinks variant="bottom" />
+            </Suspense>
+          </nav>
+
           <CommandPalette />
         </div>
       </PlayerProvider>

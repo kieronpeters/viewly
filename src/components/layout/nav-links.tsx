@@ -20,32 +20,44 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function NavLinks({ variant = "sidebar" }: { variant?: "sidebar" | "bottom" }) {
+export interface NavLinksProps {
+  variant?: "rail" | "bottom";
+}
+
+/**
+ * Primary destinations.
+ *
+ * `rail` is the 72px icon rail under the masthead (icon above a 10px label),
+ * `bottom` is the narrow-screen bar. Both read the same route list, so the two
+ * responsive presentations cannot drift apart.
+ */
+export function NavLinks({ variant = "rail" }: NavLinksProps) {
   const pathname = usePathname();
+  const isRail = variant === "rail";
 
   return (
-    <ul className={cn("flex", variant === "sidebar" ? "flex-col gap-1" : "w-full")}>
+    <ul className={cn("flex", isRail ? "flex-col gap-0.5 px-1" : "w-full")}>
       {NAV_ITEMS.map(({ href, label, Icon }) => {
         const isActive = isActivePath(pathname, href);
 
         return (
-          <li key={href} className={variant === "bottom" ? "flex-1" : undefined}>
+          <li key={href} className={isRail ? undefined : "flex-1"}>
             <Link
               href={href}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "flex w-full items-center rounded-md text-sm outline-none transition-colors",
-                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
-                variant === "sidebar"
-                  ? "min-h-11 gap-3 px-3"
+                "flex w-full items-center outline-none transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                isRail
+                  ? "h-[74px] flex-col justify-center gap-1 rounded-xl px-1 text-[10px] leading-none"
                   : "min-h-14 flex-col justify-center gap-1 px-1 text-xs",
                 isActive
-                  ? "bg-accent font-semibold text-accent-foreground"
+                  ? "bg-muted font-medium text-foreground"
                   : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
-              <Icon aria-hidden="true" className={variant === "sidebar" ? "size-4" : "size-5"} />
-              <span>{label}</span>
+              <Icon aria-hidden="true" className={isRail ? "size-6" : "size-5"} />
+              <span className="max-w-full truncate">{label}</span>
             </Link>
           </li>
         );
