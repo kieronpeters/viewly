@@ -1,0 +1,404 @@
+{
+  "flow": "search",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-17",
+  "evidence": "docs/re-evidence/search/",
+  "route": {
+    "path": "/results",
+    "queryParam": "search_query",
+    "documentTitle": "<query> - YouTube",
+    "signedOut": true
+  },
+  "viewports": [
+    {
+      "width": 390,
+      "height": 844,
+      "usableWidth": 375,
+      "guide": "absent",
+      "contentInsetPx": 24,
+      "resultWidthPx": 327,
+      "resultHeightPx": 246,
+      "chipBar": "single scrolling row with overflow arrow",
+      "evidence": "390/r1/state-ready.dom.json, 390/r1/shots/state-ready.png"
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "usableWidth": 753,
+      "guide": "absent",
+      "contentInsetPx": 24,
+      "resultWidthPx": 705,
+      "resultHeightPx": 255,
+      "chipBar": "single scrolling row",
+      "evidence": "768/r1/state-ready.dom.json"
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "usableWidth": 1265,
+      "guide": "72px mini rail",
+      "contentInsetPx": 96,
+      "resultWidthPx": 1145,
+      "resultHeightPx": 281,
+      "thumbnailPx": { "w": 500, "h": 281 },
+      "chipBar": "full row, filters button right-aligned",
+      "evidence": "1280/r2/state-ready.dom.json, 1280/r2/search-styles.json"
+    }
+  ],
+  "states": [
+    {
+      "id": "loading",
+      "name": "loading",
+      "trigger": "a refinement (chip change) after results are on screen",
+      "userSees": "shell and chip bar stay; the selected chip moves immediately; the results list becomes skeleton rows (43 skeleton elements, no result rows, no thumbnails) until the new results arrive",
+      "recovery": "automatic",
+      "measured": { "skeletonElements": 43, "resultRows": 0, "images": 0 },
+      "evidence": "1280/r2/state-loading-chip.dom.json, 1280/r2/shots/state-loading-chip.png, 1280/r2/chip.json"
+    },
+    {
+      "id": "ready",
+      "name": "ready",
+      "trigger": "query resolved with results",
+      "userSees": "filter chips with one selected, a Filters control, and a mixed result list: promoted tiles, channel cards, channel content shelves, Shorts shelves and video rows; each video row has a thumbnail, two-line title, view/age metadata, channel avatar and name, two-line description, badges and an overflow action; a load-more control ends the list",
+      "recovery": null,
+      "measured": { "videoRows": [15, 16], "resultHeightPx": [246, 281] },
+      "evidence": "1280/r2/state-ready.dom.json, 768/r1/state-ready.dom.json, 390/r1/state-ready.dom.json"
+    },
+    {
+      "id": "empty",
+      "name": "empty",
+      "trigger": "query with no matching results",
+      "userSees": "not observed: every query tested, including a random string, returned a spelling suggestion plus suggested results rather than an empty panel",
+      "recovery": "unknown",
+      "evidence": "1280/r3/empty.json, 1280/r3/shots/state-empty.png (records the miss, not the state)"
+    },
+    {
+      "id": "error",
+      "name": "error",
+      "trigger": "refinement request fails",
+      "userSees": "not surfaced: blocking the refinement endpoint left the server-rendered results in place with no alert and no retry",
+      "recovery": "none offered",
+      "measured": { "alerts": 0 },
+      "evidence": "1280/r3/error.json (and 1280/r2/error.json)"
+    },
+    {
+      "id": "offline-warm",
+      "name": "offline (warm)",
+      "trigger": "chip change while the network is down",
+      "userSees": "the previous results stay on screen; no alert, no retry",
+      "recovery": "none offered; stale results persist",
+      "measured": { "alerts": 0, "rows": 15 },
+      "evidence": "1280/r3/offline.json"
+    },
+    {
+      "id": "offline-cold",
+      "name": "offline (cold)",
+      "trigger": "navigation while offline after the app shell has been cached",
+      "userSees": "an authored offline panel: 'no internet connection' heading, guidance to connect, and the shell still visible; not the browser error page",
+      "recovery": "reconnect",
+      "evidence": "1280/r3/offline.json, 1280/r3/shots/state-offline-cold.png"
+    },
+    {
+      "id": "disabled",
+      "name": "disabled",
+      "trigger": "signed-out session",
+      "userSees": "no account-only controls; the channel card offers a subscribe action that leads to an auth surface (not followed); results include promoted tiles",
+      "recovery": "not applicable",
+      "evidence": "1280/r2/state-ready.dom.json, 1280/r2/shots/state-ready.png"
+    }
+  ],
+  "controls": [
+    {
+      "id": "query-field",
+      "name": "query field",
+      "role": "combobox",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click, type",
+      "behaviour": "prefilled with the current query; submitting navigates to /results?search_query=…",
+      "evidence": "1280/r2/keyboard.json, 1280/r2/chrome.json"
+    },
+    {
+      "id": "clear-query",
+      "name": "clear query",
+      "role": "button",
+      "ariaLabel": "Clear search query",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "behaviour": "empties the field; only present when a query is present",
+      "evidence": "1280/r2/keyboard.json"
+    },
+    {
+      "id": "submit-search",
+      "name": "submit search",
+      "role": "button",
+      "ariaLabel": "Search",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "evidence": "1280/r2/keyboard.json"
+    },
+    {
+      "id": "voice-search",
+      "name": "voice search",
+      "role": "button",
+      "ariaLabel": "Search with your voice",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "evidence": "1280/r2/keyboard.json"
+    },
+    {
+      "id": "filter-chips",
+      "name": "filter chips",
+      "role": "tab",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "six chips observed (all, short-form, unwatched, videos, recently uploaded, live); exactly one selected; selecting one refilters in place without a route change; first change in ~0.55-0.72s, settled in ~1.5-1.8s; the row scrolls horizontally with an overflow arrow on narrow viewports",
+      "evidence": "1280/r2/chip.json, 768/r3/chip.json, 390/r3/chip.json"
+    },
+    {
+      "id": "filters-panel",
+      "name": "filters panel",
+      "role": "button (dialog trigger)",
+      "ariaLabel": "Search filters",
+      "keyboard": ["Tab", "Enter", "Escape"],
+      "pointer": "click",
+      "behaviour": "opens a panel with five groups (type, duration, upload date, features, prioritise) in ~0.14s; Escape closes it in ~0.04s and returns focus to the trigger",
+      "evidence": "1280/r2/filters.json, 768/r1/filters.json, 390/r1/filters.json, 1280/r2/shots/filters-open.png"
+    },
+    {
+      "id": "result-row",
+      "name": "result row",
+      "role": "link",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "thumbnail and title open the watch route; each row also carries an overflow action",
+      "evidence": "1280/r2/state-ready.dom.json"
+    },
+    {
+      "id": "row-overflow",
+      "name": "row overflow",
+      "role": "button",
+      "pointer": "click",
+      "behaviour": "present on video rows and promoted tiles; not exercised here (menu behaves as on the home surface)",
+      "evidence": "1280/r2/state-ready.dom.json"
+    },
+    {
+      "id": "channel-subscribe",
+      "name": "channel subscribe",
+      "role": "button",
+      "pointer": "click",
+      "behaviour": "out of scope: requires an account; never followed",
+      "evidence": "1280/r2/shots/state-ready.png"
+    },
+    {
+      "id": "shorts-shelf",
+      "name": "short-form shelf",
+      "role": "link",
+      "pointer": "click",
+      "behaviour": "vertical short-form items in a horizontal row (160x239 at 390, 216x324 at 1280); each opens the short-form surface",
+      "evidence": "1280/r1/state-ready.dom.json, 390/r1/state-ready.dom.json"
+    },
+    {
+      "id": "show-more",
+      "name": "load more",
+      "role": "button",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "explicit load-more control at the end of a list/shelf, not infinite scroll; appends results in ~0.35-0.81s",
+      "evidence": "1280/r4/more.json, 768/r4/more.json, 390/r4/more.json"
+    }
+  ],
+  "events": [
+    {
+      "id": "submit-to-loading",
+      "from": "ready",
+      "event": "submit a new query",
+      "to": "loading (server navigation)"
+    },
+    { "id": "loading-to-ready", "from": "loading", "event": "results arrive", "to": "ready" },
+    {
+      "id": "chip-refilter",
+      "from": "ready",
+      "event": "select another chip",
+      "to": "loading then ready"
+    },
+    { "id": "filters-open", "from": "ready", "event": "activate filters", "to": "panel open" },
+    {
+      "id": "filters-escape",
+      "from": "panel open",
+      "event": "Escape",
+      "to": "ready with focus on the trigger"
+    },
+    {
+      "id": "show-more",
+      "from": "ready",
+      "event": "activate load more",
+      "to": "ready with more rows"
+    },
+    {
+      "id": "offline-warm-noop",
+      "from": "ready",
+      "event": "chip change while offline",
+      "to": "ready (unchanged, no alert)"
+    }
+  ],
+  "timings": {
+    "filtersOpenMs": [135, 150],
+    "filtersCloseMs": [36, 48],
+    "chipFirstChangeMs": [551, 720],
+    "chipSettledMs": [1474, 1785],
+    "showMoreMs": [345, 806],
+    "firstContentfulPaintMs": [5748, 5748],
+    "largestContentfulPaintMs": [7880, 8800],
+    "domContentLoadedMs": [7988, 7988],
+    "loadEventEndMs": [9366, 9366],
+    "cumulativeLayoutShift": [0, 0],
+    "longestMainThreadTaskMs": [0, 985]
+  },
+  "timingsMeta": {
+    "method": "in-page PerformanceNavigationTiming/Paint/LCP/CLS/long-task entries; interaction latency from input dispatch to observed DOM change",
+    "samples": { "navigation": 1, "filtersOpen": 3, "filtersClose": 2, "chip": 3, "showMore": 3 },
+    "note": "navigation timings are a single sample (n=1) taken on a slow search load and are not a distribution",
+    "evidence": "1280/r2/timing.json, 768/r1/timing.json, 390/r1/timing.json, interaction records"
+  },
+  "a11y": {
+    "focusOrder1280": [
+      "brand link",
+      "skip navigation",
+      "query field (combobox)",
+      "clear query",
+      "submit search",
+      "voice search",
+      "settings",
+      "sign-in",
+      "guide: home",
+      "guide: short-form",
+      "guide: subscriptions",
+      "guide: account",
+      "chip 1 (selected)",
+      "chip 2",
+      "chip 3",
+      "chip 4"
+    ],
+    "focusOrder390": [
+      "brand link",
+      "skip navigation",
+      "search (icon button)",
+      "settings",
+      "sign-in",
+      "chip 1 (selected)",
+      "chip 2",
+      "chip 3",
+      "chip 4",
+      "chip 5",
+      "chip 6",
+      "filters"
+    ],
+    "focusReturnAfterFiltersEscape": true,
+    "chipsRole": "tab",
+    "roles": { "link": 86, "button": 58, "heading": 29, "tab": 6, "image": 30, "tooltip": 14 },
+    "axNodes": [2578, 3570],
+    "axIgnored": [817, 830],
+    "reducedMotion": "no running CSS animations reported before or under prefers-reduced-motion (0 and 0)",
+    "evidence": "1280/r2/keyboard.json, 390/r1/keyboard.json, 1280/r2/filters.json, 1280/r2/reduced-motion.json"
+  },
+  "appearance": {
+    "page": { "background": "rgb(15, 15, 15)", "fontFamily": "Roboto, Arial, sans-serif" },
+    "chip": { "heightPx": 32, "topPx": 67, "gapPx": 12 },
+    "filtersButton": {
+      "sizePx": { "w": 101, "h": 40 },
+      "alignment": "right edge of the content column"
+    },
+    "resultRow": {
+      "desktopPx": { "w": 1145, "h": 281 },
+      "thumbnailPx": { "w": 500, "h": 281 },
+      "thumbnailRadiusPx": 12,
+      "title": {
+        "fontSize": 18,
+        "lineHeight": 26,
+        "fontWeight": 400,
+        "color": "rgb(241, 241, 241)",
+        "lines": 2
+      },
+      "meta": { "fontSize": 12, "lineHeight": 18, "color": "rgb(170, 170, 170)" },
+      "description": {
+        "fontSize": 12,
+        "lineHeight": 18,
+        "color": "rgb(170, 170, 170)",
+        "lines": 2
+      },
+      "textColumnLeftPx": 612
+    },
+    "shortFormItem": { "smallPx": { "w": 160, "h": 239 }, "largePx": { "w": 216, "h": 324 } },
+    "channelAvatar": { "mobilePx": 136 }
+  },
+  "gaps": [
+    {
+      "id": "empty-state",
+      "question": "What does the surface show when a query truly matches nothing?",
+      "why": "Random strings still produced a spelling suggestion plus suggested results; no query or filter combination was found that yields a zero-result list.",
+      "severity": "high"
+    },
+    {
+      "id": "error-state",
+      "question": "Is there any authored error or retry when a search request fails?",
+      "why": "Blocking the refinement endpoint left the server-rendered results on screen with no alert; the initial load is server-rendered, so an XHR-level failure cannot be observed from outside.",
+      "severity": "high"
+    },
+    {
+      "id": "restricted-mode",
+      "question": "How much of the result set is suppressed by the network's Restricted Mode?",
+      "why": "The page carried a Restricted Mode notice: some results were removed network-administratively, so composition is not representative of an unrestricted session.",
+      "severity": "medium"
+    },
+    {
+      "id": "filter-apply",
+      "question": "What is the latency and scroll/focus behaviour after choosing a filter option?",
+      "why": "Only panel open/close and focus return were measured; option selection was not exercised.",
+      "severity": "low"
+    },
+    {
+      "id": "signed-out-actions",
+      "question": "What happens on subscribe and other account actions?",
+      "why": "They require an account; the guardrails exclude following them.",
+      "severity": "medium"
+    },
+    {
+      "id": "initial-loading",
+      "question": "Is a skeleton shown on the very first search navigation?",
+      "why": "The initial response is server-rendered; the skeleton was only observed on a client-side refinement (chip change).",
+      "severity": "medium"
+    },
+    {
+      "id": "mobile-thumbnails",
+      "question": "Exact mobile thumbnail dimensions and row composition",
+      "why": "Mobile result thumbnails are below the fold and lazily loaded, so the captured snapshot has row boxes but not every image box.",
+      "severity": "low"
+    },
+    {
+      "id": "search-input-name",
+      "question": "Accessible name of the query field",
+      "why": "The focus walk recorded the field but not a resolved accessible name.",
+      "severity": "low"
+    },
+    {
+      "id": "voice-search",
+      "question": "Voice search behaviour",
+      "why": "Requires microphone permission and speech input; not attempted.",
+      "severity": "low"
+    },
+    {
+      "id": "end-of-list",
+      "question": "What appears once the last result page is loaded?",
+      "why": "Load-more was measured but the terminal state of the list was not reached.",
+      "severity": "low"
+    },
+    {
+      "id": "assignment-variance",
+      "question": "Which result types depend on region, locale or experiment?",
+      "why": "One region/locale was observed; promoted tiles and shelves vary by assignment.",
+      "severity": "medium"
+    }
+  ]
+}
