@@ -1,0 +1,410 @@
+{
+  "flow": "watch",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-17",
+  "evidence": "docs/re-evidence/watch/",
+  "route": {
+    "path": "/watch",
+    "queryParam": "v",
+    "documentTitle": "<video title> - YouTube",
+    "signedOut": true
+  },
+  "viewports": [
+    {
+      "width": 390,
+      "height": 844,
+      "playerPx": { "w": 375, "h": 240 },
+      "titleTypo": { "fontSize": 18, "lineHeight": 26, "fontWeight": 700 },
+      "channelTypo": { "fontSize": 14, "fontWeight": 500 },
+      "relatedCount": 9,
+      "commentsInInitialDom": false,
+      "theater": "absent",
+      "evidence": "390/r4/watch-styles.json, 390/r4/watch.json"
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "playerPx": { "w": 753, "h": 432 },
+      "relatedCount": 9,
+      "commentsInInitialDom": false,
+      "theater": "present",
+      "evidence": "768/r2/watch.json"
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "playerPx": { "w": 873, "h": 491 },
+      "playerOrigin": { "x": 16, "y": 68 },
+      "primaryColumnPx": 873,
+      "secondaryColumnPx": 344,
+      "secondaryOrigin": { "x": 905 },
+      "titleTypo": { "fontSize": 20, "lineHeight": 28, "fontWeight": 600 },
+      "channelTypo": { "fontSize": 16, "fontWeight": 500 },
+      "descriptionCollapsedPx": { "w": 873, "h": 104 },
+      "relatedCount": 20,
+      "commentsInInitialDom": true,
+      "theater": "present",
+      "evidence": "1280/styles/watch-styles.json, 1280/r6/watch.json"
+    }
+  ],
+  "states": [
+    {
+      "id": "ready",
+      "name": "ready",
+      "trigger": "watch route resolved",
+      "userSees": "16:9 player; below it the title, owner row (avatar, channel, subscriber count, subscribe), an action row (like with count, dislike, share, save, more), a description panel with view/date/hashtag line and expander, then comments; a right rail of related videos on desktop (below the fold on narrow screens)",
+      "recovery": null,
+      "measured": { "upnext": [9, 20], "commentThreads": 20 },
+      "evidence": "1280/r6/state-ready.dom.json, 1280/r6/watch.json, 768/r2/watch.json, 390/r4/watch.json"
+    },
+    {
+      "id": "loading",
+      "name": "loading",
+      "trigger": "route entry",
+      "userSees": "not captured as a distinct state: the page streams the player shell first and metadata later; no skeleton was observed before the title appeared",
+      "recovery": "automatic",
+      "evidence": null
+    },
+    {
+      "id": "unavailable",
+      "name": "unavailable (restricted)",
+      "trigger": "video blocked by the network's Restricted Mode",
+      "userSees": "authored panel: unavailable heading plus a sentence explaining that the video is restricted by the administrator; the comments area reads that comments are turned off; no player",
+      "recovery": "none offered",
+      "measured": { "domNodes": 263 },
+      "evidence": "390/r3/state-ready.dom.json, 390/r3/shots/state-ready.png"
+    },
+    {
+      "id": "error",
+      "name": "error",
+      "trigger": "player/next endpoints blocked",
+      "userSees": "metadata still renders; no alert or retry appears in the observed window; the player keeps its own error surface",
+      "recovery": "none observed",
+      "measured": { "alerts": 0 },
+      "evidence": "1280/r6/error.json"
+    },
+    {
+      "id": "offline-cold",
+      "name": "offline (cold)",
+      "trigger": "navigation while offline",
+      "userSees": "the browser's own network error page; the app is not reached",
+      "recovery": "browser retry / reconnect",
+      "evidence": "1280/r6/offline.json"
+    },
+    {
+      "id": "disabled",
+      "name": "disabled",
+      "trigger": "signed-out session",
+      "userSees": "like, subscribe, save and comment entry points are present; each leads to an auth surface (not followed); a pre-roll ad and a site promo may cover the player and metadata until dismissed",
+      "recovery": "sign in (out of scope)",
+      "evidence": "1280/r6/summary.json, 1280/r6/shots/state-ready.png"
+    }
+  ],
+  "controls": [
+    {
+      "id": "play",
+      "name": "play/pause",
+      "ariaLabel": "Play keyboard shortcut k",
+      "keyboard": ["k", "Space"],
+      "pointer": "click",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "mute",
+      "name": "mute",
+      "ariaLabel": "Mute keyboard shortcut m",
+      "keyboard": ["m"],
+      "pointer": "click",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "volume",
+      "name": "volume slider",
+      "role": "slider",
+      "ariaLabel": "Volume",
+      "keyboard": ["ArrowUp", "ArrowDown"],
+      "pointer": "drag",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "seek",
+      "name": "seek slider",
+      "role": "slider",
+      "ariaLabel": "Seek slider",
+      "keyboard": ["ArrowLeft", "ArrowRight"],
+      "pointer": "drag/click",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "time",
+      "name": "time readout",
+      "ariaLabel": "<current> of <duration>",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "autoplay",
+      "name": "autoplay toggle",
+      "ariaLabel": "Autoplay is on",
+      "pointer": "click",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "captions",
+      "name": "subtitles",
+      "ariaLabel": "Subtitles/closed captions keyboard shortcut c",
+      "keyboard": ["c"],
+      "pointer": "click",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "settings",
+      "name": "player settings",
+      "ariaLabel": "Settings",
+      "pointer": "click",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "theater",
+      "name": "theater mode",
+      "ariaLabel": "Theater mode keyboard shortcut t",
+      "keyboard": ["t"],
+      "pointer": "click",
+      "behaviour": "widens the player from 873 to 1265 px and hides the rail; ~0.26-0.53 s",
+      "evidence": "1280/r6/theater.json"
+    },
+    {
+      "id": "fullscreen",
+      "name": "full screen",
+      "ariaLabel": "Full screen keyboard shortcut f",
+      "keyboard": ["f"],
+      "pointer": "click",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "subscribe",
+      "name": "subscribe",
+      "role": "button",
+      "ariaLabel": "Subscribe to <channel>.",
+      "pointer": "click",
+      "behaviour": "auth surface; out of scope",
+      "evidence": "1280/r6/keyboard.json"
+    },
+    {
+      "id": "like",
+      "name": "like",
+      "role": "button",
+      "ariaLabel": "like this video along with <n> other people",
+      "pointer": "click",
+      "behaviour": "auth surface; out of scope",
+      "evidence": "1280/r6/watch.json"
+    },
+    {
+      "id": "dislike",
+      "name": "dislike",
+      "role": "button",
+      "ariaLabel": "Dislike this video",
+      "pointer": "click",
+      "evidence": "1280/r6/watch.json"
+    },
+    {
+      "id": "share",
+      "name": "share",
+      "role": "button",
+      "ariaLabel": "Share",
+      "pointer": "click",
+      "evidence": "1280/r6/watch.json"
+    },
+    {
+      "id": "save",
+      "name": "save",
+      "role": "button",
+      "ariaLabel": "Save to playlist",
+      "pointer": "click",
+      "evidence": "1280/r6/watch.json"
+    },
+    {
+      "id": "more",
+      "name": "more actions",
+      "role": "button",
+      "ariaLabel": "More actions",
+      "pointer": "click",
+      "evidence": "1280/r6/watch.json"
+    },
+    {
+      "id": "description",
+      "name": "description expander",
+      "role": "button",
+      "ariaLabel": "…more",
+      "pointer": "click",
+      "behaviour": "expands the collapsed panel; measured expanded at 1280 and 390",
+      "evidence": "1280/r6/description.json"
+    },
+    {
+      "id": "comments",
+      "name": "comments",
+      "role": "region",
+      "pointer": "scroll",
+      "behaviour": "desktop renders a count, a sort control, an add-comment entry point and thread list; narrow viewports had no threads in the initial DOM",
+      "evidence": "1280/r6/comments.json, 390/r4/watch.json"
+    },
+    {
+      "id": "related",
+      "name": "related videos",
+      "role": "link",
+      "pointer": "click",
+      "behaviour": "20 items in the desktop rail, 9 on narrow screens",
+      "evidence": "1280/r6/watch.json"
+    }
+  ],
+  "events": [
+    {
+      "id": "enter-to-ready",
+      "from": "route entry",
+      "event": "metadata and player resolve",
+      "to": "ready"
+    },
+    {
+      "id": "theater-toggle",
+      "from": "ready",
+      "event": "theater control",
+      "to": "wide player, rail hidden"
+    },
+    {
+      "id": "description-expand",
+      "from": "ready",
+      "event": "description expander",
+      "to": "full description"
+    },
+    {
+      "id": "restricted",
+      "from": "route entry",
+      "event": "video blocked by policy",
+      "to": "unavailable panel"
+    }
+  ],
+  "timings": {
+    "theaterToggleMs": [257, 530],
+    "serverResponseStartMs": [120, 840],
+    "firstContentfulPaintMs": [840, 1660],
+    "domContentLoadedMs": [2005, 3285],
+    "loadEventEndMs": [3596, 4828],
+    "largestContentfulPaintMs": [2920, 8836]
+  },
+  "timingsMeta": {
+    "method": "in-page PerformanceNavigationTiming/Paint/LCP entries; theater latency from click to a >40px player width change",
+    "samples": { "navigation": 3, "theater": 3 },
+    "note": "per-frame CLS is not reported: dismissing a pre-roll/promo during capture changed layout and makes the metric incomparable to a clean load",
+    "evidence": "1280/r6/timing.json, 768/r2/timing.json, 390/r4/timing.json"
+  },
+  "a11y": {
+    "focusOrder1280": [
+      "close (overlay)",
+      "player overlay control",
+      "seek slider",
+      "play (k)",
+      "mute (m)",
+      "volume slider",
+      "time readout",
+      "autoplay",
+      "subtitles (c)",
+      "settings",
+      "theater (t)",
+      "full screen (f)",
+      "channel link",
+      "subscribe",
+      "like",
+      "dislike"
+    ],
+    "playerControlNames": "explicit and include the keyboard shortcut (e.g. 'Play keyboard shortcut k', 'Theater mode keyboard shortcut t')",
+    "titleHeading": "h1",
+    "roles": { "button": 146, "link": 70, "tooltip": 62, "group": 43 },
+    "axNodes": [862, 2945],
+    "axIgnored": [361, 821],
+    "reducedMotion": "no running CSS animations reported before or under prefers-reduced-motion (0 and 0)",
+    "evidence": "1280/r6/keyboard.json, 390/r4/keyboard.json, 1280/r6/state-ready.ax.json, 1280/r6/reduced-motion.json"
+  },
+  "appearance": {
+    "page": { "background": "rgb(15, 15, 15)", "fontFamily": "Roboto, Arial, sans-serif" },
+    "player": { "aspect": "16:9" },
+    "title": { "color": "rgb(241, 241, 241)" },
+    "actionRow": { "buttonHeightPx": 40, "subscribePx": { "w": 95, "h": 40 }, "radiusPx": 20 },
+    "description": { "collapsedHeightPx": 104, "radiusPx": 12 },
+    "secondaryRail": { "widthPx": 344, "gapPx": 16 }
+  },
+  "gaps": [
+    {
+      "id": "loading-state",
+      "question": "What is shown while the watch page resolves?",
+      "why": "The page streams the player shell and metadata; no skeleton was observed before the title appeared.",
+      "severity": "medium"
+    },
+    {
+      "id": "error-state",
+      "question": "Is there an authored error or retry when the player or next-up request fails?",
+      "why": "Blocking the endpoints left the metadata rendered with no alert in the observed window; the player's internal error surface was not isolated.",
+      "severity": "high"
+    },
+    {
+      "id": "cls-unreliable",
+      "question": "What is the real layout stability of a clean watch load?",
+      "why": "Dismissing a pre-roll and a promo during capture changed layout, so the measured CLS is not comparable to a clean load.",
+      "severity": "medium"
+    },
+    {
+      "id": "signed-out-actions",
+      "question": "What happens on like, subscribe, save and comment?",
+      "why": "They lead to an auth surface the guardrails exclude.",
+      "severity": "medium"
+    },
+    {
+      "id": "ads",
+      "question": "How do pre-roll and mid-roll ads change the layout and timing?",
+      "why": "A pre-roll appeared on most loads and was skipped to reach the content; ad variants differ and were not measured.",
+      "severity": "medium"
+    },
+    {
+      "id": "player-menus",
+      "question": "Settings, captions and quality menus",
+      "why": "Only their triggers were located; the menus were not opened.",
+      "severity": "low"
+    },
+    {
+      "id": "seek-chapters",
+      "question": "Seek behaviour and chapter markers",
+      "why": "The seek slider and time readout were located, not exercised.",
+      "severity": "low"
+    },
+    {
+      "id": "autoplay",
+      "question": "Autoplay toggle behaviour",
+      "why": "Observed as 'Autoplay is on' but not toggled.",
+      "severity": "low"
+    },
+    {
+      "id": "mobile-overflow",
+      "question": "Why does the 390 metadata column measure 427px inside a 375px viewport?",
+      "why": "The title and description boxes overflow horizontally; the cause (layout width vs. viewport scaling) was not established.",
+      "severity": "medium"
+    },
+    {
+      "id": "mobile-comments",
+      "question": "How do comments load on narrow viewports?",
+      "why": "No comment threads were present in the initial 390 DOM; loading may require a further scroll or a dedicated entry point.",
+      "severity": "medium"
+    },
+    {
+      "id": "queue-miniplayer",
+      "question": "Queue, mini-player and up-next autoplay behaviour",
+      "why": "Separate Workstream B/C flows; deliberately not covered here.",
+      "severity": "low"
+    },
+    {
+      "id": "assignment-variance",
+      "question": "Which elements depend on region, locale, experiment or ad inventory?",
+      "why": "One region and a small set of videos were observed.",
+      "severity": "medium"
+    }
+  ]
+}
