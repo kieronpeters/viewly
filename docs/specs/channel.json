@@ -1,0 +1,347 @@
+{
+  "flow": "channel",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-17",
+  "evidence": "docs/re-evidence/channel/",
+  "route": {
+    "homePath": "/@<handle> (also /channel/<id>)",
+    "tabPaths": ["/videos", "/shorts", "/streams", "/playlists", "/posts"],
+    "documentTitle": "<channel name> - YouTube",
+    "signedOut": true
+  },
+  "viewports": [
+    {
+      "width": 390,
+      "height": 844,
+      "usableWidth": 375,
+      "bannerPx": { "w": 359, "h": 58 },
+      "avatarPx": null,
+      "nameTypo": { "fontSize": 24, "lineHeight": 32, "fontWeight": 600 },
+      "tabBarPx": { "w": 214, "h": 48 },
+      "videoColumns": 1,
+      "videoCardPx": { "w": 202, "h": 192 },
+      "videoThumbPx": { "w": 202, "h": 114 },
+      "evidence": "390/styles/channel-styles.json, 390/r1/state-videos.dom.json"
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "usableWidth": 753,
+      "bannerPx": { "w": 642, "h": 103 },
+      "avatarPx": { "w": 120, "h": 120 },
+      "nameTypo": { "fontSize": 36, "lineHeight": 50, "fontWeight": 700 },
+      "tabBarPx": { "w": 642, "h": 48 },
+      "videoColumns": 2,
+      "videoCardPx": { "w": 311, "h": 253 },
+      "videoThumbPx": { "w": 311, "h": 175 },
+      "evidence": "768/styles/channel-styles.json, 768/r1/state-videos.dom.json"
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "usableWidth": 1265,
+      "bannerPx": { "w": 1070, "h": 172 },
+      "avatarPx": { "w": 160, "h": 160 },
+      "nameTypo": { "fontSize": 36, "lineHeight": 50, "fontWeight": 700 },
+      "tabBarPx": { "w": 1070, "h": 48 },
+      "videoColumns": 3,
+      "videoCardPx": { "w": 347, "h": 273 },
+      "videoThumbPx": { "w": 347, "h": 195 },
+      "evidence": "1280/styles/channel-styles.json, 1280/r1/state-videos.dom.json"
+    }
+  ],
+  "states": [
+    {
+      "id": "ready-home",
+      "name": "ready (home tab)",
+      "trigger": "channel route resolved",
+      "userSees": "banner, avatar, name with verification mark, handle, subscriber and video counts, a one-line description with an expander, a links expander, a subscribe action, six content tabs plus an in-channel search tab, a featured/trailer block, then horizontal shelves with their own titles",
+      "recovery": null,
+      "measured": { "shelves": 7, "shelfItemPx": { "w": 218, "h": 206 } },
+      "evidence": "1280/r1/state-ready.dom.json, 1280/r1/shots/state-ready.png, 1280/r1/channel-header.json"
+    },
+    {
+      "id": "ready-videos",
+      "name": "ready (videos tab)",
+      "trigger": "activate the videos tab",
+      "userSees": "the same header; three sort chips (latest, popular, oldest) with one selected; a card grid (3/2/1 columns) of channel videos, each with thumbnail, duration badge, two-line title, metadata and an overflow action",
+      "recovery": null,
+      "measured": { "cards": 30, "columns": [1, 2, 3] },
+      "evidence": "1280/r1/state-videos.dom.json, 768/r1/state-videos.dom.json, 390/r1/state-videos.dom.json"
+    },
+    {
+      "id": "loading",
+      "name": "loading",
+      "trigger": "tab switch (videos tab)",
+      "userSees": "header and tab bar stay; the content area becomes skeleton cards (62 skeleton elements, no cards) while the tab route resolves",
+      "recovery": "automatic",
+      "measured": { "skeletons": 62, "skeletonMs": [76, 77] },
+      "evidence": "1280/r1/videos.json, 1280/r1/shots/state-loading.png"
+    },
+    {
+      "id": "error",
+      "name": "error",
+      "trigger": "content request fails (browse blocked)",
+      "userSees": "the header renders and the content area is empty; no alert, no retry, no message",
+      "recovery": "none offered",
+      "measured": { "cards": 0, "alerts": 0 },
+      "evidence": "1280/r1/error.json, 768/r1/error.json, 390/r1/error.json"
+    },
+    {
+      "id": "offline-cold",
+      "name": "offline (cold)",
+      "trigger": "navigation while offline",
+      "userSees": "the browser's own network error page; the app is not reached",
+      "recovery": "browser retry / reconnect",
+      "evidence": "1280/r1/offline.json, 768/r1/offline.json, 390/r1/offline.json"
+    },
+    {
+      "id": "empty",
+      "name": "empty",
+      "trigger": "channel with no videos on a tab",
+      "userSees": "not observed: the captured channel has thousands of videos, and no empty channel or empty tab was available",
+      "recovery": "unknown",
+      "evidence": null
+    },
+    {
+      "id": "disabled",
+      "name": "disabled",
+      "trigger": "signed-out session",
+      "userSees": "subscribe and other account actions are present but lead to auth; activating the links expander produced a signed-out notice modal instead of a links list",
+      "recovery": "sign in (out of scope)",
+      "measured": { "linksDialogs": 1 },
+      "evidence": "1280/r1/about.json, 1280/r1/shots/state-links-panel.png"
+    }
+  ],
+  "controls": [
+    {
+      "id": "content-tabs",
+      "name": "content tabs",
+      "role": "tab",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "six labelled tabs (home, videos, short-form, live, playlists, posts) plus an in-channel search tab; exactly one selected; each switches the route and the tab underline",
+      "evidence": "1280/r1/channel-header.json, 1280/r1/videos.json"
+    },
+    {
+      "id": "subscribe",
+      "name": "subscribe",
+      "role": "button",
+      "ariaLabel": "Subscribe",
+      "keyboard": ["Enter"],
+      "pointer": "click",
+      "behaviour": "out of scope: requires an account",
+      "evidence": "1280/styles/channel-styles.json"
+    },
+    {
+      "id": "description-expander",
+      "name": "description expander",
+      "role": "button",
+      "ariaLabel": "Description. <channel description>",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "expands the one-line description into the full text",
+      "evidence": "1280/r1/keyboard.json, 1280/r1/about.json, 1280/r1/shots/state-about-expanded.png"
+    },
+    {
+      "id": "links-expander",
+      "name": "links expander",
+      "role": "button",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "signed out, activating it produced a signed-out notice modal rather than the links list",
+      "evidence": "1280/r1/about.json"
+    },
+    {
+      "id": "sort-chips",
+      "name": "sort chips",
+      "role": "tab",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "three chips on the videos tab (latest selected, popular, oldest); application latency not measured",
+      "evidence": "1280/r1/shots/state-videos.png"
+    },
+    {
+      "id": "video-card",
+      "name": "video card",
+      "role": "link",
+      "keyboard": ["Tab", "Enter"],
+      "pointer": "click",
+      "behaviour": "thumbnail, duration badge, two-line title, metadata and an overflow action; opens the watch route",
+      "evidence": "1280/r1/state-videos.dom.json"
+    },
+    {
+      "id": "shelf-item",
+      "name": "shelf item",
+      "role": "link",
+      "pointer": "click",
+      "behaviour": "horizontal shelf rows on the home tab, each with its own title",
+      "evidence": "1280/r1/state-ready.dom.json"
+    },
+    {
+      "id": "in-channel-search",
+      "name": "in-channel search",
+      "role": "tab",
+      "pointer": "click",
+      "behaviour": "fourth-from-last control in the tab bar; opens a search field scoped to the channel; not exercised",
+      "evidence": "1280/r1/channel-header.json"
+    }
+  ],
+  "events": [
+    {
+      "id": "tab-switch",
+      "from": "ready-home",
+      "event": "activate videos tab",
+      "to": "loading then ready-videos"
+    },
+    {
+      "id": "tab-return",
+      "from": "ready-videos",
+      "event": "activate home tab",
+      "to": "ready-home"
+    },
+    {
+      "id": "description-expand",
+      "from": "ready",
+      "event": "activate the description expander",
+      "to": "ready with full description"
+    },
+    {
+      "id": "links-signed-out",
+      "from": "ready",
+      "event": "activate the links expander signed out",
+      "to": "signed-out notice modal"
+    },
+    {
+      "id": "content-fail",
+      "from": "ready",
+      "event": "content request fails",
+      "to": "header only, empty content, no alert"
+    }
+  ],
+  "timings": {
+    "tabSwitchMs": [519, 731],
+    "skeletonVisibleMs": [76, 77],
+    "serverResponseStartMs": [101, 101],
+    "firstContentfulPaintMs": [516, 516],
+    "domContentLoadedMs": [2307, 2307],
+    "loadEventEndMs": [3970, 3970],
+    "largestContentfulPaintMs": [2900, 4036],
+    "cumulativeLayoutShift": [0.0775, 0.0775]
+  },
+  "timingsMeta": {
+    "method": "in-page PerformanceNavigationTiming/Paint/LCP/CLS entries; tab-switch latency from click to the route path changing",
+    "samples": { "navigation": 1, "tabSwitch": 3, "skeleton": 2 },
+    "note": "navigation timings are a single sample; the 0.0775 layout shift is real in that sample and worth watching",
+    "evidence": "1280/r1/timing.json, 768/r1/videos.json, 390/r1/videos.json"
+  },
+  "a11y": {
+    "focusOrder1280": [
+      "guide toggle",
+      "brand link",
+      "skip navigation",
+      "query field",
+      "submit search",
+      "voice search",
+      "settings",
+      "sign-in",
+      "guide: home",
+      "guide: short-form",
+      "guide: subscriptions",
+      "guide: account",
+      "description expander",
+      "first profile link"
+    ],
+    "tabsRole": "tab",
+    "selectedTabExposed": true,
+    "skipLink": true,
+    "roles": { "link": 173, "button": 89, "heading": 60, "tab": 7 },
+    "axNodes": [3623, 3776],
+    "axIgnored": [1272, 1293],
+    "reducedMotion": "no running CSS animations reported before or under prefers-reduced-motion (0 and 0)",
+    "evidence": "1280/r1/keyboard.json, 390/r1/keyboard.json, 1280/r1/reduced-motion.json, 1280/r1/state-ready.ax.json"
+  },
+  "appearance": {
+    "page": { "background": "rgb(15, 15, 15)", "fontFamily": "Roboto, Arial, sans-serif" },
+    "name": { "color": "rgb(241, 241, 241)", "weight": 700 },
+    "metadata": { "fontSize": 14, "lineHeight": 20, "color": "rgb(170, 170, 170)" },
+    "subscribe": {
+      "sizePx": { "w": 95, "h": 40 },
+      "background": "rgb(241, 241, 241)",
+      "radiusPx": 20
+    },
+    "avatar": { "radius": "50%" },
+    "tabs": { "heightPx": 48 },
+    "videosTab": { "sortChipHeightPx": 33, "gridGapPx": 16 }
+  },
+  "gaps": [
+    {
+      "id": "empty-channel",
+      "question": "What does a channel with no videos, or an empty tab, show?",
+      "why": "The captured channel has thousands of videos; no empty channel or empty tab was reachable.",
+      "severity": "medium"
+    },
+    {
+      "id": "error-state",
+      "question": "Is there any authored error or retry for a failed channel content request?",
+      "why": "Blocking the content request left the header and an empty content area with no alert; the header is server-rendered.",
+      "severity": "high"
+    },
+    {
+      "id": "links-signed-out",
+      "question": "What does the links list contain, and why did a signed-out notice appear instead?",
+      "why": "Activating the links expander produced a signed-out notice modal; the links list itself was not observed.",
+      "severity": "medium"
+    },
+    {
+      "id": "other-tabs",
+      "question": "Short-form, live, playlists and posts tabs",
+      "why": "Only the home and videos tabs were exercised.",
+      "severity": "medium"
+    },
+    {
+      "id": "sort-apply",
+      "question": "Sort chip behaviour and latency",
+      "why": "The chips were observed but not activated.",
+      "severity": "low"
+    },
+    {
+      "id": "in-channel-search",
+      "question": "In-channel search behaviour",
+      "why": "The search tab was located but not opened.",
+      "severity": "low"
+    },
+    {
+      "id": "subscribe-auth",
+      "question": "Subscribe and join flows",
+      "why": "They require an account; the guardrails exclude following them.",
+      "severity": "medium"
+    },
+    {
+      "id": "load-more",
+      "question": "Pagination in the videos grid",
+      "why": "Thirty cards rendered; a load-more or infinite-scroll control was not exercised.",
+      "severity": "low"
+    },
+    {
+      "id": "mobile-avatar",
+      "question": "Avatar size at 390",
+      "why": "The probe did not resolve a square avatar image at 390; the name and banner were measured.",
+      "severity": "low"
+    },
+    {
+      "id": "layout-shift",
+      "question": "Why 0.0775 CLS on this page?",
+      "why": "One sample showed a visible layout shift, likely banner/description images; not isolated to a cause.",
+      "severity": "medium"
+    },
+    {
+      "id": "assignment-variance",
+      "question": "Which parts depend on region, locale or experiment?",
+      "why": "One channel, one region and one locale were observed.",
+      "severity": "low"
+    }
+  ]
+}
