@@ -56,4 +56,3 @@ describe("parseTakeoutWatchHistory", () => {
     expect(() => parseTakeoutWatchHistory({ items: [] })).toThrow("takeout_not_an_array");
   });
 });
-
