@@ -484,6 +484,90 @@ export async function listMyUploads(
   }));
 }
 
+export interface MySubscription {
+  id: string;
+  title: string;
+  thumbnailUrl: string | null;
+}
+
+/** Reads one of the owner's playlists (uploads, Liked `LL…`, Watch Later `WL`). */
+export async function listPlaylistVideos(
+  account: AccountRow,
+  playlistId: string,
+  limit = 24,
+): Promise<MyVideo[]> {
+  const token = await accountAccessToken(account);
+  const json = await youtubeGet<{
+    items?: { contentDetails?: { videoId?: string } }[];
+  }>("playlistItems", token, {
+    part: "snippet,contentDetails",
+    playlistId,
+    maxResults: String(Math.min(limit, 50)),
+  });
+
+  const ids = (json.items ?? [])
+    .map((item) => item.contentDetails?.videoId)
+    .filter((id): id is string => typeof id === "string" && id !== "");
+
+  if (ids.length === 0) return [];
+
+  const details = await youtubeGet<{
+    items?: {
+      id: string;
+      snippet?: {
+        title?: string;
+        channelId?: string;
+        channelTitle?: string;
+        publishedAt?: string;
+        thumbnails?: { high?: { url?: string } };
+      };
+      contentDetails?: { duration?: string };
+      statistics?: { viewCount?: string };
+    }[];
+  }>("videos", token, { part: "snippet,contentDetails,statistics", id: ids.join(",") });
+
+  return (details.items ?? []).map((item) => ({
+    id: item.id,
+    title: item.snippet?.title ?? "",
+    channelId: item.snippet?.channelId ?? "",
+    channelTitle: item.snippet?.channelTitle ?? "",
+    thumbnailUrl: item.snippet?.thumbnails?.high?.url ?? "",
+    publishedAt: item.snippet?.publishedAt ?? new Date(0).toISOString(),
+    durationSeconds: parseDuration(item.contentDetails?.duration ?? ""),
+    viewCount: item.statistics?.viewCount ? Number(item.statistics.viewCount) : null,
+  }));
+}
+
+/** The owner's subscriptions, newest first as YouTube returns them. */
+export async function listMySubscriptions(
+  account: AccountRow,
+  limit = 40,
+): Promise<MySubscription[]> {
+  const token = await accountAccessToken(account);
+  const json = await youtubeGet<{
+    items?: {
+      snippet?: {
+        title?: string;
+        resourceId?: { channelId?: string };
+        thumbnails?: { default?: { url?: string } };
+      };
+    }[];
+  }>("subscriptions", token, {
+    part: "snippet",
+    mine: "true",
+    maxResults: String(Math.min(limit, 50)),
+    order: "alphabetical",
+  });
+
+  return (json.items ?? [])
+    .map((item) => ({
+      id: item.snippet?.resourceId?.channelId ?? "",
+      title: item.snippet?.title ?? "",
+      thumbnailUrl: item.snippet?.thumbnails?.default?.url ?? null,
+    }))
+    .filter((subscription) => subscription.id !== "");
+}
+
 /** `PT1H2M3S` -> 3723. Null when the duration is absent or malformed. */
 export function parseDuration(iso: string): number | null {
   const match = /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso);

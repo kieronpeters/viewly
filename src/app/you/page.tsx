@@ -8,7 +8,9 @@ import {
   getAccount,
   getMyChannel,
   getSessionAccount,
+  listMySubscriptions,
   listMyUploads,
+  listPlaylistVideos,
   readGoogleConfig,
 } from "@/lib/auth/google";
 import { formatSubscriberCount } from "@/shared/format";
@@ -104,6 +106,11 @@ async function YouContent({ searchParams }: { searchParams: Promise<{ auth?: str
     const videos = channel.uploadsPlaylistId
       ? await listMyUploads(account, channel.uploadsPlaylistId)
       : [];
+    const [liked, watchLater, subscriptions] = await Promise.all([
+      listPlaylistVideos(account, `LL${channel.id}`, 12).catch(() => null),
+      listPlaylistVideos(account, "WL", 12).catch(() => null),
+      listMySubscriptions(account, 24).catch(() => null),
+    ]);
     const subscribers = formatSubscriberCount(channel.subscriberCount);
 
     return (
@@ -132,6 +139,75 @@ async function YouContent({ searchParams }: { searchParams: Promise<{ auth?: str
           ) : (
             <VideoGrid labelledBy="you-uploads-heading" videos={videos} />
           )}
+        </section>
+
+        {liked === null ? null : (
+          <section aria-labelledby="you-liked-heading" className="flex flex-col gap-4">
+            <h2 id="you-liked-heading" className="text-xl font-semibold">
+              Liked videos
+            </h2>
+            {liked.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No liked videos on this account.</p>
+            ) : (
+              <VideoGrid labelledBy="you-liked-heading" videos={liked} />
+            )}
+          </section>
+        )}
+
+        {watchLater === null ? null : (
+          <section aria-labelledby="you-watch-later-heading" className="flex flex-col gap-4">
+            <h2 id="you-watch-later-heading" className="text-xl font-semibold">
+              Watch Later
+            </h2>
+            {watchLater.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Watch Later is empty.</p>
+            ) : (
+              <VideoGrid labelledBy="you-watch-later-heading" videos={watchLater} />
+            )}
+          </section>
+        )}
+
+        {subscriptions === null || subscriptions.length === 0 ? null : (
+          <section aria-labelledby="you-subscriptions-heading" className="flex flex-col gap-4">
+            <h2 id="you-subscriptions-heading" className="text-xl font-semibold">
+              Subscriptions
+            </h2>
+            <ul role="list" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {subscriptions.map((subscription) => (
+                <li key={subscription.id} className="min-w-0">
+                  <Link
+                    href={`/channel/${encodeURIComponent(subscription.id)}`}
+                    className="flex items-center gap-3 rounded-xl border border-border p-3 hover:bg-muted"
+                  >
+                    {subscription.thumbnailUrl === null ? null : (
+                      <img
+                        src={subscription.thumbnailUrl}
+                        alt=""
+                        className="size-10 shrink-0 rounded-full object-cover"
+                      />
+                    )}
+                    <span className="min-w-0 truncate text-sm font-medium">
+                      {subscription.title}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section className="flex flex-col gap-2 border-t border-border pt-4">
+          <h2 className="text-sm font-semibold text-muted-foreground">YouTube history</h2>
+          <p className="text-sm text-muted-foreground">
+            YouTube has no history API, so views here cannot write back. Import your own Takeout
+            export to bring real history into Viewly.
+          </p>
+          <Link
+            href="/library/import"
+            className="w-fit rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Import watch history
+          </Link>
         </section>
       </div>
     );
