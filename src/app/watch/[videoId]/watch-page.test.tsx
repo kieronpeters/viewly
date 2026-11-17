@@ -299,11 +299,7 @@ describe("WatchPageContent", () => {
 
     expect(channelRow).not.toBeNull();
     expect(channelRow).toHaveClass("flex-col", "sm:flex-row");
-    expect(rail.parentElement).toHaveClass(
-      "grid-cols-1",
-      "lg:grid-cols-[minmax(0,1fr)_20rem]",
-      "xl:grid-cols-[minmax(0,1fr)_22.5rem]",
-    );
+    expect(rail.parentElement).toHaveClass("grid-cols-1", "lg:grid-cols-[minmax(0,1fr)_21.5rem]");
     expect(rail).toHaveClass("lg:sticky", "lg:top-4");
   });
 

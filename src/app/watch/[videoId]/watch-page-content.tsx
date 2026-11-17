@@ -204,7 +204,7 @@ export function WatchVideoDetail({
               <>
                 <h1
                   id="watch-title"
-                  className="text-pretty text-xl font-semibold tracking-tight break-words text-foreground sm:text-2xl"
+                  className="text-pretty text-xl leading-[28px] font-semibold tracking-tight break-words text-foreground"
                 >
                   {video.title}
                 </h1>

@@ -72,3 +72,7 @@ measurement to take once the shell work lands.
 - G2: accepted by owner instruction ("continue") on 2026-11-17, spec retained at 0.1.0.
 - G3: satisfied for the five enforced contracts; route-level gaps tracked.
 - G4/G5: pending the parity implementation programme.
+
+## Post-redesign delta (P5, 2026-11-17)
+
+- The rail is now 21.5rem (344px) at every lg+ breakpoint, matching the measured column, and the title is a fixed 20/28 semibold line box at all widths.

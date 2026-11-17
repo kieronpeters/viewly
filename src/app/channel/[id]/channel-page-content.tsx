@@ -10,6 +10,7 @@ import { VideoCard } from "@/components/video/video-card";
 import { formatSubscriberCount } from "@/shared/format";
 import type { ChannelDetail, VideoSummary } from "@/shared/types";
 
+import { ChannelTabs } from "./channel-tabs";
 import { readChannel } from "./read-channel";
 
 export interface ChannelPageContentProps {
@@ -59,14 +60,14 @@ export interface ChannelDetailViewProps {
 }
 
 /**
- * Layout half of the channel route: identity card, then a recent-uploads grid
- * built from the same `VideoCard` as every other list.
+ * Layout half of the channel route, shaped like the observed surface: a banner
+ * strip, a large avatar with the name and subscriber count, an off-site link,
+ * then a tab bar (Videos / About). The uploads grid is the Videos panel.
  *
- * The subscriber line is omitted when YouTube hides the count, rather than
- * rendered as zero. The description is plain text (`whitespace-pre-line`) so
- * upstream line breaks survive without any HTML reaching the DOM. The outbound
- * link is the channel's own YouTube page and always remains available, even
- * when the uploads grid could not be read.
+ * Viewly's channel data has no banner artwork, so the strip is a brand gradient
+ * rather than a copied image. The description lives in the About panel; the
+ * header keeps identity and the outbound link, which always remains available
+ * even when uploads could not be read.
  */
 export function ChannelDetailView({
   channel,
@@ -78,93 +79,114 @@ export function ChannelDetailView({
   const youtubeUrl = `https://www.youtube.com/channel/${encodeURIComponent(channel.id)}`;
   const hasUploads = !uploadsUnavailable && uploads.length > 0;
 
-  return (
-    <article aria-labelledby="channel-heading" className="flex min-w-0 flex-col gap-6">
-      <header
-        data-slot="channel-header"
-        className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-start sm:p-6"
+  const avatar =
+    channel.avatarUrl === null ? (
+      <span
+        aria-hidden="true"
+        className="flex size-24 shrink-0 items-center justify-center rounded-full bg-surface text-3xl font-semibold text-muted-foreground ring-4 ring-background sm:size-40"
       >
-        {channel.avatarUrl === null ? (
-          <span
-            aria-hidden="true"
-            className="flex size-20 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-2xl font-semibold text-muted-foreground sm:size-24"
+        {initial ?? <CircleUserRound className="size-10" />}
+      </span>
+    ) : (
+      <Image
+        src={channel.avatarUrl}
+        alt=""
+        width={160}
+        height={160}
+        className="size-24 shrink-0 rounded-full bg-surface object-cover ring-4 ring-background sm:size-40"
+      />
+    );
+
+  const uploadsSection = (
+    <section aria-labelledby={hasUploads ? "channel-uploads-heading" : undefined}>
+      {uploadsUnavailable ? (
+        <ErrorState
+          title="Could not load recent uploads"
+          message="The channel is available, but YouTube did not return its uploads. Try again in a moment."
+        />
+      ) : uploads.length === 0 ? (
+        <EmptyState
+          title="No uploads yet"
+          message="This channel has not published any videos that are visible to Viewly."
+        />
+      ) : (
+        <>
+          <h2
+            id="channel-uploads-heading"
+            className="mb-4 text-xl font-semibold tracking-tight text-foreground"
           >
-            {initial ?? <CircleUserRound className="size-10" />}
-          </span>
-        ) : (
-          <Image
-            src={channel.avatarUrl}
-            alt=""
-            width={96}
-            height={96}
-            className="size-20 shrink-0 rounded-full border border-border bg-surface object-cover sm:size-24"
-          />
-        )}
-
-        <div className="flex min-w-0 flex-col gap-2">
-          <h1
-            id="channel-heading"
-            className="text-pretty text-2xl font-semibold tracking-tight break-words text-foreground sm:text-3xl"
+            Recent uploads
+          </h2>
+          <ul
+            role="list"
+            aria-labelledby="channel-uploads-heading"
+            className="grid grid-cols-1 gap-x-4 gap-y-9 sm:grid-cols-2 lg:grid-cols-3"
           >
-            {channel.title}
-          </h1>
+            {uploads.map((video) => (
+              <li key={video.id} className="min-w-0">
+                <VideoCard video={video} className="h-full" />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
 
-          {subscribers === null ? null : (
-            <p className="text-sm text-muted-foreground">{subscribers}</p>
-          )}
+  const aboutSection = (
+    <div className="flex max-w-3xl flex-col gap-3">
+      <h2 className="text-base font-semibold text-foreground">About</h2>
+      {channel.description === "" ? (
+        <p className="text-sm text-muted-foreground">
+          No description was provided by this channel.
+        </p>
+      ) : (
+        <p className="text-sm leading-6 break-words whitespace-pre-line text-muted-foreground">
+          {channel.description}
+        </p>
+      )}
+    </div>
+  );
 
-          {channel.description === "" ? null : (
-            <p className="max-w-3xl text-sm leading-6 whitespace-pre-line break-words text-muted-foreground">
-              {channel.description}
-            </p>
-          )}
+  return (
+    <article aria-labelledby="channel-heading" className="flex min-w-0 flex-col gap-4">
+      <header data-slot="channel-header" className="flex flex-col">
+        <div
+          aria-hidden="true"
+          className="h-28 w-full rounded-xl bg-[linear-gradient(120deg,var(--primary),var(--surface-elevated)_45%,var(--surface))] opacity-70 sm:h-44"
+        />
 
-          <a
-            href={youtubeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-11 w-fit items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            <ExternalLink aria-hidden="true" className="size-4" />
-            View on YouTube
-            <span className="sr-only"> (opens in a new tab)</span>
-          </a>
+        <div className="flex flex-col gap-4 px-1 sm:flex-row sm:items-end sm:gap-6 sm:px-4">
+          <div className="-mt-10 shrink-0 sm:-mt-16">{avatar}</div>
+
+          <div className="flex min-w-0 flex-1 flex-col gap-1 pb-2">
+            <h1
+              id="channel-heading"
+              className="text-2xl font-bold tracking-tight break-words text-foreground sm:text-4xl"
+            >
+              {channel.title}
+            </h1>
+            {subscribers === null ? null : (
+              <p className="text-sm text-muted-foreground">{subscribers}</p>
+            )}
+          </div>
+
+          <div className="pb-2">
+            <a
+              href={youtubeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <ExternalLink aria-hidden="true" className="size-4" />
+              View on YouTube
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          </div>
         </div>
       </header>
 
-      <section aria-labelledby={hasUploads ? "channel-uploads-heading" : undefined}>
-        {uploadsUnavailable ? (
-          <ErrorState
-            title="Could not load recent uploads"
-            message="The channel is available, but YouTube did not return its uploads. Try again in a moment."
-          />
-        ) : uploads.length === 0 ? (
-          <EmptyState
-            title="No uploads yet"
-            message="This channel has not published any videos that are visible to Viewly."
-          />
-        ) : (
-          <>
-            <h2
-              id="channel-uploads-heading"
-              className="mb-4 text-xl font-semibold tracking-tight text-foreground"
-            >
-              Recent uploads
-            </h2>
-            <ul
-              role="list"
-              aria-labelledby="channel-uploads-heading"
-              className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-            >
-              {uploads.map((video) => (
-                <li key={video.id} className="min-w-0">
-                  <VideoCard video={video} className="h-full" />
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
+      <ChannelTabs videos={uploadsSection} about={aboutSection} />
     </article>
   );
 }

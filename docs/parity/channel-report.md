@@ -83,3 +83,8 @@ not Viewly.
 - G3: pending — the two structural gaps need a scope decision (implement, or convert to deviations
   alongside the home and results decisions).
 - G4/G5: pending.
+
+## Post-redesign delta (P4, 2026-11-17)
+
+- Header now renders a brand-gradient banner strip, a 96/160px avatar, a 2xl/4xl name, subscriber count and the off-site link.
+- A real two-tab tablist (Videos / About) with roving focus, ria-selected and panels landed. The observed surface has six sections; Viewly only has data for two, so the six-tab contract stays a documented gap.

@@ -47,10 +47,7 @@ const SNAPSHOT: VideoSnapshot = {
   durationSeconds: 213,
 };
 
-const NORMAL_GRID_CLASSES = [
-  "lg:grid-cols-[minmax(0,1fr)_20rem]",
-  "xl:grid-cols-[minmax(0,1fr)_22.5rem]",
-];
+const NORMAL_GRID_CLASSES = ["lg:grid-cols-[minmax(0,1fr)_21.5rem]"];
 
 interface FakePlayer extends YoutubeIframePlayer {
   readonly options: YoutubePlayerOptions;

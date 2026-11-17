@@ -39,9 +39,7 @@ export function WatchStageLayout({ children, rail }: WatchStageLayoutProps) {
       data-theater={isTheater ? "true" : "false"}
       className={cn(
         "grid min-w-0 grid-cols-1 items-start gap-x-6 gap-y-5",
-        isTheater
-          ? "lg:grid-cols-1"
-          : "lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22.5rem]",
+        isTheater ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(0,1fr)_21.5rem]",
       )}
     >
       {children}
