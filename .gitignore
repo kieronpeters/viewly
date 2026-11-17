@@ -58,3 +58,6 @@ next-env.d.ts
 
 # Reverse-engineering evidence (local only, disposable)
 docs/re-evidence/
+
+# local dev server logs
+.dev-server.log*
