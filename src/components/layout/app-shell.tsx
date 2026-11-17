@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { ViewlyLogo } from "@/components/brand/viewly-logo";
+import { AccountMenu } from "@/components/layout/account-menu";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { NavLinks } from "@/components/layout/nav-links";
 import { PlayerProvider } from "@/components/player/player-provider";
@@ -65,12 +66,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Suspense>
             </div>
 
-            <Link
-              href="/library"
-              className="shrink-0 rounded-full px-3 py-2 text-sm font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            <Suspense
+              fallback={<div aria-hidden="true" className="h-9 w-24 rounded-full bg-muted/40" />}
             >
-              You
-            </Link>
+              <AccountMenu />
+            </Suspense>
           </header>
 
           <div className="flex min-h-0 flex-1">

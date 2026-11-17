@@ -23,6 +23,11 @@ import { describe, expect, it, vi } from "vitest";
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
 
+// The shell's account slot is an async Server Component; stub it in this tree.
+vi.mock("@/components/layout/account-menu", () => ({
+  AccountMenu: () => <span>Sign in</span>,
+}));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
   useRouter: () => ({ push: pushMock }),
