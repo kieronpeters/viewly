@@ -136,9 +136,20 @@ three-width visual check, and a parity report delta.
 4. `npm test`, `typecheck`, `format:check`, `lint` green; production build succeeds.
 5. Parity dashboard facts available from the four reports.
 
+## Status
+
+- P0-P5 landed and committed; P6 verified with a production build rendered at 1280 and 390
+  (screenshots in `docs/re-evidence/parity-check/`).
+- Open by design: chip tablists (home, search) and the six-section channel model are documented
+  deviations, not missed work.
+- `npm test`, `typecheck`, `format:check` and `next build` are green.
+
 ## Change log
 
 - 2026-11-17 — plan created; watch flow closed at spec 0.1.0.
 - 2026-11-17 — P1 (tokens, masthead, rail) and P2 (grid, card, menu, age, shortcut) landed; 121 test files green, 3 home + 2 search gaps closed.
 - 2026-11-17 — P3 search wide rows, chip shortcuts and row skeletons landed; suite green.
-- 2026-11-17 — P4 channel banner/avatar/two-tab tablist and P5 watch 344px rail + 20/28 title landed; production build passes.
+- 2026-11-17 — P4 channel banner/avatar/two-tab tablist and P5 watch 344px rail + 20/28 title
+  landed; production build passes.
+- 2026-11-17 — P6 verified the built app at 1280 and 390; core redesign complete with the
+  documented deviations.

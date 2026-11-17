@@ -115,6 +115,14 @@ LCP 2.4–5.4 s, CLS 0.0003–0.0128; those are context, not Viewly's budget.
 - G3: pending — the four gaps must be either implemented or recorded as deviations with reasons.
 - G4/G5: pending implementation and review.
 
+## P6 verification (2026-11-17)
+
+Production build (`next build` exit 0) served locally and rendered at 1280x800 and 390x844:
+masthead 56px with centred search, 72px rail, chip row, three-column grid at 1280 collapsing to
+one column at 390, 16:9 cards with 12px radius, two-line titles, avatar/channel/age rows and
+overflow menus. Console clean. Screenshots are local: `docs/re-evidence/parity-check/1280` and
+`.../390`.
+
 ## Post-redesign delta (P1-P2, 2026-11-17)
 
 - Shell: 56px masthead with the search field, 72px icon rail (hidden below md), bottom bar on narrow screens.
