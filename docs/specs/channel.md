@@ -162,3 +162,10 @@ report will be the honest place to measure the gap.
 ## Change log
 
 - 0.1.0 (2026-11-17) — initial draft from the signed-out capture at 390/768/1280.
+
+## Deliberate deviations (2026-11-18)
+
+- Only two channel sections exist (Videos, About). Shorts, live, playlists and
+  posts have no data of their own in Viewly, so no empty tabs are fabricated.
+- Uploads are listed newest first and cannot be re-sorted; there are no sort
+  chips.

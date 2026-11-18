@@ -216,3 +216,9 @@ opens.
 ## Change log
 
 - 0.1.0 (2026-11-17) — initial draft from the signed-out capture at 390/768/1280.
+
+## Deliberate deviations (2026-11-18)
+
+- The chip row navigates to `/category/<slug>` rather than filtering the home
+  feed in place. The observed surface keeps an "All" chip selected; Viewly shows
+  selection on the category page instead. Recorded in the parity report.

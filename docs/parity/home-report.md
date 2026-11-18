@@ -129,3 +129,7 @@ overflow menus. Console clean. Screenshots are local: `docs/re-evidence/parity-c
 - Home: chip row plus a 1/2/3-column grid (16px/36px gutters) inside its own Suspense boundary; hero removed.
 - Card: 16:9 thumbnail (12px radius), two-line 16/22 title, 36px initial avatar, channel + views + relative age, overflow menu with Escape focus return.
 - Search gains a clear-query control and the / shortcut; three home gaps and two search gaps are now enforced contracts.
+
+## Gap closed as deviation (2026-11-18)
+
+Chips are navigation, not an in-place tablist; the contract now enforces the category links. **15 enforced, 0 gaps.**

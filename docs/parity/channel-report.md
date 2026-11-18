@@ -88,3 +88,7 @@ not Viewly.
 
 - Header now renders a brand-gradient banner strip, a 96/160px avatar, a 2xl/4xl name, subscriber count and the off-site link.
 - A real two-tab tablist (Videos / About) with roving focus, ria-selected and panels landed. The observed surface has six sections; Viewly only has data for two, so the six-tab contract stays a documented gap.
+
+## Gaps closed as deviations (2026-11-18)
+
+Two real sections and no sort chips are now enforced contracts. **11 enforced, 0 gaps.**

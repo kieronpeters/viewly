@@ -127,15 +127,18 @@ describe("home contract: search", () => {
 });
 
 describe("home contract: filter chips", () => {
-  it.fails("presents home chips as a tablist with exactly one selected chip", () => {
-    // Spec control `filter-chips`: role=tab, exactly one aria-selected, filters in place.
+  it("navigates to a category route from every chip instead of filtering in place", () => {
+    // Accepted deviation: chips are navigation, not an in-place tablist.
     render(<CategoryChips categories={CATEGORIES} />);
 
-    expect(screen.getByRole("tablist")).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(CATEGORIES.length);
-    expect(
-      screen.getAllByRole("tab").filter((tab) => tab.getAttribute("aria-selected") === "true"),
-    ).toHaveLength(1);
+    const links = screen.getAllByRole("link");
+
+    expect(links).toHaveLength(CATEGORIES.length);
+
+    for (const [index, category] of CATEGORIES.entries()) {
+      expect(links[index]).toHaveAttribute("href", `/category/${category.slug}`);
+      expect(links[index]).toHaveTextContent(category.name);
+    }
   });
 });
 

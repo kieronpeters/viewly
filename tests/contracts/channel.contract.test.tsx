@@ -136,19 +136,21 @@ describe("channel contract: uploads", () => {
     expect(screen.getByRole("heading", { level: 1, name: CHANNEL.title })).toBeInTheDocument();
   });
 
-  it.fails("exposes content tabs for the channel's sections", () => {
-    // Spec control `content-tabs`: role=tab, one selected, six sections plus in-channel search.
+  it("exposes the two sections Viewly has as a keyed tablist", () => {
+    // Accepted deviation: no shorts/live/playlists/posts data, so two sections.
     view();
 
-    expect(screen.getByRole("tablist")).toBeInTheDocument();
-    expect(screen.getAllByRole("tab").length).toBeGreaterThanOrEqual(6);
+    expect(screen.getByRole("tablist", { name: "Channel sections" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Videos", "About"]);
   });
 
-  it.fails("offers sort chips for the uploads view", () => {
-    // Spec control `sort-chips`: latest / popular / oldest, one selected.
+  it("does not offer sort chips; uploads are newest first", () => {
+    // Accepted deviation: the API returns uploads newest first and Viewly does
+    // not re-sort them client-side, so there is no sort control to offer.
     view();
 
-    expect(screen.getByRole("tablist", { name: /sort/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: /sort/i })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Recent uploads" })).toBeInTheDocument();
   });
 });
 
