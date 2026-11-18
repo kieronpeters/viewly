@@ -1,0 +1,21 @@
+{
+  "flow": "system",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-18",
+  "evidence": "shell suites and capture timings.json",
+  "landmarks": { "main": 1, "banner": 1, "skipLinkTarget": "#main-content" },
+  "skipLink": { "firstFocusable": true, "href": "#main-content" },
+  "reducedMotion": { "globalRule": true, "targets": ["*", "*::before", "*::after"] },
+  "budgets": {
+    "ttfbLocalMs": 300,
+    "fcpMs": 1500,
+    "lcpMs": 2500,
+    "cls": 0.1
+  },
+  "deviations": [
+    "No committed axe run; landmark/focus/name contracts cover high-risk regressions",
+    "Performance budgets are measured from captures, not enforced in CI yet"
+  ]
+}
