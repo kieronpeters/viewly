@@ -1,0 +1,38 @@
+{
+  "flow": "player-chrome",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-18",
+  "evidence": "src/components/video/watch-shortcuts* and theater/listen suites",
+  "shortcuts": [
+    { "keys": ["Space", "k", "K"], "action": "play-pause" },
+    { "keys": ["j", "J"], "action": "seek", "deltaSeconds": -10 },
+    { "keys": ["l", "L"], "action": "seek", "deltaSeconds": 10 },
+    { "keys": ["ArrowLeft"], "action": "seek", "deltaSeconds": -5 },
+    { "keys": ["ArrowRight"], "action": "seek", "deltaSeconds": 5 },
+    { "keys": ["ArrowUp"], "action": "volume", "delta": 5 },
+    { "keys": ["ArrowDown"], "action": "volume", "delta": -5 },
+    { "keys": ["m", "M"], "action": "mute" },
+    { "keys": ["f", "F"], "action": "fullscreen" },
+    { "keys": ["t", "T"], "action": "theater" },
+    { "keys": ["?"], "action": "toggle-help" },
+    { "keys": ["Escape"], "action": "close-help" }
+  ],
+  "guards": {
+    "editableTargets": "ignored",
+    "modifierKeys": "ignored",
+    "repeatedToggles": "ignored",
+    "playerNotReady": "no-op"
+  },
+  "modes": [
+    { "id": "theater", "persisted": true, "aria": "aria-pressed" },
+    { "id": "listen", "persisted": true, "aria": "role=switch" },
+    { "id": "mini-player", "persisted": true }
+  ],
+  "deviations": [
+    "Subset of YouTube shortcuts; no chapters-in-player or ambient mode",
+    "Listen mode is a Viewly affordance",
+    "Preferences are device-local"
+  ]
+}
