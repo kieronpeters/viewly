@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+﻿import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,7 +41,7 @@ vi.mock("./watch-suggestions", () => ({
     watchSuggestionsPropsMock(props);
     return <section aria-label="More from this channel" data-slot="watch-suggestions" />;
   },
-  WatchSuggestionsSkeleton: () => <p>Loading suggestions…</p>,
+  WatchSuggestionsSkeleton: () => <p>Loading suggestionsâ€¦</p>,
 }));
 // The saved state is a local database read; stub it so no file is opened.
 vi.mock("@/features/library", () => ({
@@ -447,7 +447,7 @@ describe("WatchPageContent", () => {
     const button = screen.getByRole("button", { name: "Remove from favourites" });
 
     expect(button).toHaveAttribute("aria-pressed", "true");
-    expect(isVideoFavouriteMock).toHaveBeenCalledWith(VIDEO_ID);
+    expect(isVideoFavouriteMock).toHaveBeenCalledWith(VIDEO_ID, "local");
   });
 
   it("shows an add control for a video that is not saved", async () => {
@@ -470,7 +470,7 @@ describe("WatchPageContent", () => {
     const button = screen.getByRole("button", { name: "Remove from Watch Later" });
 
     expect(button).toHaveAttribute("aria-pressed", "true");
-    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID);
+    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID, "local");
   });
 
   it("shows both save controls for a video that is not saved", async () => {
@@ -483,7 +483,7 @@ describe("WatchPageContent", () => {
       "aria-pressed",
       "false",
     );
-    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID);
+    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID, "local");
   });
 
   it("offers the add-to-playlist picker next to the save controls", async () => {
@@ -504,8 +504,8 @@ describe("WatchPageContent", () => {
 
     render(await WatchPageContent({ params: paramsFor(VIDEO_ID) }));
 
-    expect(isVideoFavouriteMock).toHaveBeenCalledWith(VIDEO_ID);
-    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID);
+    expect(isVideoFavouriteMock).toHaveBeenCalledWith(VIDEO_ID, "local");
+    expect(isInWatchLaterMock).toHaveBeenCalledWith(VIDEO_ID, "local");
   });
 
   it("calls notFound when YouTube returns no video", async () => {

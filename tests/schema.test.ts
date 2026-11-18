@@ -166,13 +166,13 @@ describe("library schema migration", () => {
   it("creates the indexes the library lists order by", () => {
     expect(schemaObjects("index")).toEqual(
       expect.arrayContaining([
-        "favourites_saved_at_idx",
+        "favourites_owner_saved_at_idx",
         "history_owner_last_viewed_at_idx",
         "playlist_items_playlist_id_position_idx",
         "video_notes_video_id_created_at_idx",
         "video_notes_video_id_start_seconds_idx",
         "video_progress_updated_at_idx",
-        "watch_later_saved_at_idx",
+        "watch_later_owner_saved_at_idx",
       ]),
     );
   });
@@ -181,7 +181,7 @@ describe("library schema migration", () => {
     insertFavourite("video-a");
 
     expect(() => insertFavourite("video-a")).toThrow(
-      /UNIQUE constraint failed: favourites\.video_id/,
+      /UNIQUE constraint failed: favourites\.owner, favourites\.video_id/,
     );
     expect(
       (sqlite.prepare("select count(*) as count from favourites").get() as { count: number }).count,
@@ -252,7 +252,7 @@ describe("library schema migration", () => {
           count: number;
         }
       ).count,
-    ).toBe(7);
+    ).toBe(8);
 
     // Existing data survived, so the schema was not recreated.
     expect(
@@ -260,3 +260,6 @@ describe("library schema migration", () => {
     ).toBe(1);
   });
 });
+
+
+

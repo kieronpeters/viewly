@@ -65,7 +65,13 @@ export async function toggleFavourite(input: FavouriteSnapshot): Promise<Favouri
   ]);
 
   const repository = createLibraryRepository(getDb());
-  const result = toggleFavouriteInRepository(repository, snapshot, new Date());
+  const { currentOwner } = await import("@/lib/auth/current-owner");
+  const result = toggleFavouriteInRepository(
+    repository,
+    snapshot,
+    new Date(),
+    await currentOwner(),
+  );
 
   revalidatePath(LIBRARY_PATH);
   revalidatePath(`/watch/${snapshot.videoId}`);
@@ -89,7 +95,13 @@ export async function toggleWatchLater(input: WatchLaterSnapshot): Promise<Watch
   ]);
 
   const repository = createLibraryRepository(getDb());
-  const result = toggleWatchLaterInRepository(repository, snapshot, new Date());
+  const { currentOwner } = await import("@/lib/auth/current-owner");
+  const result = toggleWatchLaterInRepository(
+    repository,
+    snapshot,
+    new Date(),
+    await currentOwner(),
+  );
 
   revalidatePath(LIBRARY_PATH);
   revalidatePath(`/watch/${snapshot.videoId}`);

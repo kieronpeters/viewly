@@ -224,6 +224,6 @@ describe("entity decode backfill migration", () => {
           count: number;
         }
       ).count,
-    ).toBe(7);
+    ).toBe(8);
   });
 });

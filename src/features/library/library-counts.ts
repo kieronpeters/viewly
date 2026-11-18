@@ -35,13 +35,13 @@ export interface LibraryCounts {
  * Deliberately independent of the active tab: the tab bar always shows all four
  * totals, so resolving the active tab's list first would not save a query.
  */
-export function countLibraryEntries(): LibraryCounts {
+export function countLibraryEntries(owner?: string): LibraryCounts {
   const repository = createLibraryRepository(getDb());
 
   return {
-    favourites: repository.favourites.count(),
-    watchLater: repository.watchLater.count(),
-    history: repository.history.count(),
+    favourites: repository.favourites.count(owner),
+    watchLater: repository.watchLater.count(owner),
+    history: repository.history.count(owner),
     playlists: repository.playlists.count(),
   };
 }

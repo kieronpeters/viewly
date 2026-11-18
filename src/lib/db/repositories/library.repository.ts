@@ -112,6 +112,8 @@ export type VideoSnapshot = Pick<
 export interface SaveVideoInput extends VideoSnapshot {
   /** When the user saved the video, UTC milliseconds. */
   savedAt: Date;
+  /** `local` when signed out, otherwise the account id. */
+  owner?: string;
 }
 
 /** Input for {@link LibraryRepository.history.recordView}. */
@@ -166,26 +168,26 @@ export interface LibraryRepository {
   readonly favourites: {
     /** Saves a video; a duplicate is a no-op that returns the stored row. */
     add(input: SaveVideoInput): FavouriteRow;
-    /** Removes a video. Returns `true` when a row was deleted. */
-    remove(videoId: string): boolean;
-    /** Every favourite, most recently saved first. */
-    list(): FavouriteRow[];
+    /** Removes a video (for one owner). Returns `true` when a row was deleted. */
+    remove(videoId: string, owner?: string): boolean;
+    /** Every favourite, most recently saved first; `owner` scopes it. */
+    list(owner?: string): FavouriteRow[];
     /** Number of saved favourites, from a `COUNT(*)` that materialises no rows. */
-    count(): number;
-    /** Whether the video is currently a favourite. */
-    isFavourite(videoId: string): boolean;
+    count(owner?: string): number;
+    /** Whether the video is currently a favourite for that owner. */
+    isFavourite(videoId: string, owner?: string): boolean;
   };
   readonly watchLater: {
     /** Queues a video; a duplicate is a no-op that returns the stored row. */
     add(input: SaveVideoInput): WatchLaterRow;
-    /** Removes a queued video. Returns `true` when a row was deleted. */
-    remove(videoId: string): boolean;
-    /** The whole queue, most recently added first. */
-    list(): WatchLaterRow[];
+    /** Removes a queued video (for one owner). Returns `true` when a row was deleted. */
+    remove(videoId: string, owner?: string): boolean;
+    /** The whole queue, most recently added first; `owner` scopes it. */
+    list(owner?: string): WatchLaterRow[];
     /** Number of queued videos, from a `COUNT(*)` that materialises no rows. */
-    count(): number;
-    /** Whether the video is currently in the watch-later queue. */
-    isInWatchLater(videoId: string): boolean;
+    count(owner?: string): number;
+    /** Whether the video is currently in the watch-later queue for that owner. */
+    isInWatchLater(videoId: string, owner?: string): boolean;
   };
   readonly history: {
     /**
@@ -260,10 +262,11 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
   return {
     favourites: {
       add(input) {
+        const owner = input.owner ?? "local";
         const inserted = db
           .insert(favourites)
-          .values({ ...input })
-          .onConflictDoNothing({ target: favourites.videoId })
+          .values({ ...input, owner })
+          .onConflictDoNothing({ target: [favourites.owner, favourites.videoId] })
           .returning()
           .get();
 
@@ -271,13 +274,14 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
           return inserted;
         }
 
-        // The conflict was a duplicate save: return the row that won. The video
-        // id is the primary key, so the row must exist unless it was deleted
-        // between the two statements (impossible with the synchronous driver).
+        // The conflict was a duplicate save: return the row that won. The
+        // (owner, video id) pair is the key, so the row must exist unless it was
+        // deleted between the two statements (impossible with the synchronous
+        // driver).
         const existing = db
           .select()
           .from(favourites)
-          .where(eq(favourites.videoId, input.videoId))
+          .where(and(eq(favourites.videoId, input.videoId), eq(favourites.owner, owner)))
           .get();
 
         if (existing === undefined) {
@@ -286,20 +290,35 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
 
         return existing;
       },
-      remove(videoId) {
-        return db.delete(favourites).where(eq(favourites.videoId, videoId)).run().changes > 0;
+      remove(videoId, owner) {
+        const where =
+          owner === undefined
+            ? eq(favourites.videoId, videoId)
+            : and(eq(favourites.videoId, videoId), eq(favourites.owner, owner));
+
+        return db.delete(favourites).where(where).run().changes > 0;
       },
-      list() {
-        return db.select().from(favourites).orderBy(desc(favourites.savedAt)).all();
+      list(owner) {
+        const query = db.select().from(favourites);
+        const scoped = owner === undefined ? query : query.where(eq(favourites.owner, owner));
+
+        return scoped.orderBy(desc(favourites.savedAt)).all();
       },
-      count() {
-        return db.select({ value: count() }).from(favourites).get()?.value ?? 0;
+      count(owner) {
+        const query = db.select({ value: count() }).from(favourites);
+        const scoped = owner === undefined ? query : query.where(eq(favourites.owner, owner));
+
+        return scoped.get()?.value ?? 0;
       },
-      isFavourite(videoId) {
+      isFavourite(videoId, owner) {
+        const where =
+          owner === undefined
+            ? eq(favourites.videoId, videoId)
+            : and(eq(favourites.videoId, videoId), eq(favourites.owner, owner));
         const row = db
           .select({ videoId: favourites.videoId })
           .from(favourites)
-          .where(eq(favourites.videoId, videoId))
+          .where(where)
           .limit(1)
           .get();
 
@@ -309,10 +328,11 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
 
     watchLater: {
       add(input) {
+        const owner = input.owner ?? "local";
         const inserted = db
           .insert(watchLater)
-          .values({ ...input })
-          .onConflictDoNothing({ target: watchLater.videoId })
+          .values({ ...input, owner })
+          .onConflictDoNothing({ target: [watchLater.owner, watchLater.videoId] })
           .returning()
           .get();
 
@@ -323,7 +343,7 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
         const existing = db
           .select()
           .from(watchLater)
-          .where(eq(watchLater.videoId, input.videoId))
+          .where(and(eq(watchLater.videoId, input.videoId), eq(watchLater.owner, owner)))
           .get();
 
         if (existing === undefined) {
@@ -334,20 +354,35 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
 
         return existing;
       },
-      remove(videoId) {
-        return db.delete(watchLater).where(eq(watchLater.videoId, videoId)).run().changes > 0;
+      remove(videoId, owner) {
+        const where =
+          owner === undefined
+            ? eq(watchLater.videoId, videoId)
+            : and(eq(watchLater.videoId, videoId), eq(watchLater.owner, owner));
+
+        return db.delete(watchLater).where(where).run().changes > 0;
       },
-      list() {
-        return db.select().from(watchLater).orderBy(desc(watchLater.savedAt)).all();
+      list(owner) {
+        const query = db.select().from(watchLater);
+        const scoped = owner === undefined ? query : query.where(eq(watchLater.owner, owner));
+
+        return scoped.orderBy(desc(watchLater.savedAt)).all();
       },
-      count() {
-        return db.select({ value: count() }).from(watchLater).get()?.value ?? 0;
+      count(owner) {
+        const query = db.select({ value: count() }).from(watchLater);
+        const scoped = owner === undefined ? query : query.where(eq(watchLater.owner, owner));
+
+        return scoped.get()?.value ?? 0;
       },
-      isInWatchLater(videoId) {
+      isInWatchLater(videoId, owner) {
+        const where =
+          owner === undefined
+            ? eq(watchLater.videoId, videoId)
+            : and(eq(watchLater.videoId, videoId), eq(watchLater.owner, owner));
         const row = db
           .select({ videoId: watchLater.videoId })
           .from(watchLater)
-          .where(eq(watchLater.videoId, videoId))
+          .where(where)
           .limit(1)
           .get();
 

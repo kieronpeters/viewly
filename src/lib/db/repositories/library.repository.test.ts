@@ -477,3 +477,22 @@ describe("playlist items", () => {
     ).toThrow(/FOREIGN KEY constraint failed/);
   });
 });
+
+describe("owner scoping", () => {
+  it("keeps favourites and watch later separate per owner", () => {
+    const savedAt = at(1_000);
+
+    repository.favourites.add({ ...snapshot("video-a"), savedAt, owner: "local" });
+    repository.favourites.add({ ...snapshot("video-a"), savedAt, owner: "google-1" });
+    repository.watchLater.add({ ...snapshot("video-b"), savedAt, owner: "google-1" });
+
+    expect(repository.favourites.list("local").map((row) => row.videoId)).toEqual(["video-a"]);
+    expect(repository.favourites.list("google-1").map((row) => row.videoId)).toEqual(["video-a"]);
+    expect(repository.watchLater.list("local")).toEqual([]);
+    expect(repository.watchLater.list("google-1").map((row) => row.videoId)).toEqual(["video-b"]);
+
+    repository.favourites.remove("video-a", "local");
+    expect(repository.favourites.list("local")).toEqual([]);
+    expect(repository.favourites.list("google-1")).toHaveLength(1);
+  });
+});

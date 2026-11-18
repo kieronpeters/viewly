@@ -87,9 +87,17 @@ export async function WatchPageContent({ params }: WatchPageContentProps) {
     return <WatchDatabaseState />;
   }
 
+  let owner = "local";
+  try {
+    const { currentOwner } = await import("@/lib/auth/current-owner");
+    owner = await currentOwner();
+  } catch {
+    owner = "local";
+  }
+
   const savedRead = readDatabase(() => ({
-    isFavourite: isVideoFavourite(video.id),
-    inWatchLater: isInWatchLater(video.id),
+    isFavourite: isVideoFavourite(video.id, owner),
+    inWatchLater: isInWatchLater(video.id, owner),
     playlists: listPlaylists(),
   }));
 

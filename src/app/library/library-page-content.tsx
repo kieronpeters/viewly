@@ -67,10 +67,10 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
   await sweepLibraryMetadata();
 
   const tab = resolveLibraryTab(params.tab);
-  const counts = countLibraryEntries();
   // Resolved once here, at the async boundary: the list component below stays
   // synchronous so it renders in the same tree as its fixtures and tests.
   const historyOwner = await currentHistoryOwner();
+  const counts = countLibraryEntries(historyOwner);
 
   // The shelf spans every tab, so it is read once here. A failed local read
   // hides it rather than replacing the whole library with an error; the tab
@@ -163,7 +163,9 @@ function LibraryList({ tab, historyOwner }: LibraryListProps) {
   }
 
   const isWatchLater = tab === "watch-later";
-  const videos = isWatchLater ? listWatchLaterVideos() : listFavouriteVideos();
+  const videos = isWatchLater
+    ? listWatchLaterVideos(historyOwner)
+    : listFavouriteVideos(historyOwner);
   // One batched read for the whole tab; videos without a row get no bar.
   const progressById = listVideoProgress(videos.map((video) => video.id));
   const heading = isWatchLater ? "Watch later" : "Favourites";

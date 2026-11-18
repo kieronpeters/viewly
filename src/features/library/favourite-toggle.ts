@@ -53,14 +53,15 @@ export function toggleFavouriteInRepository(
   repository: LibraryRepository,
   snapshot: FavouriteSnapshot,
   savedAt: Date,
+  owner = "local",
 ): FavouriteToggleResult {
-  if (repository.favourites.isFavourite(snapshot.videoId)) {
-    repository.favourites.remove(snapshot.videoId);
+  if (repository.favourites.isFavourite(snapshot.videoId, owner)) {
+    repository.favourites.remove(snapshot.videoId, owner);
 
     return { favourited: false };
   }
 
-  repository.favourites.add({ ...snapshot, savedAt });
+  repository.favourites.add({ ...snapshot, savedAt, owner });
 
   return { favourited: true };
 }

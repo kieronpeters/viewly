@@ -101,26 +101,36 @@ function displaySnapshotColumns() {
 export const favourites = sqliteTable(
   "favourites",
   {
-    /** YouTube video id, for example `dQw4w9WgXcQ`. Natural primary key. */
-    videoId: text("video_id").primaryKey(),
+    /** `local` for signed-out saves, otherwise the Google account id. */
+    owner: text("owner").notNull().default("local"),
+    /** YouTube video id, for example `dQw4w9WgXcQ`. */
+    videoId: text("video_id").notNull(),
     ...displaySnapshotColumns(),
     /** When the video was saved, UTC milliseconds. */
     savedAt: integer("saved_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("favourites_saved_at_idx").on(table.savedAt)],
+  (table) => [
+    primaryKey({ columns: [table.owner, table.videoId] }),
+    index("favourites_owner_saved_at_idx").on(table.owner, table.savedAt),
+  ],
 );
 
 /** Videos queued for later viewing ("watch later"), newest first. */
 export const watchLater = sqliteTable(
   "watch_later",
   {
-    /** YouTube video id. Natural primary key. */
-    videoId: text("video_id").primaryKey(),
+    /** `local` for signed-out saves, otherwise the Google account id. */
+    owner: text("owner").notNull().default("local"),
+    /** YouTube video id. */
+    videoId: text("video_id").notNull(),
     ...displaySnapshotColumns(),
     /** When the video was added to the queue, UTC milliseconds. */
     savedAt: integer("saved_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("watch_later_saved_at_idx").on(table.savedAt)],
+  (table) => [
+    primaryKey({ columns: [table.owner, table.videoId] }),
+    index("watch_later_owner_saved_at_idx").on(table.owner, table.savedAt),
+  ],
 );
 
 /**

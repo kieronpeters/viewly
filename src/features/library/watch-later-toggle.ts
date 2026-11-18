@@ -49,14 +49,15 @@ export function toggleWatchLaterInRepository(
   repository: LibraryRepository,
   snapshot: WatchLaterSnapshot,
   savedAt: Date,
+  owner = "local",
 ): WatchLaterToggleResult {
-  if (repository.watchLater.isInWatchLater(snapshot.videoId)) {
-    repository.watchLater.remove(snapshot.videoId);
+  if (repository.watchLater.isInWatchLater(snapshot.videoId, owner)) {
+    repository.watchLater.remove(snapshot.videoId, owner);
 
     return { inWatchLater: false };
   }
 
-  repository.watchLater.add({ ...snapshot, savedAt });
+  repository.watchLater.add({ ...snapshot, savedAt, owner });
 
   return { inWatchLater: true };
 }

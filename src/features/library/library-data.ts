@@ -76,31 +76,31 @@ export function watchLaterToVideoSummaries(rows: readonly WatchLaterRow[]): Vide
 }
 
 /** Every saved video, most recently saved first. */
-export function listFavouriteVideos(): VideoSummary[] {
+export function listFavouriteVideos(owner?: string): VideoSummary[] {
   const repository = createLibraryRepository(getDb());
 
-  return favouritesToVideoSummaries(repository.favourites.list());
+  return favouritesToVideoSummaries(repository.favourites.list(owner));
 }
 
 /** Every queued video, most recently added first. */
-export function listWatchLaterVideos(): VideoSummary[] {
+export function listWatchLaterVideos(owner?: string): VideoSummary[] {
   const repository = createLibraryRepository(getDb());
 
-  return watchLaterToVideoSummaries(repository.watchLater.list());
+  return watchLaterToVideoSummaries(repository.watchLater.list(owner));
 }
 
 /** Whether the video is currently a favourite; drives the control's initial state. */
-export function isVideoFavourite(videoId: string): boolean {
+export function isVideoFavourite(videoId: string, owner?: string): boolean {
   const repository = createLibraryRepository(getDb());
 
-  return repository.favourites.isFavourite(videoId);
+  return repository.favourites.isFavourite(videoId, owner);
 }
 
 /** Whether the video is queued in watch later; drives the control's initial state. */
-export function isInWatchLater(videoId: string): boolean {
+export function isInWatchLater(videoId: string, owner?: string): boolean {
   const repository = createLibraryRepository(getDb());
 
-  return repository.watchLater.isInWatchLater(videoId);
+  return repository.watchLater.isInWatchLater(videoId, owner);
 }
 
 /**

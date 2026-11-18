@@ -56,15 +56,9 @@ async function libraryRepository() {
 
 /** `local` when signed out, otherwise the signed-in account id. */
 async function currentOwner(): Promise<string> {
-  try {
-    const { getSessionAccount } = await import("@/lib/auth/google");
-    const account = await getSessionAccount();
+  const { currentOwner: resolveOwner } = await import("@/lib/auth/current-owner");
 
-    return account?.id ?? "local";
-  } catch {
-    // No request scope (tests, scripts) or sign-in unavailable.
-    return "local";
-  }
+  return resolveOwner();
 }
 
 /**
