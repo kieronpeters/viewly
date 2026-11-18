@@ -1,5 +1,6 @@
 "use server";
 
+import { getSessionAccount } from "@/lib/auth/google";
 import { getDatabaseConnection } from "@/lib/db/client";
 import { parseTakeoutWatchHistory, thumbnailFor } from "@/lib/history-import/parse-takeout";
 
@@ -37,11 +38,13 @@ export async function importWatchHistory(
   }
 
   const { sqlite } = getDatabaseConnection();
+  const account = await getSessionAccount().catch(() => null);
+  const owner = account?.id ?? "local";
   const statement = sqlite.prepare(
     `INSERT INTO history
-       (video_id, title, channel_title, thumbnail_url, duration_seconds, last_viewed_at, view_count)
-     VALUES (?, ?, ?, ?, NULL, ?, 1)
-     ON CONFLICT(video_id) DO UPDATE SET
+       (owner, video_id, title, channel_title, thumbnail_url, duration_seconds, last_viewed_at, view_count)
+     VALUES (?, ?, ?, ?, ?, NULL, ?, 1)
+     ON CONFLICT(owner, video_id) DO UPDATE SET
        title = excluded.title,
        channel_title = excluded.channel_title,
        last_viewed_at = excluded.last_viewed_at,
@@ -52,6 +55,7 @@ export async function importWatchHistory(
   const run = sqlite.transaction(() => {
     for (const entry of entries) {
       statement.run(
+        owner,
         entry.videoId,
         entry.title,
         entry.channelTitle,
