@@ -1,0 +1,30 @@
+{
+  "flow": "library",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-18",
+  "evidence": "src/app/library/* and continue-watching suites",
+  "route": { "path": "/library", "tabParam": "tab", "defaultTab": "favourites" },
+  "tabs": [
+    { "id": "favourites", "label": "Favourites", "href": "/library" },
+    { "id": "watch-later", "label": "Watch later", "href": "/library?tab=watch-later" },
+    { "id": "history", "label": "History", "href": "/library?tab=history" },
+    { "id": "playlists", "label": "Playlists", "href": "/library?tab=playlists" }
+  ],
+  "tabModel": {
+    "role": "navigation links",
+    "activeSignal": "aria-current=page",
+    "unknownTabFallsBackTo": "favourites"
+  },
+  "states": [
+    { "id": "ready", "shows": "header, tabs with counts, active list" },
+    { "id": "empty", "shows": "authored empty state with browse link" },
+    { "id": "continue", "shows": "shelf above the tabs" },
+    { "id": "no-continue", "shows": "nothing" }
+  ],
+  "deviations": [
+    "Tabs are URL links, not an ARIA tablist",
+    "Library is device-local and owner-scoped, not a mirror of YouTube's library"
+  ]
+}
