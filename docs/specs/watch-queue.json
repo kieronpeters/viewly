@@ -1,0 +1,29 @@
+{
+  "flow": "watch-queue",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-18",
+  "evidence": "src/components/video/watch-queue.tsx, watch-queue-store.ts and their suites",
+  "storage": { "kind": "localStorage", "key": "watch queue (versioned JSON)" },
+  "states": [
+    { "id": "empty", "shows": "Queue heading, 'Your queue is empty', disabled shuffle/clear" },
+    { "id": "ready", "shows": "Queued videos list in order plus controls" },
+    { "id": "playing", "shows": "first item starts when the video ends" },
+    { "id": "sleep", "shows": "remaining time and cancel" }
+  ],
+  "controls": [
+    { "id": "add", "role": "button", "idempotent": true },
+    { "id": "remove", "role": "button" },
+    { "id": "reorder", "role": "button", "keyboard": true },
+    { "id": "shuffle", "role": "button", "disabledWhenEmpty": true },
+    { "id": "clear", "role": "button", "disabledWhenEmpty": true, "destructive": true },
+    { "id": "sleep-timer", "role": "control" },
+    { "id": "autoplay-next", "role": "switch" }
+  ],
+  "list": { "role": "list", "name": "Queued videos" },
+  "deviations": [
+    "Device-local queue, never written back to YouTube",
+    "Button-based reordering instead of drag-and-drop"
+  ]
+}
