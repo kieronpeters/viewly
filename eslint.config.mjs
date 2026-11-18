@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local capture evidence is disposable, and scripts/rea is vendored tooling.
+    "docs/re-evidence/**",
+    "scripts/rea/**",
   ]),
 ]);
 
