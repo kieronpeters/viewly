@@ -34,7 +34,11 @@ export function SearchChips({ query, filters }: SearchChipsProps) {
   ];
 
   return (
-    <nav aria-label="Quick filters" className="-mx-1 flex min-w-0 gap-2 overflow-x-auto px-1 pb-1">
+    <div
+      role="tablist"
+      aria-label="Quick filters"
+      className="-mx-1 flex min-w-0 gap-2 overflow-x-auto px-1 pb-1"
+    >
       {chips.map((chip) => {
         const isActive = sameFilters(chip.filters, filters);
 
@@ -42,13 +46,14 @@ export function SearchChips({ query, filters }: SearchChipsProps) {
           <Link
             key={chip.label}
             href={buildSearchHref(query, null, chip.filters)}
-            aria-current={isActive ? "page" : undefined}
-            className="inline-flex h-8 shrink-0 items-center rounded-lg bg-muted px-3 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-[current=page]:bg-foreground aria-[current=page]:text-background"
+            role="tab"
+            aria-selected={isActive}
+            className="inline-flex h-8 shrink-0 items-center rounded-lg bg-muted px-3 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-[selected=true]:bg-foreground aria-[selected=true]:text-background"
           >
             {chip.label}
           </Link>
         );
       })}
-    </nav>
+    </div>
   );
 }

@@ -98,3 +98,9 @@ like-for-like comparison.
 - Every result card carries the overflow menu, so the row-menu gap is closed.
 - Results now render as wide rows (500px thumbnail, 18/26 two-line title, metadata, channel avatar); chip shortcuts sit above them as URL links.
 - The row snippet description is omitted because Viewly does not normalize it from search.list; chip filters stay links, so the tablist gap remains open.
+
+## Gap closed (2026-11-18)
+
+Filter chips now render as a `role="tablist"` with `role="tab"` and
+`aria-selected`, and the formerly expected-fail contract is enforced.
+**12 enforced, 0 gaps** for this flow.

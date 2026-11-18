@@ -161,13 +161,20 @@ describe("search contract: results", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
-  it.fails("presents filter chips as a tablist on the results surface", async () => {
-    // Spec control `filter-chips`: role=tab, one selected, refilters in place.
+  it("presents filter chips as a tablist on the results surface", async () => {
+    // Spec control `filter-chips`: role=tab with exactly one selected chip.
     searchVideosMock.mockResolvedValueOnce(pageOf());
 
     render(await SearchResults({ searchParams: Promise.resolve({ q: "coastlines" }) }));
 
-    expect(screen.getByRole("tablist")).toBeInTheDocument();
+    const tablist = screen.getByRole("tablist");
+
+    expect(tablist).toBeInTheDocument();
+
+    const tabs = screen.getAllByRole("tab");
+
+    expect(tabs).toHaveLength(6);
+    expect(tabs.filter((tab) => tab.getAttribute("aria-selected") === "true")).toHaveLength(1);
   });
 });
 
