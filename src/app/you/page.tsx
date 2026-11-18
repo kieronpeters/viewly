@@ -34,6 +34,45 @@ export default function YouPage({ searchParams }: { searchParams: Promise<{ auth
   );
 }
 
+type YouView =
+  | { status: "error" }
+  | { status: "no-channel" }
+  | {
+      status: "ok";
+      channel: NonNullable<Awaited<ReturnType<typeof getMyChannel>>>;
+      videos: Awaited<ReturnType<typeof listMyUploads>>;
+      liked: Awaited<ReturnType<typeof listPlaylistVideos>> | null;
+      watchLater: Awaited<ReturnType<typeof listPlaylistVideos>> | null;
+      subscriptions: Awaited<ReturnType<typeof listMySubscriptions>> | null;
+    };
+
+/**
+ * Loads everything the signed-in view renders, without constructing JSX, so a
+ * failure is a status rather than an error thrown out of a render.
+ */
+async function loadYouView(account: NonNullable<ReturnType<typeof getAccount>>): Promise<YouView> {
+  try {
+    const channel = await getMyChannel(account);
+
+    if (!channel) {
+      return { status: "no-channel" };
+    }
+
+    const videos = channel.uploadsPlaylistId
+      ? await listMyUploads(account, channel.uploadsPlaylistId)
+      : [];
+    const [liked, watchLater, subscriptions] = await Promise.all([
+      listPlaylistVideos(account, `LL${channel.id}`, 12).catch(() => null),
+      listPlaylistVideos(account, "WL", 12).catch(() => null),
+      listMySubscriptions(account, 24).catch(() => null),
+    ]);
+
+    return { status: "ok", channel, videos, liked, watchLater, subscriptions };
+  } catch {
+    return { status: "error" };
+  }
+}
+
 async function YouContent({ searchParams }: { searchParams: Promise<{ auth?: string }> }) {
   const { auth } = await searchParams;
   const config = readGoogleConfig();
@@ -91,127 +130,9 @@ async function YouContent({ searchParams }: { searchParams: Promise<{ auth?: str
     return <ErrorState title="Account unavailable" message="Sign in again to continue." />;
   }
 
-  try {
-    const channel = await getMyChannel(account);
+  const view = await loadYouView(account);
 
-    if (!channel) {
-      return (
-        <EmptyState
-          title="No channel found"
-          message="This Google account does not have a YouTube channel."
-        />
-      );
-    }
-
-    const videos = channel.uploadsPlaylistId
-      ? await listMyUploads(account, channel.uploadsPlaylistId)
-      : [];
-    const [liked, watchLater, subscriptions] = await Promise.all([
-      listPlaylistVideos(account, `LL${channel.id}`, 12).catch(() => null),
-      listPlaylistVideos(account, "WL", 12).catch(() => null),
-      listMySubscriptions(account, 24).catch(() => null),
-    ]);
-    const subscribers = formatSubscriberCount(channel.subscriberCount);
-
-    return (
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-2 border-b border-border pb-4">
-          <h1 className="text-2xl font-bold tracking-tight sm:text-4xl">{channel.title}</h1>
-          {subscribers === null ? null : (
-            <p className="text-sm text-muted-foreground">{subscribers}</p>
-          )}
-          <a
-            href={`https://www.youtube.com/channel/${encodeURIComponent(channel.id)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-fit text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          >
-            Open on YouTube
-          </a>
-        </header>
-
-        <section aria-labelledby="you-uploads-heading" className="flex flex-col gap-4">
-          <h2 id="you-uploads-heading" className="text-xl font-semibold">
-            Your recent uploads
-          </h2>
-          {videos.length === 0 ? (
-            <EmptyState title="No uploads yet" message="This channel has no public videos." />
-          ) : (
-            <VideoGrid labelledBy="you-uploads-heading" videos={videos} />
-          )}
-        </section>
-
-        {liked === null ? null : (
-          <section aria-labelledby="you-liked-heading" className="flex flex-col gap-4">
-            <h2 id="you-liked-heading" className="text-xl font-semibold">
-              Liked videos
-            </h2>
-            {liked.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No liked videos on this account.</p>
-            ) : (
-              <VideoGrid labelledBy="you-liked-heading" videos={liked} />
-            )}
-          </section>
-        )}
-
-        {watchLater === null ? null : (
-          <section aria-labelledby="you-watch-later-heading" className="flex flex-col gap-4">
-            <h2 id="you-watch-later-heading" className="text-xl font-semibold">
-              Watch Later
-            </h2>
-            {watchLater.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Watch Later is empty.</p>
-            ) : (
-              <VideoGrid labelledBy="you-watch-later-heading" videos={watchLater} />
-            )}
-          </section>
-        )}
-
-        {subscriptions === null || subscriptions.length === 0 ? null : (
-          <section aria-labelledby="you-subscriptions-heading" className="flex flex-col gap-4">
-            <h2 id="you-subscriptions-heading" className="text-xl font-semibold">
-              Subscriptions
-            </h2>
-            <ul role="list" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {subscriptions.map((subscription) => (
-                <li key={subscription.id} className="min-w-0">
-                  <Link
-                    href={`/channel/${encodeURIComponent(subscription.id)}`}
-                    className="flex items-center gap-3 rounded-xl border border-border p-3 hover:bg-muted"
-                  >
-                    {subscription.thumbnailUrl === null ? null : (
-                      <img
-                        src={subscription.thumbnailUrl}
-                        alt=""
-                        className="size-10 shrink-0 rounded-full object-cover"
-                      />
-                    )}
-                    <span className="min-w-0 truncate text-sm font-medium">
-                      {subscription.title}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        <section className="flex flex-col gap-2 border-t border-border pt-4">
-          <h2 className="text-sm font-semibold text-muted-foreground">YouTube history</h2>
-          <p className="text-sm text-muted-foreground">
-            YouTube has no history API, so views here cannot write back. Import your own Takeout
-            export to bring real history into Viewly.
-          </p>
-          <Link
-            href="/library/import"
-            className="w-fit rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            Import watch history
-          </Link>
-        </section>
-      </div>
-    );
-  } catch {
+  if (view.status === "error") {
     return (
       <ErrorState
         title="Could not load your channel"
@@ -219,4 +140,113 @@ async function YouContent({ searchParams }: { searchParams: Promise<{ auth?: str
       />
     );
   }
+
+  if (view.status === "no-channel") {
+    return (
+      <EmptyState
+        title="No channel found"
+        message="This Google account does not have a YouTube channel."
+      />
+    );
+  }
+
+  const { channel, videos, liked, watchLater, subscriptions } = view;
+  const subscribers = formatSubscriberCount(channel.subscriberCount);
+
+  return (
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-2 border-b border-border pb-4">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-4xl">{channel.title}</h1>
+        {subscribers === null ? null : (
+          <p className="text-sm text-muted-foreground">{subscribers}</p>
+        )}
+        <a
+          href={`https://www.youtube.com/channel/${encodeURIComponent(channel.id)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-fit text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          Open on YouTube
+        </a>
+      </header>
+
+      <section aria-labelledby="you-uploads-heading" className="flex flex-col gap-4">
+        <h2 id="you-uploads-heading" className="text-xl font-semibold">
+          Your recent uploads
+        </h2>
+        {videos.length === 0 ? (
+          <EmptyState title="No uploads yet" message="This channel has no public videos." />
+        ) : (
+          <VideoGrid labelledBy="you-uploads-heading" videos={videos} />
+        )}
+      </section>
+
+      {liked === null ? null : (
+        <section aria-labelledby="you-liked-heading" className="flex flex-col gap-4">
+          <h2 id="you-liked-heading" className="text-xl font-semibold">
+            Liked videos
+          </h2>
+          {liked.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No liked videos on this account.</p>
+          ) : (
+            <VideoGrid labelledBy="you-liked-heading" videos={liked} />
+          )}
+        </section>
+      )}
+
+      {watchLater === null ? null : (
+        <section aria-labelledby="you-watch-later-heading" className="flex flex-col gap-4">
+          <h2 id="you-watch-later-heading" className="text-xl font-semibold">
+            Watch Later
+          </h2>
+          {watchLater.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Watch Later is empty.</p>
+          ) : (
+            <VideoGrid labelledBy="you-watch-later-heading" videos={watchLater} />
+          )}
+        </section>
+      )}
+
+      {subscriptions === null || subscriptions.length === 0 ? null : (
+        <section aria-labelledby="you-subscriptions-heading" className="flex flex-col gap-4">
+          <h2 id="you-subscriptions-heading" className="text-xl font-semibold">
+            Subscriptions
+          </h2>
+          <ul role="list" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {subscriptions.map((subscription) => (
+              <li key={subscription.id} className="min-w-0">
+                <Link
+                  href={`/channel/${encodeURIComponent(subscription.id)}`}
+                  className="flex items-center gap-3 rounded-xl border border-border p-3 hover:bg-muted"
+                >
+                  {subscription.thumbnailUrl === null ? null : (
+                    <img
+                      src={subscription.thumbnailUrl}
+                      alt=""
+                      className="size-10 shrink-0 rounded-full object-cover"
+                    />
+                  )}
+                  <span className="min-w-0 truncate text-sm font-medium">{subscription.title}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="flex flex-col gap-2 border-t border-border pt-4">
+        <h2 className="text-sm font-semibold text-muted-foreground">YouTube history</h2>
+        <p className="text-sm text-muted-foreground">
+          YouTube has no history API, so views here cannot write back. Import your own Takeout
+          export to bring real history into Viewly.
+        </p>
+        <Link
+          href="/library/import"
+          className="w-fit rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+        >
+          Import watch history
+        </Link>
+      </section>
+    </div>
+  );
 }

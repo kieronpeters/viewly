@@ -110,6 +110,12 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
            * Both links keep the 44px minimum target and the shared focus ring.
            */}
           <Link
+            href="/library/import"
+            className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-surface-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            Import history
+          </Link>
+          <Link
             href="/library/backup"
             className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-surface-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
