@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "rea:capture": "node scripts/rea/capture.mjs",
     "build": "next build",
     "start": "next start",
     "test": "vitest run",

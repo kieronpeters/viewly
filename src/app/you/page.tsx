@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -220,9 +221,12 @@ async function YouContent({ searchParams }: { searchParams: Promise<{ auth?: str
                   className="flex items-center gap-3 rounded-xl border border-border p-3 hover:bg-muted"
                 >
                   {subscription.thumbnailUrl === null ? null : (
-                    <img
+                    <Image
                       src={subscription.thumbnailUrl}
                       alt=""
+                      width={40}
+                      height={40}
+                      unoptimized
                       className="size-10 shrink-0 rounded-full object-cover"
                     />
                   )}

@@ -160,3 +160,17 @@ real key**: restart `npm run dev`, load `/`, `/search?q=test`, `/watch/<known-vi
 `/api/search`, `/api/trending` and `/api/videos/<id>`. Confirm 200s, working pagination, and no key
 or upstream URL in any response or log line. The client header still records the live smoke as
 **PENDING**; unit tests stub `fetch`.
+
+## Account and data operations
+
+- Google sign-in env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+  `AUTH_REDIRECT_URI`, `AUTH_SECRET` in `.env.local` (never committed).
+  Without them the app is signed out and `/you` explains the setup.
+- Schema changes: `npm run db:generate` then `npm run db:migrate`. Migrations
+  0006 and 0007 rebuild `history`, `favourites` and `watch_later` with an
+  `owner` column and composite keys; existing rows are stamped `local`.
+  Back up `data/viewly.db` before migrating.
+- Sign-out deletes the stored refresh token; deleting `data/viewly.db` removes
+  every local record.
+- Capture evidence lives under `docs/re-evidence/` (git-ignored); the committed
+  harness is `scripts/rea/`.

@@ -224,3 +224,14 @@ run `npm run db:migrate`. This discards all local data.
 - The YouTube API key stays server-side; browser code never sees the variable name or its value.
 - The SQLite file is plain, unencrypted local storage — protect the machine, not the file.
 - Not intended for public deployment: nothing protects the database or your API quota.
+
+## Optional Google sign-in
+
+Viewly can optionally sign in with Google to read the owner's own channel,
+uploads, subscriptions, Liked videos and Watch Later through the official
+YouTube Data API. It is read-only: nothing is posted, liked or subscribed, and
+no watch history is read or written (the API exposes neither).
+
+- Setup: `docs/GOOGLE-LOGIN-SETUP.md` (OAuth client, redirect URI, env vars).
+- Behaviour and scope: `docs/AUTH-IMPLEMENTATION.md`.
+- Without credentials the app runs exactly as before, signed out.
