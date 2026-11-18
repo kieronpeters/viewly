@@ -1,4 +1,4 @@
-﻿import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -334,7 +334,6 @@ describe("VideoCard", () => {
   it("lifts the card and zooms the thumbnail on hover without moving the grid", () => {
     const { container } = render(<VideoCard video={VIDEO_FIXTURE} />);
 
-    const link = screen.getByRole("link", { name: /Never Gonna Give You Up/ });
     const image = container.querySelector("img");
 
     // The hover treatment is a thumbnail zoom, switched off entirely for reduced motion.
