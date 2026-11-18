@@ -13,6 +13,7 @@ import {
   listMyUploads,
   listPlaylistVideos,
   readGoogleConfig,
+  SessionExpiredError,
 } from "@/lib/auth/google";
 import { formatSubscriberCount } from "@/shared/format";
 
@@ -37,6 +38,7 @@ export default function YouPage({ searchParams }: { searchParams: Promise<{ auth
 
 type YouView =
   | { status: "error" }
+  | { status: "expired" }
   | { status: "no-channel" }
   | {
       status: "ok";
@@ -69,8 +71,8 @@ async function loadYouView(account: NonNullable<ReturnType<typeof getAccount>>):
     ]);
 
     return { status: "ok", channel, videos, liked, watchLater, subscriptions };
-  } catch {
-    return { status: "error" };
+  } catch (error) {
+    return { status: error instanceof SessionExpiredError ? "expired" : "error" };
   }
 }
 
@@ -132,6 +134,32 @@ async function YouContent({ searchParams }: { searchParams: Promise<{ auth?: str
   }
 
   const view = await loadYouView(account);
+
+  if (view.status === "expired") {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-10">
+        <h1 className="text-2xl font-bold tracking-tight">Your session expired</h1>
+        <p className="text-muted-foreground">
+          Google no longer accepts the saved permission — this is normal for an app still in Testing
+          mode, where refresh tokens last seven days. Sign in again to continue.
+        </p>
+        <Link
+          href="/api/auth/google/start"
+          className="inline-flex w-fit items-center rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          Sign in with Google
+        </Link>
+        <form action="/api/auth/signout" method="post">
+          <button
+            type="submit"
+            className="text-sm text-muted-foreground underline underline-offset-4"
+          >
+            Sign out instead
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   if (view.status === "error") {
     return (

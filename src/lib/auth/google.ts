@@ -304,13 +304,30 @@ export async function exchangeCode(
   });
 }
 
+/** The stored refresh token is no longer accepted by Google (revoked/expired). */
+export class SessionExpiredError extends Error {
+  constructor() {
+    super("google_session_expired");
+    this.name = "SessionExpiredError";
+  }
+}
+
 async function refreshToken(config: GoogleConfig, refresh: string): Promise<TokenResponse> {
-  return postToken({
-    refresh_token: refresh,
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    grant_type: "refresh_token",
-  });
+  try {
+    return await postToken({
+      refresh_token: refresh,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      grant_type: "refresh_token",
+    });
+  } catch (error) {
+    // Google answers 400 invalid_grant / 401 when the refresh token is dead.
+    if (error instanceof Error && /token_exchange_failed_(400|401)/.test(error.message)) {
+      throw new SessionExpiredError();
+    }
+
+    throw error;
+  }
 }
 
 export async function fetchUserInfo(accessToken: string): Promise<Account> {
