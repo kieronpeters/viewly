@@ -260,6 +260,3 @@ describe("library schema migration", () => {
     ).toBe(1);
   });
 });
-
-
-
