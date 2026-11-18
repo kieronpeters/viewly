@@ -1,0 +1,35 @@
+{
+  "flow": "watch-comments",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-18",
+  "evidence": "docs/re-evidence/watch/",
+  "route": { "path": "/watch", "queryParam": "v", "signedOut": true },
+  "tabs": {
+    "role": "tablist",
+    "items": [
+      { "id": "comments", "label": "Comments", "selectedByDefault": true },
+      { "id": "notes", "label": "Your notes", "selectedByDefault": false }
+    ],
+    "keyboard": ["ArrowLeft", "ArrowRight", "Home", "End"],
+    "panels": "both mounted, toggled with hidden, labelled by their tab"
+  },
+  "states": [
+    { "id": "comments-loading", "shows": "quiet status placeholder" },
+    { "id": "comments-ready", "shows": "read-only list" },
+    { "id": "comments-empty", "shows": "No comments yet + outbound link" },
+    { "id": "comments-error", "shows": "inline alert, page unaffected" },
+    { "id": "notes-ready", "shows": "local note list" },
+    { "id": "notes-empty", "shows": "empty state + composer" }
+  ],
+  "controls": [
+    { "id": "tab", "role": "tab", "aria": ["aria-selected", "aria-controls", "aria-labelledby"] },
+    { "id": "comment-on-youtube", "role": "link", "target": "_blank" },
+    { "id": "add-note", "role": "form", "storage": "local" }
+  ],
+  "deviations": [
+    "No reply tree, sorting or voting; top-level public comments only",
+    "Your notes is Viewly-only local data, never posted to YouTube"
+  ]
+}
