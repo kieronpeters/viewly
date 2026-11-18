@@ -54,6 +54,19 @@ async function libraryRepository() {
   return createLibraryRepository(getDb());
 }
 
+/** `local` when signed out, otherwise the signed-in account id. */
+async function currentOwner(): Promise<string> {
+  try {
+    const { getSessionAccount } = await import("@/lib/auth/google");
+    const account = await getSessionAccount();
+
+    return account?.id ?? "local";
+  } catch {
+    // No request scope (tests, scripts) or sign-in unavailable.
+    return "local";
+  }
+}
+
 /**
  * Records one view of a video.
  *
@@ -64,9 +77,9 @@ async function libraryRepository() {
  */
 export async function recordView(input: VideoSnapshot): Promise<void> {
   const snapshot = parseVideoSnapshot(input);
-  const repository = await libraryRepository();
+  const [repository, owner] = await Promise.all([libraryRepository(), currentOwner()]);
 
-  repository.history.recordView({ ...snapshot, viewedAt: new Date() });
+  repository.history.recordView({ ...snapshot, viewedAt: new Date(), owner });
 
   revalidatePath(LIBRARY_PATH);
 }
@@ -74,18 +87,18 @@ export async function recordView(input: VideoSnapshot): Promise<void> {
 /** Removes one video from the history list. A repeat clear is a no-op. */
 export async function clearHistoryEntry(videoId: string): Promise<void> {
   const id = assertVideoId(videoId);
-  const repository = await libraryRepository();
+  const [repository, owner] = await Promise.all([libraryRepository(), currentOwner()]);
 
-  repository.history.clearOne(id);
+  repository.history.clearOne(id, owner);
 
   revalidatePath(LIBRARY_PATH);
 }
 
-/** Empties the history list. A repeat clear is a no-op. */
+/** Empties the history list for the current owner. A repeat clear is a no-op. */
 export async function clearAllHistory(): Promise<void> {
-  const repository = await libraryRepository();
+  const [repository, owner] = await Promise.all([libraryRepository(), currentOwner()]);
 
-  repository.history.clearAll();
+  repository.history.clearAll(owner);
 
   revalidatePath(LIBRARY_PATH);
 }

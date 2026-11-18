@@ -132,8 +132,14 @@ export const watchLater = sqliteTable(
 export const history = sqliteTable(
   "history",
   {
-    /** YouTube video id. Natural primary key. */
-    videoId: text("video_id").primaryKey(),
+    /**
+     * Owner of the activity: `local` for a signed-out session, otherwise the
+     * Google account id. The composite key keeps one row per video per owner,
+     * so signing in never overwrites the signed-out history.
+     */
+    owner: text("owner").notNull().default("local"),
+    /** YouTube video id. Natural key together with `owner`. */
+    videoId: text("video_id").notNull(),
     ...displaySnapshotColumns(),
     /** Most recent view, UTC milliseconds. Drives "recently watched". */
     lastViewedAt: integer("last_viewed_at", { mode: "timestamp_ms" }).notNull(),
@@ -141,7 +147,8 @@ export const history = sqliteTable(
     viewCount: integer("view_count").notNull().default(1),
   },
   (table) => [
-    index("history_last_viewed_at_idx").on(table.lastViewedAt),
+    primaryKey({ columns: [table.owner, table.videoId] }),
+    index("history_owner_last_viewed_at_idx").on(table.owner, table.lastViewedAt),
     check("history_view_count_non_negative", sql`${table.viewCount} >= 0`),
   ],
 );

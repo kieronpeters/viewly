@@ -43,6 +43,13 @@
       "when": 1794313041628,
       "tag": "0005_decode_entity_encoded_titles",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794978661857,
+      "tag": "0006_perpetual_pestilence",
+      "breakpoints": true
     }
   ]
 }

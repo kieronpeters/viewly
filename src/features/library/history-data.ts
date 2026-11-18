@@ -74,9 +74,25 @@ export function historyRowToEntry(row: HistoryRow): HistoryEntry {
   };
 }
 
-/** Every watched video, most recently viewed first. */
-export function listHistoryEntries(): HistoryEntry[] {
+/**
+ * The owner whose history should be shown: the signed-in Google account id, or
+ * `local` when signed out. Signed-out and signed-in activity never share rows.
+ */
+export async function currentHistoryOwner(): Promise<string> {
+  try {
+    const { getSessionAccount } = await import("@/lib/auth/google");
+    const account = await getSessionAccount();
+
+    return account?.id ?? "local";
+  } catch {
+    // Outside a request scope (tests, scripts) everything belongs to `local`.
+    return "local";
+  }
+}
+
+/** Every watched video for one owner, most recently viewed first. */
+export function listHistoryEntries(owner?: string): HistoryEntry[] {
   const repository = createLibraryRepository(getDb());
 
-  return repository.history.list().map((row) => historyRowToEntry(row));
+  return repository.history.list(owner).map((row) => historyRowToEntry(row));
 }

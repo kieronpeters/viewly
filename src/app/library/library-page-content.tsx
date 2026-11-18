@@ -11,7 +11,11 @@ import {
   listWatchLaterVideos,
   sweepLibraryMetadata,
 } from "@/features/library";
-import { listHistoryEntries, type HistoryEntry } from "@/features/library/history-data";
+import {
+  listHistoryEntries,
+  currentHistoryOwner,
+  type HistoryEntry,
+} from "@/features/library/history-data";
 import { PlaylistCreateForm } from "@/features/library/playlist-create-form";
 import { listContinueWatchingVideos } from "@/features/progress/continue-watching";
 import {
@@ -64,6 +68,9 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
 
   const tab = resolveLibraryTab(params.tab);
   const counts = countLibraryEntries();
+  // Resolved once here, at the async boundary: the list component below stays
+  // synchronous so it renders in the same tree as its fixtures and tests.
+  const historyOwner = await currentHistoryOwner();
 
   // The shelf spans every tab, so it is read once here. A failed local read
   // hides it rather than replacing the whole library with an error; the tab
@@ -116,13 +123,15 @@ export async function LibraryPageContent({ searchParams }: LibraryPageContentPro
           </Link>
         </div>
       </div>
-      <LibraryList tab={tab} />
+      <LibraryList tab={tab} historyOwner={historyOwner} />
     </div>
   );
 }
 
 interface LibraryListProps {
   tab: LibraryTab;
+  /** `local` when signed out, otherwise the signed-in account id. */
+  historyOwner: string;
 }
 
 /**
@@ -133,9 +142,9 @@ interface LibraryListProps {
  * before that read because its cards have no picker. The tab bar's counts come
  * from `countLibraryEntries`, not from these lists.
  */
-function LibraryList({ tab }: LibraryListProps) {
+function LibraryList({ tab, historyOwner }: LibraryListProps) {
   if (tab === "history") {
-    const entries = listHistoryEntries();
+    const entries = listHistoryEntries(historyOwner);
     const progressById = listVideoProgress(entries.map((entry) => entry.video.id));
 
     return <HistoryList entries={entries} progressById={progressById} />;

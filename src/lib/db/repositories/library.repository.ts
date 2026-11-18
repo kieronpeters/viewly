@@ -118,6 +118,8 @@ export interface SaveVideoInput extends VideoSnapshot {
 export interface RecordViewInput extends VideoSnapshot {
   /** When the view happened, UTC milliseconds. */
   viewedAt: Date;
+  /** `local` for signed-out activity, otherwise the account id. */
+  owner?: string;
 }
 
 /** Input for {@link LibraryRepository.playlists.create}. */
@@ -191,14 +193,14 @@ export interface LibraryRepository {
      * `viewCount` and `lastViewedAt` and refreshes the snapshot on repeat views.
      */
     recordView(input: RecordViewInput): HistoryRow;
-    /** Every watched video, most recently viewed first. */
-    list(): HistoryRow[];
-    /** Number of watched videos, from a `COUNT(*)` that materialises no rows. */
-    count(): number;
+    /** Every watched video, most recently viewed first; `owner` scopes it. */
+    list(owner?: string): HistoryRow[];
+    /** Number of watched videos; `owner` scopes it. */
+    count(owner?: string): number;
     /** Removes one video's history entry. Returns `true` when a row was deleted. */
-    clearOne(videoId: string): boolean;
-    /** Empties the history table. Returns the number of deleted rows. */
-    clearAll(): number;
+    clearOne(videoId: string, owner?: string): boolean;
+    /** Empties the history (for one owner). Returns the number of deleted rows. */
+    clearAll(owner?: string): number;
   };
   readonly playlists: {
     /** Creates a playlist, generating its id when none is supplied. */
@@ -355,9 +357,11 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
 
     history: {
       recordView(input) {
+        const owner = input.owner ?? "local";
         const row = db
           .insert(history)
           .values({
+            owner,
             videoId: input.videoId,
             title: input.title,
             channelTitle: input.channelTitle,
@@ -367,7 +371,7 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
             viewCount: 1,
           })
           .onConflictDoUpdate({
-            target: history.videoId,
+            target: [history.owner, history.videoId],
             set: {
               title: input.title,
               channelTitle: input.channelTitle,
@@ -388,17 +392,32 @@ export function createLibraryRepository(db: ViewlyDatabase): LibraryRepository {
 
         return row;
       },
-      list() {
-        return db.select().from(history).orderBy(desc(history.lastViewedAt)).all();
+      list(owner) {
+        const query = db.select().from(history);
+        const scoped = owner === undefined ? query : query.where(eq(history.owner, owner));
+
+        return scoped.orderBy(desc(history.lastViewedAt)).all();
       },
-      count() {
-        return db.select({ value: count() }).from(history).get()?.value ?? 0;
+      count(owner) {
+        const query = db.select({ value: count() }).from(history);
+        const scoped = owner === undefined ? query : query.where(eq(history.owner, owner));
+
+        return scoped.get()?.value ?? 0;
       },
-      clearOne(videoId) {
-        return db.delete(history).where(eq(history.videoId, videoId)).run().changes > 0;
+      clearOne(videoId, owner) {
+        const where =
+          owner === undefined
+            ? eq(history.videoId, videoId)
+            : and(eq(history.videoId, videoId), eq(history.owner, owner));
+
+        return db.delete(history).where(where).run().changes > 0;
       },
-      clearAll() {
-        return db.delete(history).run().changes;
+      clearAll(owner) {
+        if (owner === undefined) {
+          return db.delete(history).run().changes;
+        }
+
+        return db.delete(history).where(eq(history.owner, owner)).run().changes;
       },
     },
 

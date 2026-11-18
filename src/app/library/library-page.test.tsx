@@ -40,6 +40,7 @@ vi.mock("@/features/library", () => ({
 // renders fixtures and the clear controls call spies.
 vi.mock("@/features/library/history-data", () => ({
   listHistoryEntries: listHistoryEntriesMock,
+  currentHistoryOwner: async () => "local",
 }));
 vi.mock("@/features/library/history-actions", () => ({
   recordView: vi.fn(),

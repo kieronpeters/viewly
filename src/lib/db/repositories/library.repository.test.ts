@@ -188,6 +188,34 @@ describe("history", () => {
     expect(repository.history.list()).toEqual([]);
     expect(repository.history.clearAll()).toBe(0);
   });
+
+  it("keeps signed-out and signed-in history in separate rows", () => {
+    repository.history.recordView({ ...snapshot("video-a"), viewedAt: at(1_000), owner: "local" });
+    repository.history.recordView({
+      ...snapshot("video-a"),
+      viewedAt: at(2_000),
+      owner: "google-1",
+    });
+    repository.history.recordView({
+      ...snapshot("video-b"),
+      viewedAt: at(3_000),
+      owner: "google-1",
+    });
+
+    // The same video appears once per owner; neither overwrites the other.
+    expect(repository.history.list("local").map((row) => row.videoId)).toEqual(["video-a"]);
+    expect(repository.history.list("google-1").map((row) => row.videoId)).toEqual([
+      "video-b",
+      "video-a",
+    ]);
+    expect(repository.history.list()).toHaveLength(3);
+    expect(repository.history.count("local")).toBe(1);
+
+    // Clearing one owner leaves the other untouched.
+    repository.history.clearAll("local");
+    expect(repository.history.list("local")).toEqual([]);
+    expect(repository.history.list("google-1")).toHaveLength(2);
+  });
 });
 
 describe("playlists", () => {
