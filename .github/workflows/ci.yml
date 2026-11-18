@@ -33,9 +33,6 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Secret scan
-        run: npm run check:secrets
-
       - name: Lint
         run: npm run lint
 
@@ -50,3 +47,7 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      # Scans the built client output; it needs .next/static, so it runs last.
+      - name: Secret scan
+        run: npm run check:secrets
