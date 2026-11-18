@@ -1,4 +1,4 @@
-// @vitest-environment node
+﻿// @vitest-environment node
 /**
  * Schema-level tests for the library tables (T11).
  *
@@ -167,7 +167,7 @@ describe("library schema migration", () => {
     expect(schemaObjects("index")).toEqual(
       expect.arrayContaining([
         "favourites_saved_at_idx",
-        "history_last_viewed_at_idx",
+        "history_owner_last_viewed_at_idx",
         "playlist_items_playlist_id_position_idx",
         "video_notes_video_id_created_at_idx",
         "video_notes_video_id_start_seconds_idx",
@@ -252,7 +252,7 @@ describe("library schema migration", () => {
           count: number;
         }
       ).count,
-    ).toBe(6);
+    ).toBe(7);
 
     // Existing data survived, so the schema was not recreated.
     expect(

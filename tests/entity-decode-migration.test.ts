@@ -1,4 +1,4 @@
-// @vitest-environment node
+﻿// @vitest-environment node
 /**
  * Upgrade-path tests for the entity-decode backfill (0005).
  *
@@ -224,6 +224,6 @@ describe("entity decode backfill migration", () => {
           count: number;
         }
       ).count,
-    ).toBe(6);
+    ).toBe(7);
   });
 });
