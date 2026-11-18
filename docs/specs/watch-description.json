@@ -1,0 +1,59 @@
+{
+  "flow": "watch-description",
+  "surface": "web",
+  "specVersion": "0.1.0",
+  "status": "draft",
+  "capturedAt": "2026-11-18",
+  "evidence": "docs/re-evidence/watch/",
+  "route": {
+    "path": "/watch",
+    "queryParam": "v",
+    "signedOut": true
+  },
+  "panel": {
+    "slot": "expandable-description",
+    "textSlot": "video-description",
+    "collapsedMaxHeightRem": 10,
+    "toggle": {
+      "collapsedLabel": "Show more",
+      "expandedLabel": "Show less",
+      "ariaExpanded": ["false", "true"],
+      "ariaControls": "content id"
+    }
+  },
+  "states": [
+    {
+      "id": "collapsed",
+      "trigger": "long description on load",
+      "shows": "clipped text + Show more"
+    },
+    { "id": "expanded", "trigger": "Show more", "shows": "full text + Show less" },
+    { "id": "short", "trigger": "description fits", "shows": "full text, no toggle" },
+    { "id": "empty", "trigger": "no description", "shows": "no panel text" }
+  ],
+  "controls": [
+    { "id": "toggle", "role": "button", "aria": ["aria-expanded", "aria-controls"] },
+    { "id": "timestamp", "role": "button", "ariaLabel": "Seek to <mm:ss>" },
+    {
+      "id": "outbound-link",
+      "role": "link",
+      "target": "_blank",
+      "rel": "noopener noreferrer nofollow",
+      "schemes": ["http", "https"]
+    }
+  ],
+  "timings": [
+    { "event": "expand", "budgetMs": 0 },
+    { "event": "collapse", "budgetMs": 0 }
+  ],
+  "accessibility": {
+    "focusOrder": ["toggle", "outbound links in text order"],
+    "focusReturn": "toggle keeps focus",
+    "reducedMotion": "instant",
+    "names": { "toggle": "Show more / Show less", "timestamp": "Seek to <time>" }
+  },
+  "deviations": [
+    "Clipped with max-h-40 rather than the observed measured line count",
+    "No raw HTML rendering; text plus safe http(s) links only"
+  ]
+}
